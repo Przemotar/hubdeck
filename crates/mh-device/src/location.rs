@@ -65,7 +65,7 @@ mod platform {
                 return None;
             }
             // REG_MULTI_SZ in UTF-16; the first string is the PCI path
-            let wide: Vec<u16> = buf.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let wide: Vec<u16> = buf.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
             let first = wide.split(|c| *c == 0).next()?;
             let path = super::parse_location_path(&String::from_utf16_lossy(first));
             (!path.is_empty()).then_some(path)

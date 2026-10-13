@@ -27,7 +27,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY5OUM5Mzc0MjI5QjM4RTAKUldUZ09Kc2lkSk9jYVlrV0djY2Z2N3p6NUM5Z3F4MUM3OHN4cjAwdklMeDRxalNNcWNlRHNWZEgK",
       "endpoints": [
         "https://github.com/Przemotar/hubdeck/releases/latest/download/latest.json"
       ],

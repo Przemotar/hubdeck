@@ -31,7 +31,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: app
       - run: cargo fmt --check
-      - run: cargo clippy -p hubdeck --all-targets -- -D warnings
+      - run: cargo clippy --keep-going -p hubdeck --all-targets -- -D warnings
       - run: cargo test -p mh-protocol -p mh-device -p hubdeck
       - run: node_modules/.bin/tsc --noEmit -p .
         working-directory: app

@@ -2,6 +2,7 @@
 # GitHub release with latest.json for the in-app updater. The release stays a draft until the
 # maintainer publishes it. Public repository only.
 #
+# Before tagging, CHANGELOG.md needs a "## <version>" section: it becomes the release notes.
 # Secrets: TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the updater key made
 # with `pnpm tauri signer generate`; its public half is in tauri.conf.json).
 name: Release
@@ -39,6 +40,15 @@ jobs:
           cache-dependency-path: app/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: app
+      # the release notes (shown on the release page and as "What's new" in the app) are this
+      # version's section of CHANGELOG.md
+      - id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{f = index($0, "## " v " ") == 1 || $0 == "## " v; next} f' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "CHANGELOG.md has no section for $version" >&2; exit 1; fi
+          { echo 'body<<NOTES_END'; cat notes.md; echo 'NOTES_END'; } >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,7 +58,8 @@ jobs:
           projectPath: app
           tagName: ${{ github.ref_name }}
           releaseName: HubDeck ${{ github.ref_name }}
-          releaseBody: See CHANGELOG.md for what changed.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          # update files (.sig, latest.json) only here: local builds have no private key
+          args: ${{ matrix.args }} --config ${{ github.workspace }}/app/src-tauri/tauri.release.conf.json
