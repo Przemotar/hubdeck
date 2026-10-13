@@ -120,6 +120,17 @@ fn hotkey(keys: &str, label: &str, icon: &str, bg: &str) -> Binding {
     bind("core.hotkey", json!({"keys": keys}), label, icon, bg)
 }
 
+/// The keys an app's shortcut pack picks for its ready profile (shortcuts with an icon, in order).
+fn pack_keys(exe: &str) -> Vec<Binding> {
+    let Some(pack) = super::shortcuts::own_pack(exe) else { return Vec::new() };
+    pack.shortcuts
+        .iter()
+        .filter(|s| s.icon.is_some() && !s.destructive)
+        .take(9)
+        .map(|s| hotkey(&s.keys, s.label.as_deref().unwrap_or(&s.does), s.icon.as_deref().unwrap_or("keyboard"), EDIT))
+        .collect()
+}
+
 /// The keys that suit an app of this kind (after the app's own key, before the media row).
 fn kind_keys(kind: AppKind, exe: &str) -> Vec<Binding> {
     let cmd = if cfg!(target_os = "macos") { "Cmd" } else { "Ctrl" };
@@ -246,7 +257,9 @@ fn starter_profile(kind: AppKind, exe: &str, name: &str, target: &str, picture: 
         app_key.look.icon = None;
     }
     let mut keys = vec![app_key];
-    keys.extend(kind_keys(kind, exe));
+    // the app's own checked shortcuts when its pack picks some (the template), else its kind's
+    let own = pack_keys(exe);
+    keys.extend(if own.is_empty() { kind_keys(kind, exe) } else { own });
     // the bottom row: media and sound, unless the app is a media player (it has them already)
     if kind != AppKind::Media {
         keys.truncate(10);
@@ -394,5 +407,19 @@ mod tests {
         assert_eq!(p.controls["keys.5"].action, "obs.record");
         let adapted = for_app("obs64.exe", "OBS", "", None, Some(&["keys".to_string(), "dial".to_string()]));
         assert!(adapted.controls.contains_key("dial"));
+    }
+
+    #[test]
+    fn an_app_with_a_pack_gets_its_own_keys() {
+        let exe = if cfg!(target_os = "macos") { "Firefox.app" } else { "firefox.exe" };
+        let p = for_app(exe, "Firefox", "", None, None);
+        let key = &p.controls["keys.1"];
+        assert_eq!((key.action.as_str(), key.look.label.as_deref()), ("core.hotkey", Some("New tab")), "the pack's first key after the app's own");
+        for i in 1..10 {
+            let b = &p.controls[&format!("keys.{i}")];
+            assert!(super::super::shortcuts::is_checked(b.params["keys"].as_str().unwrap_or_default(), &p.apps), "keys.{i} is a checked shortcut");
+        }
+        // an app without a pack keeps its kind's keys
+        assert!(pack_keys("notepad.exe").is_empty());
     }
 }

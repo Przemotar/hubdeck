@@ -142,9 +142,10 @@ mod tests {
         assert!(check_json("keys.0:hold", &json!({"action": "core.hotkey", "params": {"keys": "Alt+F4"}}), &none).is_ok());
         assert!(check_json("keys.0", &json!({"action": "core.hotkey", "params": {"keys": "Ctrl+Z"}}), &none).is_ok());
         assert!(check_json("knobs.0", &json!({"action": "core.hotkey", "params": {"clockwise": "Ctrl+W"}}), &none).is_err());
-        let zoom = vec!["Zoom.exe".to_string()];
-        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Q"}}), &zoom).is_err(), "Zoom's end meeting");
-        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Q"}}), &none).is_ok());
+        // Spotify's Log out has the same keys on both systems
+        let spotify = vec!["Spotify.exe".to_string()];
+        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &spotify).is_err(), "Spotify's log out");
+        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &none).is_ok());
         let nested = json!({"action": "core.multi", "params": {"steps": [{"action": "core.media", "params": {}}, {"action": "core.hotkey", "params": {"keys": "Ctrl+Q"}}]}});
         assert!(check_json("keys.2", &nested, &none).is_err(), "a step of a multi-action");
         assert!(check_json("keys.3", &json!({"action": "core.text", "params": {"text": "gg\n"}}), &none).is_err());
@@ -155,7 +156,8 @@ mod tests {
     fn shortcuts_outside_the_packs_are_listed() {
         let spotify = vec!["Spotify.exe".to_string()];
         assert!(unchecked_shortcuts("core.hotkey", &json!({"keys": "Alt+Shift+B"}), &spotify).is_empty());
-        assert!(unchecked_shortcuts("core.hotkey", &json!({"keys": "Win+D"}), &spotify).is_empty(), "Windows' own work everywhere");
+        let own = if cfg!(target_os = "macos") { "Cmd+Space" } else { "Win+D" };
+        assert!(unchecked_shortcuts("core.hotkey", &json!({"keys": own}), &spotify).is_empty(), "the system's own work everywhere");
         assert_eq!(unchecked_shortcuts("core.hotkey", &json!({"keys": "Ctrl+Alt+P"}), &spotify), ["Ctrl+Alt+P"]);
     }
 }

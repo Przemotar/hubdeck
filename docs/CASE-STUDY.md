@@ -13,7 +13,7 @@ and worry about long-term support.
 
 Before writing code, the complaints were collected: **109 pain points from 170 sources** (reviews,
 vendor forums, release notes, GitHub issues of comparable decks), each with how often it comes up
-and what a fix would be ([PAIN-POINTS.md](PAIN-POINTS.md)). The official app was also read as
+and what a fix would be. The official app was also read as
 data, to know which actions and profile format owners already rely on
 ([OFFICIAL-APP.md](OFFICIAL-APP.md)).
 
@@ -32,7 +32,7 @@ keys or the dial while they are in hardware mode hangs the module until it is po
 engine never does that read, detects a module that stops answering, and tells the user how to
 recover it (restart the USB device, or reseat the module).
 
-**The owner decides, the agent builds.** Every visual choice was made by the owner from two or three
+**The author decides, the agent builds.** Every visual choice was made by the author from two or three
 complete variants (the window, the deck drawing, the base light), and every feature was tried on
 his hardware before it was called done.
 
@@ -57,7 +57,7 @@ More in [ARCHITECTURE.md](../ARCHITECTURE.md).
 | Drawing the 15 keys on a profile switch | 3.3 s | 36 ms | Stage timing in the engine log. The cause was not USB speed: the image was sent as about 100 reports, and between each one the reader thread took the device lock for a full 20 ms read. Sending the whole image under one lock fixed it. |
 | CPU while idle in the tray | 28.8 % of a core | 0.76 % of a core | Per-process and per-thread CPU over 30 s on the release build with the deck attached. Causes: a system-info call that cost 1.1 s of CPU each second, a USB rescan every second, a hidden web view. |
 | Memory while idle | about 430 MB | 45 MB | Working set of the app and its web view processes, same run. The hidden window held 346 MB; it is now destroyed when closed. |
-| Owner's verdict on switching | 3-4 s, timed by feel | "now switching is instant" | The installed release build on the owner's desk. |
+| Author's verdict on switching | 3-4 s, timed by feel | "now switching is instant" | The installed release build on the author's desk. |
 
 | System volume from a knob on macOS | ~0.2 s a detent, lagging behind a fast turn | under 1 ms | AppleScript replaced by Core Audio; timed per call. |
 | Window frames while hovering, macOS | 52 ms on average, every tenth over 100 ms | 17 ms | Playwright's WebKit recording `requestAnimationFrame` intervals; the deck drawing's SVG filters were repainted ten times a second by a colour animation. |
@@ -67,18 +67,18 @@ over USB.
 
 ## How it was built
 
-HubDeck was built with **Claude Code**, Anthropic's coding agent, with the owner as product owner
+HubDeck was built with **Claude Code**, Anthropic's coding agent, with the author as product owner
 and tester. The working rules were written into the repository so every session starts from the
-same place: the state of the project, the owner's decisions with his words and dates, a log of
+same place: the state of the project, the author's decisions with their words and dates, a log of
 problems with their causes and fixes, and the protocol as verified.
 
 From the third day, several agents worked in parallel on one repository: one on the Rust engine and
 integrations, one on the design and the window, one coordinating and keeping the documentation
-current. The owner answered questions, picked between variants and tested every build on the
+current. The author answered questions, picked between variants and tested every build on the
 hardware. Lessons from that setup (for example, that agents sharing one working tree must stage and
 commit only their own changes, in one step) went straight into the knowledge log.
 
-In numbers: a working app on the owner's deck within the first two days; then profiles, about 70 actions,
+In numbers: a working app on the author's deck within the first two days; then profiles, about 70 actions,
 seven integrations, plugins, a local API, a redesigned window with a light and dark look, game and
 creative presets, icon packs and profile sharing over the following days; the macOS port, Stream
 Deck plugin support and the assistant within the first week; over 200 Rust tests, frontend tests and
@@ -87,7 +87,7 @@ a click-through test of the window on every change.
 ## Porting to macOS in a day
 
 The first Mac session started from an app that had only ever run on Windows. It compiled on macOS
-without a change; the day went into what a Mac does differently, each verified on the owner's deck:
+without a change; the day went into what a Mac does differently, each verified on the author's deck:
 module slots from IOKit's `locationID` (the same slot table as Windows), the installed apps and
 their Finder icons, "now playing" through Spotify's and Music's scripting (the system's own is
 private on macOS), volume through Core Audio, the Accessibility permission with a clear prompt, and

@@ -20,7 +20,7 @@ pub mod deck_mcp;
 pub mod demo;
 pub mod diagnostics;
 pub mod elevated;
-mod exec;
+pub(crate) mod exec;
 mod foreground;
 pub mod gallery;
 pub mod game_icons;
@@ -148,6 +148,8 @@ pub enum Msg {
     },
     /// What is playing changed (None = nothing).
     NowPlaying(Option<media::Track>),
+    /// Where in the song: (seconds played, seconds long, playing), every second from the player.
+    Progress(Option<(f32, f32, bool)>),
     /// A new system load sample (once a second).
     Metrics(monitor::Sample),
     /// An integration (OBS...) reports an on/off state, e.g. `obs:record`.
@@ -225,6 +227,10 @@ pub struct ProfileSummary {
     pub in_bar: bool,
     /// A draft of the deck assistant.
     pub draft: bool,
+    /// Made at once for an installed app ("Ready for your apps").
+    pub ready: bool,
+    /// Switches in when its app comes to the front (off for a ready profile until switched on).
+    pub switch_in: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -369,7 +375,15 @@ impl Shared {
                 .values()
                 .map(|p| {
                     let draft = self.store.settings.drafts.contains(&p.id);
-                    ProfileSummary { id: p.id.clone(), name: p.name.clone(), apps: p.apps.clone(), in_bar: p.shows_in_bar() && !draft, draft }
+                    ProfileSummary {
+                        id: p.id.clone(),
+                        name: p.name.clone(),
+                        apps: p.apps.clone(),
+                        in_bar: p.shows_in_bar() && !draft,
+                        draft,
+                        ready: self.store.settings.ready.contains(&p.id),
+                        switch_in: p.switch_in != Some(false),
+                    }
                 })
                 .collect(),
             trying: self.trying.as_ref().map(|t| t.profile.clone()),
@@ -509,6 +523,10 @@ impl Engine {
             states: HashMap::new(),
             last_state_check: Instant::now(),
             now_playing: None,
+            progress: None,
+            progress_drawn: None,
+            seek_to: None,
+            seek_sent: None,
             samples: VecDeque::new(),
             integration: HashMap::new(),
             values: HashMap::new(),
@@ -819,6 +837,48 @@ impl Engine {
         Ok(())
     }
 
+    /// "Use this" on a draft (owner's pick 1a, 2026-10-14: a kept draft was only tried, so the
+    /// deck went back to the old profile at the next press). A new version of one of the user's
+    /// own profiles goes into that profile after a backup (its id, name and apps stay); any
+    /// other draft becomes a profile of its own. Either way it is on the deck now, as home.
+    /// Returns the kept profile's id and, when it replaced one, that profile's name.
+    pub fn use_draft(&self, id: &str) -> Result<(String, Option<String>), String> {
+        let target = {
+            let s = self.lock();
+            let draft = s.store.profiles.get(id).ok_or_else(|| format!("no profile {id}"))?;
+            if !s.store.settings.drafts.iter().any(|d| d == id) {
+                return Err(format!("{id} is not a draft"));
+            }
+            version_target(&s.store, draft)
+        };
+        // the try ends first: what showed before it must not come back
+        self.try_profile(None)?;
+        let Some(target) = target else {
+            self.settle_draft(id, true)?;
+            self.activate(id)?;
+            return Ok((id.to_string(), None));
+        };
+        backup::create(&self.data_dir, "before Use this replaced a profile").map_err(|e| e.to_string())?;
+        let name = put_version(&mut self.lock().store, id, &target)?;
+        self.activate(&target)?;
+        Ok((target, Some(name)))
+    }
+
+    /// "Switch in with the app" of a ready profile: on links it to its app, off keeps it unlinked.
+    pub fn set_switch_in(&self, id: &str, on: bool) -> Result<(), String> {
+        {
+            let mut s = self.lock();
+            let mut p = s.store.profiles.get(id).cloned().ok_or_else(|| format!("no profile {id}"))?;
+            p.switch_in = if on { None } else { Some(false) };
+            s.store.save_profile(p).map_err(|e| e.to_string())?;
+        }
+        self.changed();
+        if on {
+            self.refresh_foreground();
+        }
+        Ok(())
+    }
+
     /// "Pin this profile": stop all automatic switching (true) or allow it again.
     pub fn set_pinned(&self, pinned: bool) -> Result<(), String> {
         {
@@ -844,8 +904,55 @@ fn publish_state(app: &AppHandle, state: EngineState) {
 
 /// The profile that lists `exe` (a rule with a window title beats one for the app alone).
 fn profile_for_app(store: &Store, exe: &str, title: &str) -> Option<String> {
-    // a draft never takes over: it is only a proposal until the user picks it
-    store.profiles.values().filter(|p| !store.settings.drafts.contains(&p.id)).filter_map(|p| p.app_match(exe, title).map(|rank| (rank, p))).max_by_key(|(rank, _)| *rank).map(|(_, p)| p.id.clone())
+    // a draft never takes over: it is only a proposal until the user picks it; nor does a ready
+    // profile the user has not switched on
+    store
+        .profiles
+        .values()
+        .filter(|p| !store.settings.drafts.contains(&p.id) && p.switch_in != Some(false))
+        .filter_map(|p| p.app_match(exe, title).map(|rank| (rank, p)))
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, p)| p.id.clone())
+}
+
+/// The user's own profile a draft is a new version of: the one it names (`version_of`), else for
+/// the assistant's drafts one with the same name ("My deck · dial and knobs", with or without
+/// " · sketch"), when exactly one matches.
+fn version_target(store: &Store, draft: &Profile) -> Option<String> {
+    let own = |id: &str| id != draft.id && store.profiles.contains_key(id) && !store.settings.drafts.iter().any(|d| d == id);
+    if let Some(v) = draft.version_of.as_deref().filter(|v| own(v)) {
+        return Some(v.to_string());
+    }
+    if !draft.assistant {
+        return None;
+    }
+    let base = draft.name.trim().trim_end_matches("· sketch").trim().to_lowercase();
+    let mut same = store.profiles.values().filter(|p| own(&p.id) && p.name.trim().to_lowercase() == base);
+    match (same.next(), same.next()) {
+        (Some(p), None) => Some(p.id.clone()),
+        _ => None,
+    }
+}
+
+/// The draft `id` goes into the user's profile `target`: its controls, pages and lights; the
+/// profile keeps its id, name and apps; the draft is gone. Returns the profile's name.
+fn put_version(store: &mut Store, id: &str, target: &str) -> Result<String, String> {
+    let draft = store.profiles.get(id).cloned().ok_or_else(|| format!("no profile {id}"))?;
+    let mut p = store.profiles.get(target).cloned().ok_or_else(|| format!("no profile {target}"))?;
+    p.controls = draft.controls;
+    p.pages = draft.pages;
+    p.edge = draft.edge;
+    p.edge_effect = draft.edge_effect;
+    p.edge_speed = draft.edge_speed;
+    p.panel = draft.panel;
+    p.color = draft.color.or(p.color);
+    p.assistant |= draft.assistant;
+    let name = p.name.clone();
+    store.save_profile(p).map_err(|e| e.to_string())?;
+    store.settings.drafts.retain(|d| d != id);
+    store.save_settings().map_err(|e| e.to_string())?;
+    store.delete_profile(id).map_err(|e| e.to_string())?;
+    Ok(name)
 }
 
 /// What to show when `exe` comes to the front: its own profile (taking over, `Some(exe)`), or
@@ -1008,6 +1115,13 @@ struct Worker {
     last_state_check: Instant,
     /// Title, artist, playing; the cover lives in `images` under `cover`.
     now_playing: Option<(String, String, bool)>,
+    /// Where in the song and when that was read; the share drawn on the dial last (per mille).
+    progress: Option<(f32, f32, bool, Instant)>,
+    progress_drawn: Option<u16>,
+    /// Scrubbing with the dial: where the song should go and when the dial last turned; the player
+    /// is told once the turning pauses, and its own readings wait until then.
+    seek_to: Option<(f32, Instant)>,
+    seek_sent: Option<Instant>,
     /// The last two minutes of system load, oldest first.
     samples: VecDeque<monitor::Sample>,
     /// On/off states reported by integrations (`obs:record`, `obs:mute:Mic/Aux`...).
@@ -1111,6 +1225,7 @@ impl Worker {
                         }
                     }
                     Msg::NowPlaying(track) => self.on_now_playing(track),
+                    Msg::Progress(p) => self.on_progress(p),
                     Msg::Metrics(sample) => self.on_metrics(sample),
                     Msg::IntegrationState { key, on } => {
                         if self.integration.insert(key, on) != Some(on) {
@@ -1183,6 +1298,7 @@ impl Worker {
                 self.rainbow_last = now;
                 self.update_leds();
             }
+            self.send_seek(now);
             self.animate(now);
             if now.duration_since(self.last_folder_check) >= Duration::from_secs(4) {
                 self.last_folder_check = now;
@@ -1217,6 +1333,11 @@ impl Worker {
 
     fn on_input(&mut self, control: &str, event: InputEvent) {
         self.last_deck_input = Instant::now();
+        // the rollers did nothing on the owner's Mac (2026-10-14): every turn shows in the log for now
+        if control.starts_with("rollers") {
+            let s = self.lock();
+            log::info!("input {control} {event:?} (profile {:?}, bound: {})", s.active, s.active_profile().is_some_and(|p| p.controls.contains_key(control)));
+        }
         if self.blanked {
             // the first touch only wakes the deck; it does not run an action
             self.blanked = false;
@@ -1345,6 +1466,10 @@ impl Worker {
 
     /// Run the binding stored under `id` (a control id, maybe with a gesture suffix).
     fn fire(&mut self, id: &str, event: InputEvent) {
+        // the tour's "One control, many jobs" ticks a hold or a double press off as it happens
+        if (id.ends_with(":hold") || id.ends_with(":double")) && self.lock().tour_dry_run {
+            let _ = self.app.emit("tour://gesture", id.rsplit('/').next().unwrap_or(id));
+        }
         let Some(binding) = self.lock().active_profile().and_then(|p| p.controls.get(id).cloned()) else { return };
         if binding.action == actions::GAMES {
             if matches!(event, InputEvent::Press(true)) {
@@ -1441,6 +1566,22 @@ impl Worker {
                 .unwrap_or_default();
             (s.foreground.clone(), mapped)
         };
+        // scrubbing a song with the dial: the ring moves at every detent, the player is told once
+        // the turning pauses (owner: it jumped every few seconds instead of moving smoothly)
+        if binding.action == actions::NOW_PLAYING
+            && actions::param_str(&binding.params, "turn") == "seek"
+            && let InputEvent::Turn(d) = event
+            && let Some(share) = self.progress_share()
+            && let Some((_, of, playing, _)) = self.progress
+        {
+            // two seconds a detent; a fast spin (several detents at once) goes three times as far
+            let step = if d.unsigned_abs() >= 3 { 6.0 } else { 2.0 };
+            let at = (share * of + f32::from(d) * step).clamp(0.0, (of - 1.0).max(0.0));
+            self.progress = Some((at, of, playing, Instant::now()));
+            self.seek_to = Some((at, Instant::now()));
+            self.dial_dirty = true;
+            return;
+        }
         self.executor.foreground = foreground;
         self.executor.mapped = mapped;
         match self.executor.run(binding, event) {
@@ -1704,7 +1845,8 @@ impl Worker {
                             match (self.monitor_value(b), self.live_face(&id, b, Instant::now())) {
                                 // a monitor key: the metric and its value instead of the label
                                 (Some((metric, value)), _) => {
-                                    Look { label: Some(format!("{} {}", metric.name(), value.map(|v| metric.format(v)).unwrap_or_else(|| "–".into()))), icon: None, ..look }
+                                    // the value big, the metric's name under it, like a clock face (the dial draws it the same way)
+                                    Look { label: Some(format!("{}\n{}", value.map(|v| metric.format(v)).unwrap_or_else(|| "–".into()), metric.name())), icon: None, face: true, ..look }
                                 }
                                 // a clock or timer: its text, big; a timer that ran out turns red
                                 (None, Some(face)) => {
@@ -1842,6 +1984,43 @@ impl Worker {
             self.redraw_keys();
             self.dial_dirty = true;
         }
+    }
+
+    /// The song moved on: the dial's ring is drawn again when it moved by a percent or more.
+    fn on_progress(&mut self, p: Option<(f32, f32, bool)>) {
+        // while scrubbing (and a moment after), the player's own reading is older than the dial
+        if self.seek_to.is_some() || self.seek_sent.is_some_and(|t| t.elapsed() < Duration::from_millis(1500)) {
+            return;
+        }
+        self.progress = p.map(|(at, of, playing)| (at, of, playing, Instant::now()));
+        if self.progress_share().map(|v| (v * 1000.0) as u16).is_some_and(|v| self.progress_drawn.is_none_or(|d| v.abs_diff(d) >= 10)) || (self.progress.is_none() && self.progress_drawn.is_some()) {
+            let on_dial = self.lock().active_profile().is_some_and(|p| p.controls.get("dial").is_some_and(|b| b.action == actions::NOW_PLAYING));
+            if on_dial {
+                self.dial_dirty = true;
+            }
+        }
+    }
+
+    /// Tell the player where to go once the dial has stood still for a moment.
+    fn send_seek(&mut self, now: Instant) {
+        if let Some((at, turned)) = self.seek_to
+            && now.duration_since(turned) >= Duration::from_millis(180)
+        {
+            self.seek_to = None;
+            self.seek_sent = Some(now);
+            std::thread::spawn(move || {
+                if let Err(e) = media::seek_to(f64::from(at)) {
+                    log::warn!("seek: {e}");
+                }
+            });
+        }
+    }
+
+    /// How much of the song has played now (0..=1), from the last reading.
+    fn progress_share(&self) -> Option<f32> {
+        let (at, of, playing, read) = self.progress?;
+        let at = if playing { at + read.elapsed().as_secs_f32() } else { at };
+        Some((at / of).clamp(0.0, 1.0))
     }
 
     fn on_metrics(&mut self, sample: monitor::Sample) {
@@ -2819,7 +2998,9 @@ impl Worker {
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::NOW_PLAYING) => {
                     let cover = images::uri(images::COVER_REF);
                     let track = self.now_playing.as_ref().map(|(t, a, p)| (t.as_str(), a.as_str(), *p, cover.as_deref()));
-                    render::now_playing_dial_svg(&look, track, rotation)
+                    let share = self.progress_share();
+                    self.progress_drawn = share.map(|v| (v * 1000.0) as u16);
+                    render::now_playing_dial_svg(&look, track, share, rotation)
                 }
                 (None, None) => render::dial_svg(&look, value, rotation),
             };
@@ -2831,7 +3012,7 @@ impl Worker {
             };
             let house_look = Look { bg: Some(house::BG.into()), fg: Some(house::LABEL.into()), ..Look::default() };
             let svg = match ui {
-                (Some(question), _) => render::with_caption(&render::dial_svg(&Look { label: Some(question), ..house_look }, None, rotation), "?", rotation),
+                (Some(question), _) => render::question_dial_svg(&question, rotation),
                 (None, Some(status)) => render::time_dial_svg(&house_look, &status.main, status.detail.as_deref(), None, rotation),
                 _ => svg,
             };
@@ -2942,12 +3123,56 @@ mod tests {
         assert_eq!(go(&store, "test", "ps", "chrome.exe"), Some(("test".into(), None)));
         // picking Photoshop's profile by hand makes it home: it stays outside Photoshop too
         assert_eq!(go(&store, "ps", "ps", "chrome.exe"), None);
+        // a ready profile the user has not switched on stays out of switching
+        store.profiles.get_mut("ps").unwrap().switch_in = Some(false);
+        assert_eq!(go(&store, "desk", "desk", "Photoshop.exe"), None, "Switch in with the app is off");
+        store.profiles.get_mut("ps").unwrap().switch_in = None;
         // pinned: nothing switches
         store.settings.pinned = true;
         assert_eq!(go(&store, "desk", "desk", "Photoshop.exe"), None);
         store.settings.pinned = false;
         store.settings.auto_switch = false;
         assert_eq!(go(&store, "desk", "desk", "Photoshop.exe"), None, "auto-switch off");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn use_this_puts_a_new_version_into_the_users_deck() {
+        let dir = std::env::temp_dir().join(format!("hubdeck-version-{}", std::process::id()));
+        let mut store = Store::load(&dir);
+        let key = || Binding { action: "core.media".into(), params: serde_json::json!({}), look: Look::default(), accel: false, look_on: None, swap_turns: false };
+        let mut mine = Profile::new("My deck · dial and knobs");
+        mine.id = "mine".into();
+        mine.apps = vec!["Spotify.exe".into()];
+        mine.controls.insert("keys.0".into(), key());
+        store.save_profile(mine).unwrap();
+        // the assistant's version of it, linked by id
+        let mut draft = Profile::new("Knobs for Spotify");
+        draft.id = "d1".into();
+        draft.assistant = true;
+        draft.version_of = Some("mine".into());
+        draft.controls.insert("knobs.1".into(), key());
+        draft.edge = Some("#79ecc6".into());
+        store.save_profile(draft.clone()).unwrap();
+        store.settings.drafts.push("d1".into());
+        assert_eq!(version_target(&store, &draft).as_deref(), Some("mine"));
+        // a draft is never the profile another draft replaces; a new deck replaces nothing
+        let mut other = Profile::new("Streaming");
+        other.id = "d2".into();
+        other.assistant = true;
+        other.version_of = Some("d1".into());
+        assert_eq!(version_target(&store, &other), None);
+        // without the link, the same name (with or without " · sketch") says which one
+        let mut named = Profile::new("My deck · dial and knobs · sketch");
+        named.assistant = true;
+        assert_eq!(version_target(&store, &named).as_deref(), Some("mine"));
+        named.assistant = false;
+        assert_eq!(version_target(&store, &named), None, "only the assistant's drafts by name");
+        assert_eq!(put_version(&mut store, "d1", "mine").unwrap(), "My deck · dial and knobs");
+        let p = &store.profiles["mine"];
+        assert_eq!((p.apps.clone(), p.edge.as_deref()), (vec!["Spotify.exe".to_string()], Some("#79ecc6")), "its apps stay, the draft's lights come");
+        assert!(p.controls.contains_key("knobs.1") && !p.controls.contains_key("keys.0"), "the draft's controls replace the old ones");
+        assert!(!store.profiles.contains_key("d1") && store.settings.drafts.is_empty(), "the draft is gone");
         let _ = std::fs::remove_dir_all(dir);
     }
 

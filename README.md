@@ -1,27 +1,85 @@
-# HubDeck
+<p align="center">
+  <img src="site/images/icon.png" width="104" height="104" alt="HubDeck">
+</p>
 
-Open-source desktop app for the **Cooler Master MasterHUB** modular controller. It does everything
-the official app did and a lot more with the same hardware, with no account, no cloud and no
-telemetry. Windows and macOS. It runs plugins made for Stream Deck, and an AI assistant can build
-your deck with you.
+<h1 align="center">HubDeck</h1>
+
+<p align="center">
+  <b>The free, open-source app for the Cooler Master MasterHUB modular deck.</b><br>
+  Windows and macOS. No account, no cloud, no telemetry.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Przemotar/hubdeck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Przemotar/hubdeck?label=release&color=6e56ff"></a>
+  <a href="https://github.com/Przemotar/hubdeck/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Przemotar/hubdeck/ci.yml?branch=main&label=CI"></a>
+  <a href="#license"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue"></a>
+  <img alt="Windows and macOS" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-555">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Przemotar/hubdeck/releases/latest/download/HubDeck-windows-x64-setup.exe"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/Przemotar/hubdeck/releases/latest/download/HubDeck-macos.dmg"><b>Download for macOS</b></a> ·
+  <a href="https://przemotar.github.io/hubdeck/">Website</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="#faq">FAQ</a>
+</p>
+
+![HubDeck: the deck drawn live with its LED colors, the action library and the key editor](docs/images/hubdeck-main.png)
 
 > HubDeck is an independent project. It is not made, endorsed or supported by Cooler Master.
 > "Cooler Master" and "MasterHUB" are trademarks of their owner and are used here only to say
 > which hardware this software works with.
 
-![HubDeck: the deck drawn live with its LED colors, the action library and the inspector](docs/images/hubdeck-main.png)
+## Highlights
 
-## Why
+- **Every module, live.** 15 LCD keys, the round dial, knobs, faders, rollers and the edge light,
+  found and drawn as they sit on your base, while it runs.
+- **A deck made for you in minutes.** Say what you do most; HubDeck builds a deck for your modules
+  and apps and walks you through it on the hardware. No AI needed.
+- **Profiles that follow the app in front**, with per-app volume, mute, media with cover art, OBS,
+  Home Assistant, monitor brightness and system stats.
+- **About 200 Stream Deck plugins** run as they are (Spotify, Discord, OBS, Hue and more), one click
+  from a catalog.
+- **Safe by design.** Firmware is never written; dangerous commands are refused in code. Nothing
+  leaves your computer unless you turn it on ([PRIVACY.md](PRIVACY.md)).
+- **Light.** About 1 % of one CPU core and 45 MB of memory in the tray.
 
-The MasterHUB is good hardware: a base with an edge light, and modules you arrange as you like (15
-LCD keys, a dial with a round screen, knobs, faders, rollers). Its official software has not kept up:
-pieces promised to backers (an SDK, macOS support, more integrations) have not arrived, updates are
-rare, and owners ask about bugs and whether it will stay supported
-([what we found](docs/OFFICIAL-APP.md)). HubDeck is a new, open app for the same hardware, so the
-deck keeps working and keeps getting better. The protocol was worked out from public research and checked
-module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
+## Install
+
+Download from [Releases](https://github.com/Przemotar/hubdeck/releases).
+
+**Windows 10 and 11**: run `HubDeck_x.y.z_x64-setup.exe`. Windows SmartScreen may say it does not
+know the app (it is not signed with a paid certificate): choose *More info > Run anyway*.
+
+**macOS 12 or later** (Apple silicon and Intel): open the `.dmg` and drag HubDeck to Applications.
+The app is not notarised by Apple yet, so the first time macOS says it "could not verify" HubDeck.
+Once only:
+
+1. Click *Done* (not *Move to Trash*).
+2. Open System Settings > Privacy & Security, scroll to Security and click *Open Anyway* next to
+   the line about HubDeck; confirm with your password or Touch ID.
+3. Click *Open* in the next message.
+
+On macOS 14 and older, right-click HubDeck in Applications and choose *Open* also works. To send
+shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
+app asks for it with a button. Setting one app's own volume (macOS 14.2 or later) asks once for
+System Audio Recording: HubDeck plays that app's sound at the level you set and records nothing.
+
+Close the official MasterHUB app first: two apps cannot drive the deck at once.
+
+### Known issues
+
+- macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
+  to restart that module by itself, and taking it off the base and putting it back always helps.
+- macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
+- Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
+  pages do.
+- Twitch sign-in is off until the app registration is done. Linux is not supported.
 
 ## What it does
+
+Everything in detail. Coming next: Twitch actions (built, waiting for the app's Twitch
+registration), a shared profiles gallery, more than one base.
 
 **Deck and modules**
 - Every module: 15 keys, dial with its 240x240 screen, knobs, faders, rollers and the base. Attach and
@@ -38,7 +96,7 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 - Key pages, press / hold / double press on every key, knob and the dial, multi-actions with delays
   and conditions, a keyboard macro recorder, toggles, several modes on one dial.
 - Profiles in a OneDrive or Dropbox folder to share them between PCs; daily backups with
-  one-click restore; import of profiles exported by the official app (`.mhz`).
+  one-click restore; import of profiles exported by the official app (`.mhz`, beta).
 
 **Actions**
 - Open apps, files and websites (with the app's own icon), run commands, hotkeys (F13-F24, media
@@ -75,8 +133,6 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 - OBS Studio and Streamlabs Desktop: scenes, record, stream, replay, sources, mixer, with the live
   state on the keys.
 - Spotify (like, playlists), Home Assistant (devices, scenes, lights, services), MIDI to any DAW.
-- Twitch (chat, markers, clips, ads, title): needs a Twitch app registration in the build that is
-  not done yet, so its sign-in is off for now.
 - Claude Code: a key per coding session that shows whether it works, needs your permission or
   waits for you. Only the state and the project folder name are sent; never your prompts.
 - Plugins in any language over a local WebSocket, and a local API for scripts; see
@@ -100,8 +156,7 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
   ([how to set up a game](docs/GAMES-SETUP.md)). Each one adapts to the modules you have.
 
 **Sharing**
-- A profile and all its pictures as one `.hubdeck` file. A shared gallery inside the app is ready
-  and will open when the gallery repository is online ([docs/SHARING.md](docs/SHARING.md)).
+- A profile and all its pictures as one `.hubdeck` file; secrets in web requests are left out.
 
 **Safe and light**
 - The module firmware is never updated or changed. Commands that could rewrite serial numbers,
@@ -115,43 +170,61 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 - Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
   flashes); English and Polish.
 
-| | |
-|---|---|
-| ![A game profile: skills on the keys, voice chat and music on the knobs, the game volume on the dial](docs/images/hubdeck-game.png) | ![Settings: language, look, lights, screens, connections](docs/images/hubdeck-settings.png) |
-| ![Profile settings: linked apps and switching](docs/images/hubdeck-profile.png) | ![Icon picker with game icons](docs/images/hubdeck-icons.png) |
-| ![Build the deck step by step: a gallery of options for the dial, each tried on the deck](docs/images/hubdeck-builder.png) | ![The tour: a deck made at once and walked through part by part, the control to try lit on the deck](docs/images/hubdeck-tour.png) |
+## Screenshots
 
-## Install
+**The tour**: a deck made for your modules at once, walked through part by part; the control to try
+lights up on the deck.
 
-Download from [Releases](https://github.com/Przemotar/hubdeck/releases).
+![The tour: a deck made at once and walked through part by part](docs/images/hubdeck-tour.png)
 
-**Windows 10 and 11**: run `HubDeck_x.y.z_x64-setup.exe`. Windows SmartScreen may say it does not
-know the app (it is not signed with a paid certificate): choose *More info > Run anyway*.
+**Settings**: one page with sections; Lights and screens, Connections, Plugins, Backups, Updates.
 
-**macOS 12 or later** (Apple silicon and Intel): open the `.dmg` and drag HubDeck to Applications.
-The app is not notarised by Apple yet, so the first time macOS says it "could not verify" HubDeck.
-Once only:
+![Settings](docs/images/hubdeck-settings.png)
 
-1. Click *Done* (not *Move to Trash*).
-2. Open System Settings > Privacy & Security, scroll to Security and click *Open Anyway* next to
-   the line about HubDeck; confirm with your password or Touch ID.
-3. Click *Open* in the next message.
+## FAQ
 
-On macOS 14 and older, right-click HubDeck in Applications and choose *Open* also works. To send
-shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
-app asks for it with a button. Setting one app's own volume (macOS 14.2 or later) asks once for
-System Audio Recording: HubDeck plays that app's sound at the level you set and records nothing.
+**Can HubDeck damage or brick my modules?**
+No. HubDeck never writes firmware. Commands that could rewrite serial numbers, reset a module or
+flash firmware are not part of its protocol code, and reports carrying them are refused
+(`crates/mh-protocol/src/safety.rs`).
 
-Close the official MasterHUB app first: two apps cannot drive the deck at once.
+**Do I need to uninstall the official app? Can I go back?**
+No uninstall is needed; just quit the official app first, since two apps cannot drive the deck at
+once. To go back, quit HubDeck (tray > Quit) and start the official app; your modules are unchanged.
 
-### Known issues
+**Does it work with a Stream Deck or other decks?**
+No, it drives the MasterHUB only. It runs plugins *made for* Stream Deck on the MasterHUB.
 
-- macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
-  to restart that module by itself, and taking it off the base and putting it back always helps.
-- macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
-- Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
-  pages do.
-- Twitch sign-in is off until the app registration is done. Linux is not supported.
+**Is the AI required? Does it cost anything?**
+No. The tour, the editor and everything else work without it. The optional assistant runs on your
+own Claude Code, which needs a Claude Pro or Max plan or an Anthropic API key.
+
+**Why is the app unsigned? Is it safe?**
+Code-signing certificates cost money every year; the installers are built from this repository by
+GitHub Actions, and each release lists the files' SHA-256. The source is all here, and
+[PRIVACY.md](PRIVACY.md) lists everything that can go online.
+
+**Linux?**
+Not yet. The protocol code is cross-platform; the app needs a Linux pass and a tester with a deck.
+
+## Documentation
+
+- [Stream Deck plugins](docs/STREAMDECK-PLUGINS.md): what runs and how
+- [The deck assistant](docs/ASSISTANT.md) and [your own apps on the deck](docs/APP-CONTRACT.md)
+- [Games](docs/GAMES-SETUP.md), [sharing profiles](docs/SHARING.md), [the command line](docs/CLI.md)
+- [Plugins for developers](docs/PLUGINS.md), [MCP tools](docs/MCP.md)
+- [The USB protocol](PROTOCOL.md), [architecture](ARCHITECTURE.md), [how it was built](docs/CASE-STUDY.md)
+- [Comparison with the official app](docs/OFFICIAL-APP.md)
+
+## Background
+
+The MasterHUB is good hardware: a base with an edge light, and modules you arrange as you like (15
+LCD keys, a dial with a round screen, knobs, faders, rollers). Its official software has not kept up:
+pieces promised to backers (an SDK, macOS support, more integrations) have not arrived, updates are
+rare, and owners ask about bugs and whether it will stay supported
+([what we found](docs/OFFICIAL-APP.md)). HubDeck is a new, open app for the same hardware, so the
+deck keeps working and keeps getting better. The protocol was worked out from public research and checked
+module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 
 ## Build from source
 

@@ -74,7 +74,7 @@ fn plugin_action(uuid: &str) -> Option<(String, String)> {
 fn song_svg(look: &Look, title: &str, line: &str, ring: Option<f32>) -> String {
     match images::uri(images::COVER_REF) {
         Some(cover) => render::cover_dial_svg(&cover, title, line, ring, 0),
-        None => render::now_playing_dial_svg(look, Some((title, line, true, None)), 0),
+        None => render::now_playing_dial_svg(look, Some((title, line, true, None)), Some(0.4), 0),
     }
 }
 

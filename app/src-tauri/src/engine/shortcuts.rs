@@ -1,11 +1,13 @@
-//! Checked shortcut packs (`shortcuts.json`): the default Windows shortcuts of popular apps, each
-//! pack with the vendor page it was read from. The deck assistant puts only these on keys without
+//! Checked shortcut packs (`shortcuts.json`): the default shortcuts of popular apps on Windows and
+//! on macOS (`os`), each pack with the vendor page it was read from. The deck assistant puts only these on keys without
 //! a mark; any other shortcut in a profile it made gets a "not checked" mark (`check.rs`), and the
 //! ones that close, quit or delete go on a hold, never a plain press (`guard.rs`).
 
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
+
+use super::profile::app_stem;
 
 const PACKS: &str = include_str!("shortcuts.json");
 
@@ -15,13 +17,23 @@ pub struct Shortcut {
     pub does: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub destructive: bool,
+    /// On the app's ready profile, in this order, with this icon (`icons.rs`); a short `label`
+    /// for the key when `does` is too long.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Pack {
     pub app: String,
-    /// Programs the pack is for; `*` = everywhere (Windows itself).
+    /// Programs the pack is for (`Spotify.exe`, `Spotify.app`: compared by [`app_stem`]); `*` =
+    /// everywhere (the system itself).
     pub exes: Vec<String>,
+    /// The system its keys are for: `windows` or `macos` (`std::env::consts::OS`); "" = both.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub os: String,
     pub sources: Vec<String>,
     #[serde(default)]
     pub note: String,
@@ -33,9 +45,14 @@ struct File {
     packs: Vec<Pack>,
 }
 
-pub fn packs() -> &'static [Pack] {
+fn all() -> &'static [Pack] {
     static P: OnceLock<Vec<Pack>> = OnceLock::new();
     P.get_or_init(|| serde_json::from_str::<File>(PACKS).map(|f| f.packs).unwrap_or_default())
+}
+
+/// The packs for this system (a Windows pack's Ctrl+T is not a Mac's Cmd+T).
+pub fn packs() -> Vec<&'static Pack> {
+    all().iter().filter(|p| p.os.is_empty() || p.os == std::env::consts::OS).collect()
 }
 
 /// `ctrl + shift+m` and `Shift+Ctrl+M` -> `ctrl+shift+m` (modifiers in one order, one spelling).
@@ -61,14 +78,16 @@ pub fn normalize(combo: &str) -> String {
     mods.into_iter().map(|(_, n)| n).chain(std::iter::once(key.to_string())).collect::<Vec<_>>().join("+")
 }
 
-fn exe_name(exe: &str) -> String {
-    exe.rsplit(['\\', '/']).next().unwrap_or(exe).to_lowercase()
+/// The packs that apply to a profile linked to `apps` (their own, and the system itself), by one
+/// name for an app on both systems (`Google Chrome.app` = `chrome.exe`).
+pub fn for_apps(apps: &[String]) -> Vec<&'static Pack> {
+    let names: Vec<String> = apps.iter().map(|a| app_stem(a.split(':').next().unwrap_or(a))).collect();
+    packs().into_iter().filter(|p| p.exes.iter().any(|e| e == "*" || names.iter().any(|n| wildcard(&app_stem(e), n)))).collect()
 }
 
-/// The packs that apply to a profile linked to `apps` (their own, and Windows itself).
-pub fn for_apps(apps: &[String]) -> Vec<&'static Pack> {
-    let names: Vec<String> = apps.iter().map(|a| exe_name(a)).collect();
-    packs().iter().filter(|p| p.exes.iter().any(|e| e == "*" || names.iter().any(|n| wildcard(&e.to_lowercase(), n)))).collect()
+/// The pack of this program itself (not the system's), for this system.
+pub fn own_pack(exe: &str) -> Option<&'static Pack> {
+    for_apps(&[exe.to_string()]).into_iter().find(|p| !p.exes.iter().any(|e| e == "*"))
 }
 
 /// `vegas*.exe` matches `vegas220.exe`; otherwise the names are equal.
@@ -79,14 +98,14 @@ fn wildcard(pattern: &str, name: &str) -> bool {
     }
 }
 
-fn find(combo: &str, apps: &[String]) -> Option<&'static Shortcut> {
+fn find(combo: &str, apps: &[String]) -> Vec<&'static Shortcut> {
     let n = normalize(combo);
-    for_apps(apps).into_iter().flat_map(|p| p.shortcuts.iter()).find(|s| normalize(&s.keys) == n)
+    for_apps(apps).into_iter().flat_map(|p| p.shortcuts.iter()).filter(|s| normalize(&s.keys) == n).collect()
 }
 
-/// Is `combo` in a checked pack for these apps (or Windows)?
+/// Is `combo` in a checked pack for these apps (or the system)?
 pub fn is_checked(combo: &str, apps: &[String]) -> bool {
-    find(combo, apps).is_some()
+    !find(combo, apps).is_empty()
 }
 
 /// Shortcuts that close, quit or delete something wherever they are pressed.
@@ -94,7 +113,8 @@ const ALWAYS_DESTRUCTIVE: [&str; 7] = ["alt+f4", "ctrl+w", "ctrl+f4", "ctrl+q", 
 
 /// Does `combo` close, quit or delete (in these apps, or anywhere)?
 pub fn is_destructive(combo: &str, apps: &[String]) -> bool {
-    ALWAYS_DESTRUCTIVE.contains(&normalize(combo).as_str()) || find(combo, apps).is_some_and(|s| s.destructive)
+    // any pack that calls it closing wins (the Mac's own pack: Cmd+W closes in every app)
+    ALWAYS_DESTRUCTIVE.contains(&normalize(combo).as_str()) || find(combo, apps).iter().any(|s| s.destructive)
 }
 
 #[cfg(test)]
@@ -103,15 +123,23 @@ mod tests {
 
     #[test]
     fn the_packs_read_and_every_shortcut_parses() {
-        assert!(!packs().is_empty(), "shortcuts.json reads");
-        for p in packs() {
-            assert!(!p.sources.is_empty(), "{} has its source", p.app);
+        assert!(!all().is_empty(), "shortcuts.json reads");
+        for p in all() {
+            assert!(["", "windows", "macos"].contains(&p.os.as_str()), "{}: os {:?}", p.app, p.os);
+            // a pack without shortcuts says in its note why none could be checked
+            assert!(!p.sources.is_empty() || (p.shortcuts.is_empty() && !p.note.is_empty()), "{} has its source", p.app);
             for s in &p.shortcuts {
-                // the packs are Windows shortcuts; a Mac has no Print Screen key to parse
+                // a Mac has no Print Screen key to parse
                 if cfg!(target_os = "macos") && s.keys.contains("PrintScreen") {
                     continue;
                 }
                 assert!(super::super::hotkey::parse(&s.keys).is_some(), "{}: {:?} parses", p.app, s.keys);
+                if let Some(icon) = &s.icon {
+                    assert!(super::super::icons::ICONS.iter().any(|(n, _)| n == icon), "{}: icon {icon} exists", p.app);
+                    assert!(!s.destructive, "{}: {} closes something: never a plain key on the template", p.app, s.keys);
+                    let label = s.label.as_deref().unwrap_or(&s.does);
+                    assert!(label.chars().count() <= 12, "{}: {label:?} fits a key", p.app);
+                }
             }
         }
     }
@@ -124,5 +152,16 @@ mod tests {
         assert!(wildcard("vegas*.exe", "vegas220.exe") && !wildcard("vegas*.exe", "veg.exe"));
         assert!(is_destructive("Alt+F4", &[]));
         assert!(!is_destructive("Ctrl+Z", &[]));
+    }
+
+    #[test]
+    fn each_system_checks_its_own_keys() {
+        let mac = cfg!(target_os = "macos");
+        assert_eq!(is_checked("Cmd+Shift+3", &[]), mac, "the Mac's screenshot");
+        assert_eq!(is_checked("Ctrl+Cmd+Q", &[]), mac, "the Mac's lock screen");
+        assert_eq!(is_checked("Win+L", &[]), !mac, "Windows' lock");
+        assert_eq!(is_destructive("Cmd+Q", &[]), mac);
+        // one name for an app on both systems
+        assert_eq!(for_apps(&["Google Chrome.app".into()]).len(), for_apps(&["chrome.exe".into()]).len());
     }
 }

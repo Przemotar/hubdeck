@@ -70,6 +70,8 @@ pub enum AssistantEvent {
     Error { message: String },
     /// How full the conversation's context is: tokens in it now and the model's window.
     Context { used: u64, window: u64 },
+    /// The model Claude Code runs this talk on (from its first line), for the bar above the talk.
+    Model { model: String },
 }
 
 /// What the scan found, and the exact text the first message sends (shown to the user first).
@@ -80,16 +82,16 @@ pub struct Scan {
     pub used: Vec<(String, f32, u32)>,
     /// Since when that is counted (local time).
     pub since: String,
-    /// Apps seen in front lately (HubDeck remembers them from its first start).
-    pub recent: Vec<String>,
-    pub installed: usize,
-    pub games: Vec<String>,
     /// Attached to the base now (the assistant builds for these).
     pub modules: Vec<String>,
     /// Owned but not attached now.
     pub detached: Vec<String>,
     pub profiles: Vec<String>,
+    /// What goes with the first message: the apps used most (names, hours), the deck, the taste
+    /// notes (owner's pick 2a, 2026-10-14: the short consent says exactly this).
     pub text: String,
+    /// The same without the app list ("Send without the app list").
+    pub deck_text: String,
 }
 
 /// A friendly name for an exe the user has used (its own name when HubDeck has seen its path).
@@ -110,42 +112,32 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
     };
     tauri::async_runtime::spawn_blocking(move || {
         let used: Vec<(String, f32, u32)> = super::usage::top(25).into_iter().map(|(exe, h, d)| (name_of(&exe), h, d)).filter(|(_, h, _)| *h >= 0.05).collect();
-        let mut recent: Vec<String> =
-            super::apps::list().into_iter().filter(|a| !a.exe.to_lowercase().starts_with("hubdeck")).map(|a| a.name.unwrap_or_else(|| a.exe.trim_end_matches(".exe").to_string())).collect();
-        recent.dedup();
-        let installed = super::installed::list(false);
-        let apps: Vec<String> = installed.apps.iter().map(|a| a.name.clone()).filter(|n| !is_tool(n)).collect();
-        let games: Vec<String> = installed.games.iter().map(|g| g.name.clone()).collect();
         let since = super::usage::since();
-        let text = format!("{}\n{}", scan_text(&used, &since, &recent, &apps, &games, &modules, &detached, &profiles), super::taste::text());
-        Scan { used, since, recent, installed: apps.len(), games, modules, detached, profiles, text }
+        let taste = super::taste::text();
+        let text = format!("{}\n{taste}", scan_text(Some((&used, &since)), &modules, &detached, &profiles));
+        let deck_text = format!("{}\n{taste}", scan_text(None, &modules, &detached, &profiles));
+        Scan { used, since, modules, detached, profiles, text, deck_text }
     })
     .await
     .map_err(|e| e.to_string())
 }
 
-/// Developer and system tools nobody builds a deck profile for (prompts, wizards, installers).
-fn is_tool(name: &str) -> bool {
-    let n = name.to_lowercase();
-    ["command prompt", "powershell for vs", "wizard", "installer", "configure ", "tuning advisor", "verifier", "client configuration", "uninstall", "readme", "release notes", "help"]
-        .iter()
-        .any(|w| n.contains(w))
-}
+/// An app used: (name, hours in front, days).
+type Used = (String, f32, u32);
 
-/// The scan as the assistant gets it.
-#[allow(clippy::too_many_arguments)]
-fn scan_text(used: &[(String, f32, u32)], since: &str, recent: &[String], apps: &[String], games: &[String], modules: &[String], detached: &[String], profiles: &[String]) -> String {
-    let used = if used.is_empty() {
-        "nothing measured yet (HubDeck counts it from now on)".to_string()
-    } else {
-        used.iter().map(|(n, h, d)| format!("{n} ({h:.1} h on {d} days)")).collect::<Vec<_>>().join(", ")
-    };
+/// The scan as the assistant gets it: the apps used most (None: the user left them out) and the deck.
+/// Installed apps and games are not in it; the assistant looks them up when an idea needs them.
+fn scan_text(used: Option<(&[Used], &str)>, modules: &[String], detached: &[String], profiles: &[String]) -> String {
     let list = |v: &[String], max: usize| if v.is_empty() { "none".to_string() } else { v.iter().take(max).cloned().collect::<Vec<_>>().join(", ") };
+    let apps = match used {
+        Some(([], _)) => "\n- Apps used most: nothing measured yet (HubDeck counts it from now on)".to_string(),
+        Some((used, since)) => {
+            format!("\n- Apps used most (time in front, counted since {since}): {}", used.iter().map(|(n, h, d)| format!("{n} ({h:.1} h on {d} days)")).collect::<Vec<_>>().join(", "))
+        }
+        None => "\n- Apps used most: the user chose not to send them (ask what they use, or look up installed apps with list_apps)".to_string(),
+    };
     format!(
-        "What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most (time in front, counted since {since}): {used}\n- Apps in front lately, latest first: {}\n- Installed apps: {}\n- Installed games: {}\n- Deck modules attached now (build for these): {}\n- Owned but not attached now: {}\n- Profiles the user has now: {}",
-        list(recent, 25),
-        list(apps, 300),
-        list(games, 40),
+        "What HubDeck found on this computer (the user saw this before it was sent):{apps}\n- Deck modules attached now (build for these): {}\n- Owned but not attached now: {}\n- Profiles the user has now: {}",
         list(modules, 10),
         list(detached, 10),
         list(profiles, 40)
@@ -175,6 +167,9 @@ pub struct Idea {
     /// faders: [x5], edge}`, each binding `{action, params, label, icon}`. HubDeck makes a
     /// draft of it at once, so it can be seen and tried without another turn.
     pub deck: Option<Value>,
+    /// The id of the user's own profile this idea is a new version of ("" = a new deck).
+    #[serde(rename = "versionOf", skip_serializing_if = "String::is_empty")]
+    pub version_of: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -220,6 +215,7 @@ pub fn sketch_profile(idea: &Idea) -> (Option<Profile>, Vec<String>) {
     .ok();
     let Some(mut p) = p else { return (None, dropped) };
     p.assistant = true;
+    p.version_of = Some(idea.version_of.clone()).filter(|v| !v.is_empty());
     with_real_apps(&mut p);
     p.edge = deck["edge"].as_str().filter(|e| e.len() == 7 && e.starts_with('#')).map(str::to_string);
     let apps = p.apps.clone();
@@ -588,7 +584,7 @@ fn idea_from(v: &Value) -> Idea {
         .flatten()
         .map(|k| SampleKey { label: k["label"].as_str().unwrap_or_default().to_string(), icon: k["icon"].as_str().unwrap_or_default().to_string() })
         .collect();
-    Idea { title: text("title"), app: text("app"), pitch: text("pitch"), extras: list("extras"), keys, deck: v["deck"].is_object().then(|| v["deck"].clone()) }
+    Idea { title: text("title"), app: text("app"), pitch: text("pitch"), extras: list("extras"), keys, deck: v["deck"].is_object().then(|| v["deck"].clone()), version_of: text("versionOf") }
 }
 
 /// The `<ideas>[...]</ideas>` block of a message, split off: (text, ideas).
@@ -628,12 +624,13 @@ struct Read {
 fn read_line(line: &str) -> Read {
     let Ok(v) = serde_json::from_str::<Value>(line) else { return Read::default() };
     let session = v["session_id"].as_str().map(str::to_string);
+    let mut out = Vec::new();
     if v["type"] == "system"
         && let Some(model) = v["model"].as_str()
     {
         talk().model = Some(model.to_string());
+        out.push(AssistantEvent::Model { model: model.to_string() });
     }
-    let mut out = Vec::new();
     match v["type"].as_str() {
         // the message as it is written (`--include-partial-messages`)
         Some("stream_event") if v["event"]["type"] == "content_block_delta" && v["event"]["delta"]["type"] == "text_delta" => {
@@ -1157,16 +1154,23 @@ pub fn profile_try(engine: tauri::State<'_, Engine>, id: Option<String>) -> Resu
     engine.try_profile(id.as_deref())
 }
 
-/// "Use this" (keep = true: a normal profile from now on) or throw a draft away.
+/// "Use this" (keep = true: on the deck as home, replacing the profile it is a new version of)
+/// or throw a draft away. Kept: `{id, replaced}` (the name of the profile it went into).
 #[tauri::command]
-pub fn draft_settle(engine: tauri::State<'_, Engine>, id: String, keep: bool) -> Result<(), String> {
+pub fn draft_settle(engine: tauri::State<'_, Engine>, id: String, keep: bool) -> Result<Option<Value>, String> {
     // which ideas the user keeps or throws away is part of their taste (`taste.json`)
     let made_by_assistant = engine.lock().store.profiles.get(&id).filter(|p| p.assistant).map(|p| (p.name.clone(), p.apps.first().cloned().unwrap_or_default()));
-    engine.settle_draft(&id, keep)?;
+    let kept = if keep {
+        let (kept, replaced) = engine.use_draft(&id)?;
+        Some(json!({"id": kept, "replaced": replaced}))
+    } else {
+        engine.settle_draft(&id, false)?;
+        None
+    };
     if let Some((name, app)) = made_by_assistant {
         super::taste::outcome(&name, &app, keep);
     }
-    Ok(())
+    Ok(kept)
 }
 
 #[cfg(test)]
@@ -1265,21 +1269,12 @@ mod tests {
 
     #[test]
     fn the_scan_text_says_what_was_found() {
-        let t = scan_text(
-            &[("Visual Studio Code".into(), 12.5, 4)],
-            "2026-10-12 16:30",
-            &["Google Chrome".into()],
-            &["OBS Studio".into()],
-            &[],
-            &["keys".into(), "dial".into()],
-            &["faders".into()],
-            &["Everyday desk".into()],
-        );
+        let used = [("Visual Studio Code".to_string(), 12.5, 4)];
+        let t = scan_text(Some((&used, "2026-10-12 16:30")), &["keys".into(), "dial".into()], &["faders".into()], &["Everyday desk".into()]);
         assert!(t.contains("Owned but not attached now: faders"));
-        assert!(t.contains("in front lately, latest first: Google Chrome"));
-        assert!(is_tool("Developer Command Prompt for VS 2022") && !is_tool("DaVinci Resolve"));
         assert!(t.contains("Visual Studio Code (12.5 h on 4 days)"));
-        assert!(t.contains("Installed games: none"));
-        assert!(t.contains("keys, dial"));
+        assert!(t.contains("keys, dial") && t.contains("Everyday desk"));
+        let without = scan_text(None, &["keys".into()], &[], &[]);
+        assert!(!without.contains("Visual Studio Code") && without.contains("chose not to send them"), "without the app list: no app names");
     }
 }

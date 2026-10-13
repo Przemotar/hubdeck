@@ -5,16 +5,14 @@ delivered, and for each item whether HubDeck has it. Written 2026-10-11.
 
 Sources:
 
-- The official app, version 1.0.0.113 (installer of 2026-05-27), read as data in `ref/official/`
-  (gitignored): the UI source recovered from its source map (Vue components, the action catalog in
-  its store, locale files), the main process bundle and the background daemon. Nothing from it is
-  copied here; features are described in our own words.
+- The official app, version 1.0.0.113 (installer of 2026-05-27), used and read as data for
+  interoperability (which actions and profile format owners rely on). Nothing from it is copied
+  here; features are described in our own words.
 - The web: the Kickstarter campaign, Cooler Master's pages, press reviews (links in the sections).
-- HubDeck: `README.md`, `STATE.md`, `docs/ROADMAP.md`, `docs/PAIN-POINTS.md`, `docs/PRESETS.md`,
-  `app/src-tauri/src/engine/actions.rs`.
+- HubDeck: `README.md`, `docs/PRESETS.md`, `app/src-tauri/src/engine/actions.rs`.
 
 HubDeck column: **has**, **partial** or **missing**, with one line on why. "Built" items marked
-`[~]` in the roadmap (waiting for the owner's test) count as "has".
+and waiting for a hardware test count as "has".
 
 ## What the official app does
 
@@ -114,7 +112,7 @@ faders).
 | Open a `.mhz` by double-click | The app registers itself for `.mhz` files | **missing** |
 | Cloud backup | Upload a `.mhz` to a Cooler Master account ("MasterID") | **has** a local alternative: daily backups with restore, shared folder (OneDrive, Dropbox) |
 | Switch by the app in front | No | **has**, also by window title |
-| Several bases | Yes: picks the base, names it, keeps settings per base serial | **missing** (planned, `docs/PAIN-POINTS.md` item 20) |
+| Several bases | Yes: picks the base, names it, keeps settings per base serial | **missing** (planned) |
 | Rename base and modules | Yes | **missing** (minor) |
 
 ### Settings and system
@@ -229,7 +227,7 @@ In order of what a user switching from the official app would miss first.
    the official OBS actions were added on 2026-10-11.
 2. **Import `.mhz` profiles.** Built 2026-10-11 (`engine/mhz.rs`); still to check with one real
    file from a user.
-3. **Twitch actions**: built 2026-10-11; needs the HubDeck Twitch client id (owner) to sign in.
+3. **Twitch actions**: built 2026-10-11; needs HubDeck's own Twitch app registration to sign in.
 4. **Streamlabs Desktop**: built 2026-10-11; to try against a running Streamlabs Desktop.
 5. **Timer and clock on a key and on the dial**: built 2026-10-11 (an analog clock face is still missing).
 6. **Hardware lighting effects**: built 2026-10-11 (`leds.rs`); effects that differ between knobs of one module are not verified on the hardware yet.
@@ -241,12 +239,12 @@ In order of what a user switching from the official app would miss first.
 11. **Macro recorder**: engine part built 2026-10-11 (`recorder.rs`); needs a Record button in the multi-action editor.
 12. **Fast forward / back per media player**: built 2026-10-11 ("Seek in a player").
 13. **Illustrator preset**: built 2026-10-11.
-14. **More than one base.** Already item 20 of `docs/PAIN-POINTS.md`.
+14. **More than one base.** Planned.
 15. **More languages** (the official app has 17). Approach: open `i18n.ts` to community
     translations after the public release.
 16. **Software updates.** Already planned (phase 8, Tauri updater).
 17. **CPU temperature and AMD / Intel GPUs**: built 2026-10-11 from LibreHardwareMonitor's WMI (`lhm.rs`), read only while shown.
-18. **Discord** voice control: blocked for open source (see `STATE.md`); keep the hotkey preset.
+18. **Discord** voice control: not possible for open-source apps today; the hotkey preset stays.
 19. Small: open `.mhz` and HubDeck files by double-click, favorite colors, names for the base and
     modules.
 

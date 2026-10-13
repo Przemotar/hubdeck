@@ -1,7 +1,7 @@
 # Architecture
 
 Open-source desktop software for the Cooler Master MasterHUB modular controller, for Windows and macOS.
-Product name: **HubDeck** (chosen by the owner on 2026-10-09; the name must not use "MasterHUB" or
+Product name: **HubDeck** (chosen on 2026-10-09; the name must not use "MasterHUB" or
 "Cooler Master", the description may say "for the Cooler Master MasterHUB"). Tauri identifier
 `dev.hubdeck.app`, Rust package `hubdeck`. The repo folder and the private GitHub repo are still
 called `masterhub`; the public repo will be a clean export named `hubdeck`.

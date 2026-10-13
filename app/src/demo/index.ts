@@ -33,7 +33,7 @@ const UPDATE = {
 const profiles = new Map<string, Profile>((fixture.profiles as unknown as Profile[]).map((p) => [p.id, p]));
 
 // the tour in the browser demo: the parts of a deck for the demo's kit (screenshots, flows)
-const tour = { draft: "demo-everyday", focus: "games", kit: "dialKnobs", mac: false, call: "discord", music: "Spotify", games: 12, rollers: true, stops: [] as { id: string; keep: boolean; look: number; looks: number; controls: string[]; tryControl: string | null }[] };
+const tour = { draft: "demo-everyday", focus: "games", kit: "dialKnobs", mac: false, call: "discord", music: "Spotify", games: 12, rollers: true, stops: [] as { id: string; keep: boolean; look: number; looks: number; controls: string[]; tryControl: string | null; tasks?: string[]; faces?: string[] }[] };
 function tourView(focus: string) {
   const faders = demoParam("kit") === "faders";
   tour.focus = focus;
@@ -45,6 +45,8 @@ function tourView(focus: string) {
     part("mute", 1, "keys.5"),
     part("music", faders ? 1 : 2, faders ? "keys.8" : "dial"),
     part("apps", 1, "keys.0"),
+    { ...part("gestures", 1, "keys.5"), tasks: ["keys.5:hold", faders ? "keys.6:double" : "knobs.2:double", ...(faders ? [] : ["dial:hold"])] },
+    ...(faders ? [] : [{ ...part("dial", 6, "dial"), faces: ["nowPlaying", "clock", "timer", "cpu", "brightness", "scroll"] }]),
     part("superAnimations", 1, "keys.9"),
     part("superSaver", 1, null),
     part("superRainbow", 1, null),
@@ -88,8 +90,15 @@ let page: string | null = null;
 let beforeTour: string | null = null;
 let onboarded = new URLSearchParams(location.search).get("demo") !== "welcome" && demoParam("panel") !== "welcome";
 
+// "Ready for your apps": profiles HubDeck made for installed apps, switching in only once switched on
+const ready = new Map<string, boolean>();
+for (const [id, name, exe] of [["demo-ready-firefox", "Firefox", "firefox.exe"], ["demo-ready-steam", "Steam", "steam.exe"], ["demo-ready-whatsapp", "WhatsApp", "WhatsApp.exe"]]) {
+  profiles.set(id, { ...(fixture.profiles[0] as unknown as Profile), id, name, apps: [exe], inBar: false });
+  ready.set(id, false);
+}
+
 const state = (): EngineState => ({
-  profiles: [...profiles.values()].map((p) => ({ id: p.id, name: p.name, apps: p.apps, inBar: p.inBar ?? p.apps.length === 0 })),
+  profiles: [...profiles.values()].map((p) => ({ id: p.id, name: p.name, apps: p.apps, inBar: p.inBar ?? p.apps.length === 0, ready: ready.has(p.id), switchIn: ready.get(p.id) ?? true })),
   active,
   fallback: fixture.profiles[0].id,
   home: fixture.profiles[0].id,
@@ -225,7 +234,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         }
       : {},
   language_set: () => null,
-  dial_gallery: () => [],
+  dial_gallery: () => (fixture as unknown as { dialGallery?: unknown[] }).dialGallery ?? [],
   auto_seen: () => null,
   auto_set: () => null,
   profile_fill: () => 0,
@@ -268,6 +277,52 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
           { id: "volume", group: "One dial, many jobs", name: "System volume", does: "Turn: volume · press: mute", source: "Built in, no setup", setup: false, binding: { action: "core.volume", params: {}, look: { icon: "volume-2" } }, svg: null },
           { id: "tracks", group: "Music", name: "Songs", does: "Turn: next or previous song · press: play or pause", source: "Built in, no setup", setup: false, binding: { action: "core.nowPlaying", params: { turn: "tracks" }, look: { icon: "music" } }, svg: null },
         ],
+  // the deck assistant: `&assistant=none` (no Claude Code) or `signin` (not signed in)
+  assistant_info: () => {
+    const how = demoParam("assistant");
+    return {
+      cli: how === "none" ? null : "/usr/local/bin/claude",
+      version: "2.1.0",
+      loggedIn: how !== "signin" && how !== "none",
+      authMethod: "claude.ai",
+      plan: "max",
+      email: "you@example.com",
+      model: null,
+      session: null,
+      contextUsed: 0,
+      contextWindow: 0,
+      folder: "",
+      command: "claude",
+      rules: "",
+      chosenModel: null,
+      chosenEffort: null,
+      defaultModel: "claude-opus-5-5",
+      defaultEffort: null,
+      power: false,
+    };
+  },
+  assistant_scan: () => {
+    const deck = "- Deck modules attached now (build for these): keys, dial, knobs, rollers\n- Owned but not attached now: faders\n- Profiles the user has now: Everyday desk, OBS streaming";
+    return {
+      used: [["Spotify", 6.2, 4], ["Visual Studio Code", 12.5, 5]],
+      since: "2026-10-12 16:30",
+      modules: ["keys", "dial", "knobs", "rollers"],
+      detached: ["faders"],
+      profiles: ["Everyday desk", "OBS streaming"],
+      text: `What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most (time in front, counted since 2026-10-12 16:30): Visual Studio Code (12.5 h on 5 days), Spotify (6.2 h on 4 days)\n${deck}`,
+      deckText: `What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most: the user chose not to send them\n${deck}`,
+    };
+  },
+  assistant_send: () => {
+    setTimeout(() => void emit("assistant://event", { kind: "text", text: "Here are two ideas for the dial (demo answer).", choices: [], ideas: [] }), 300);
+    setTimeout(() => void emit("assistant://event", { kind: "done" }), 400);
+    return null;
+  },
+  profile_switch_in: ({ id, on }) => {
+    if (ready.has(id as string)) ready.set(id as string, !!on);
+    changed();
+  },
+  draft_settle: (a) => (a.keep ? { id: a.id, replaced: null } : null),
   builder_draft: () => ({ ...fixture.profiles[0], id: "demo-builder-draft", name: "My deck" }),
   onboarding_done: () => {
     onboarded = true;
@@ -286,10 +341,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   tour_suggest: () => ({ focus: "games", games: 12, obs: true, call: "discord", music: "Spotify", kit: FADERS_KIT ? "faders" : "dialKnobs", mac: false }),
   // the tour's deck: Everyday desk stands in for it on the drawing; Exit and Throw away go back
   tour_start: ({ focus }) => {
-    beforeTour ??= active;
-    active = "demo-everyday";
-    changed();
-    return tourView(focus as string);
+    const made = () => {
+      beforeTour ??= active;
+      active = "demo-everyday";
+      changed();
+      return tourView(focus as string);
+    };
+    // `&slowtour`: as long as a real first tour takes, to see the making steps
+    return demoParam("slowtour") !== undefined && demoParam("slowtour") !== null ? new Promise((done) => setTimeout(() => done(made()), 4000)) : made();
   },
   tour_set: ({ stop, keep, look }) => {
     const s = tour.stops.find((x) => x.id === stop);

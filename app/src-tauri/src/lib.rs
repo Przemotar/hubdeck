@@ -195,6 +195,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Deck::default())
         .setup(move |app| {
+            let _ = engine::exec::APP.set(app.handle().clone());
             log::info!("HubDeck {} starting", app.package_info().version);
             let data_dir = match testing {
                 Some(a) => a.data_dir.clone(),
@@ -301,6 +302,7 @@ pub fn run() {
             engine::tour::tour_exit,
             engine::starter::profile_for_app,
             engine::auto::auto_seen,
+            engine::commands::profile_switch_in,
             engine::states::apps_seen,
             engine::suggest::suggestions,
             engine::gallery::dial_gallery,

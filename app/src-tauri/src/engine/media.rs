@@ -17,6 +17,8 @@ pub struct Track {
     pub playing: bool,
     /// Cover art as `(mime type, bytes)`; None when the app gives none.
     pub cover: Option<(String, Vec<u8>)>,
+    /// Where in the song: (seconds played, seconds long), when the player says.
+    pub position: Option<(f32, f32)>,
 }
 
 const POLL: Duration = Duration::from_millis(1000);
@@ -29,6 +31,10 @@ pub fn watch(tx: Sender<Msg>) {
     loop {
         match platform::current(last.as_ref().map(|(t, a, _)| (t.as_str(), a.as_str()))) {
             Some(track) => {
+                // where in the song, every poll (the dial's ring follows it)
+                if tx.send(Msg::Progress(track.position.map(|(at, of)| (at, of, track.playing)))).is_err() {
+                    return;
+                }
                 let key = (track.title.clone(), track.artist.clone(), track.playing);
                 if last.as_ref() != Some(&key) {
                     last = Some(key);
@@ -89,7 +95,12 @@ mod platform {
         }
         let playing = session.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).map(|s| s == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing).unwrap_or(false);
         let cover = if same == Some((title.as_str(), artist.as_str())) { None } else { thumbnail(&props) };
-        Some(Track { title, artist, playing, cover })
+        let position = session.GetTimelineProperties().ok().and_then(|t| {
+            let at = t.Position().ok()?.Duration as f32 / 10_000_000.0;
+            let end = t.EndTime().ok()?.Duration as f32 / 10_000_000.0;
+            (end > 0.0).then_some((at, end))
+        });
+        Some(Track { title, artist, playing, cover, position })
     }
 
     pub fn seek(seconds: f64) -> Result<(), String> {
@@ -99,6 +110,13 @@ mod platform {
         let now = timeline.Position().map_err(|e| e.to_string())?.Duration;
         let target = (now + (seconds * 10_000_000.0) as i64).max(0);
         session.TryChangePlaybackPositionAsync(target).map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn seek_to(seconds: f64) -> Result<(), String> {
+        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
+        let session = manager.GetCurrentSession().map_err(|_| "nothing is playing".to_string())?;
+        session.TryChangePlaybackPositionAsync((seconds * 10_000_000.0) as i64).map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -122,6 +140,11 @@ pub fn seek(seconds: f64) -> Result<(), String> {
     platform::seek(seconds)
 }
 
+/// Go to `seconds` from the start of what plays now (the dial scrubbing a song).
+pub fn seek_to(seconds: f64) -> Result<(), String> {
+    platform::seek_to(seconds.max(0.0))
+}
+
 #[cfg(target_os = "macos")]
 mod platform {
     use super::Track;
@@ -143,19 +166,23 @@ mod platform {
 
     pub fn current(same: Option<(&str, &str)>) -> Option<Track> {
         for app in PLAYERS.into_iter().filter(|a| running(a)) {
-            // tab-separated: state, title, artist, artwork address (Spotify only)
+            // tab-separated: state, title, artist, artwork address (Spotify only), position, length
             let art = if app == "Spotify" { "artwork url of current track" } else { "\"\"" };
             let script = format!(
-                r#"if application "{app}" is running then tell application "{app}" to if player state is not stopped then return (player state as string) & tab & (name of current track) & tab & (artist of current track) & tab & ({art})"#
+                r#"if application "{app}" is running then tell application "{app}" to if player state is not stopped then return (player state as string) & tab & (name of current track) & tab & (artist of current track) & tab & ({art}) & tab & (player position as string) & tab & (duration of current track as string)"#
             );
             let Some(line) = osascript(&script).filter(|l| !l.is_empty()) else { continue };
             let mut parts = line.split('\t');
             let (state, title, artist, art) = (parts.next()?, parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            // numbers may come with a decimal comma; Spotify gives the length in milliseconds
+            let num = |s: Option<&str>| s.and_then(|v| v.trim().replace(',', ".").parse::<f32>().ok());
+            let (at, of) = (num(parts.next()), num(parts.next()).map(|d| if app == "Spotify" { d / 1000.0 } else { d }));
+            let position = at.zip(of).filter(|(_, of)| *of > 0.0);
             if title.is_empty() && artist.is_empty() {
                 continue;
             }
             let cover = if same == Some((title, artist)) || !art.starts_with("https://") { None } else { download(art) };
-            return Some(Track { title: title.to_string(), artist: artist.to_string(), playing: state == "playing", cover });
+            return Some(Track { title: title.to_string(), artist: artist.to_string(), playing: state == "playing", cover, position });
         }
         None
     }
@@ -173,6 +200,13 @@ mod platform {
             .map(|_| ())
             .ok_or_else(|| format!("{app} did not seek (System Settings > Privacy & Security > Automation: allow HubDeck to control {app})"))
     }
+
+    pub fn seek_to(seconds: f64) -> Result<(), String> {
+        let app = PLAYERS.into_iter().find(|a| running(a)).ok_or("neither Spotify nor Music is open")?;
+        osascript(&format!(r#"tell application "{app}" to set player position to {seconds:.1}"#))
+            .map(|_| ())
+            .ok_or_else(|| format!("{app} did not seek (System Settings > Privacy & Security > Automation: allow HubDeck to control {app})"))
+    }
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -186,6 +220,10 @@ mod platform {
     }
 
     pub fn seek(_seconds: f64) -> Result<(), String> {
+        Err("seeking is not wired up on this system yet".into())
+    }
+
+    pub fn seek_to(_seconds: f64) -> Result<(), String> {
         Err("seeking is not wired up on this system yet".into())
     }
 }

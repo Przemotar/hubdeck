@@ -140,7 +140,7 @@ pub fn with_ring(svg: &str, color: &str) -> String {
 }
 
 /// Settings > Screens: how app icons on Auto show (`icon`, `fill`, `fillLabel`).
-static APP_ICONS: std::sync::Mutex<&'static str> = std::sync::Mutex::new("icon");
+static APP_ICONS: std::sync::Mutex<&'static str> = std::sync::Mutex::new("fillLabel");
 
 pub fn set_app_icons(mode: &str) {
     *APP_ICONS.lock().unwrap_or_else(|e| e.into_inner()) = match mode {
@@ -532,11 +532,15 @@ pub fn dial_svg(look: &Look, value: Option<(Option<f32>, &str)>, rotation: i32) 
             let (ex, ey) = (c + r * rad.cos(), c + r * rad.sin());
             let large = if angle > 180.0 { 1 } else { 0 };
             let (caption, caption_px) = fit(caption, 20.0, 14.0, 2.0 * dial_chord(c + 62.0) - 40.0, false);
-            format!(
-                r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#3a3646" stroke-width="12"/><path d="M{sx} {sy} A{r} {r} 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="#c4b5fd" stroke-width="12" stroke-linecap="round"/>{}{}"##,
-                text(c, c + 22.0, 64.0, &fg, &format!("{}", (v * 100.0).round() as i32)),
-                text(c, c + 62.0, caption_px, "#a8a4b5", &caption[0])
-            )
+            // muted: the crossed speaker instead of a 0 (a 0 reads as a volume, not as "off")
+            let middle = if caption[0].to_lowercase().ends_with("muted") || caption[0].to_lowercase().ends_with("wyciszone") {
+                icon("volume-x", c - 30.0, c - 42.0, 60.0, &fg)
+            } else {
+                text(c, c + 22.0, 64.0, &fg, &format!("{}", (v * 100.0).round() as i32))
+            };
+            let arc =
+                if v > 0.0 { format!(r##"<path d="M{sx} {sy} A{r} {r} 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="#c4b5fd" stroke-width="12" stroke-linecap="round"/>"##) } else { String::new() };
+            format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#3a3646" stroke-width="12"/>{arc}{middle}{}"##, text(c, c + 62.0, caption_px, "#a8a4b5", &caption[0]))
         }
         None if !picture_as_icon(look) && look.image.as_deref().and_then(super::images::uri).is_some() => {
             let uri = look.image.as_deref().and_then(super::images::uri).unwrap_or_default();
@@ -609,13 +613,33 @@ pub fn time_dial_svg(look: &Look, main: &str, second: Option<&str>, ring: Option
 
 /// The dial for "Now playing": the cover fills the screen, dimmed at the bottom under the title and
 /// artist; a pause sign while paused. Without a track, the look's own face.
-pub fn now_playing_dial_svg(look: &Look, track: Option<(&str, &str, bool, Option<&str>)>, rotation: i32) -> String {
+/// A value as a white ring along the dial's edge, on a dark track.
+fn edge_ring(c: f32, v: f32) -> String {
+    let v = v.clamp(0.0, 1.0);
+    let r = 110.0;
+    let mut out = format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#3a3646" stroke-opacity="0.85" stroke-width="7"/>"##);
+    if v > 0.0 {
+        let angle = v * 359.9_f32;
+        let rad = (angle - 90.0).to_radians();
+        let (ex, ey) = (c + r * rad.cos(), c + r * rad.sin());
+        let large = if angle > 180.0 { 1 } else { 0 };
+        out += &format!(r##"<path d="M{c} {} A{r} {r} 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="#c4b5fd" stroke-width="7" stroke-linecap="round"/>"##, c - r);
+    }
+    out
+}
+
+/// What plays now on the dial: its cover, title and artist; `progress` (0..=1) as a ring along the
+/// edge when the player tells where in the song it is (owner: turning moves in the song, so show where).
+pub fn now_playing_dial_svg(look: &Look, track: Option<(&str, &str, bool, Option<&str>)>, progress: Option<f32>, rotation: i32) -> String {
     let Some((title, artist, playing, cover)) = track else { return dial_svg(look, None, rotation) };
     let s = DIAL_PX as f32;
     let c = s / 2.0;
+    let bg = color(look.bg.as_ref(), DEFAULT_BG);
     let mut body = match cover {
         Some(uri) => format!(r#"<image href="{uri}" width="{s}" height="{s}" preserveAspectRatio="xMidYMid slice"/>"#),
-        None => icon("music", c - 40.0, 40.0, 80.0, "#c4b5fd"),
+        // no cover: the deck's own background; paused shows the pause sign where the note was
+        None if !playing => format!(r#"<rect width="{s}" height="{s}" fill="{bg}"/>"#),
+        None => format!(r#"<rect width="{s}" height="{s}" fill="{bg}"/>"#) + &icon("music", c - 36.0, 46.0, 72.0, "#c4b5fd"),
     };
     body += r##"<defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0.45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.85"/></linearGradient></defs>"##;
     body += &format!(r#"<rect width="{s}" height="{s}" fill="url(#fade)"/>"#);
@@ -625,13 +649,30 @@ pub fn now_playing_dial_svg(look: &Look, track: Option<(&str, &str, bool, Option
     body += &text(c, 198.0, artist_px, "#c9c4d6", &artist[0]);
     if !playing {
         body += &format!(
-            r##"<rect x="{}" y="74" width="12" height="40" rx="3" fill="#fff" fill-opacity="0.85"/><rect x="{}" y="74" width="12" height="40" rx="3" fill="#fff" fill-opacity="0.85"/>"##,
-            c - 16.0,
-            c + 4.0
+            r##"<rect x="{}" y="58" width="14" height="52" rx="4" fill="#fff" fill-opacity="0.9"/><rect x="{}" y="58" width="14" height="52" rx="4" fill="#fff" fill-opacity="0.9"/>"##,
+            c - 19.0,
+            c + 5.0
         );
+    }
+    if let Some(v) = progress {
+        body += &edge_ring(c, v);
     }
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})"><rect width="{s}" height="{s}" fill="#000"/>{body}</g></svg>"##
+    )
+}
+
+/// A question an assistant asks on the deck: a "?" mark on top, the question in up to three lines.
+pub fn question_dial_svg(question: &str, rotation: i32) -> String {
+    let s = DIAL_PX as f32;
+    let c = s / 2.0;
+    let (rows, px) = fit(question, 26.0, 16.0, 2.0 * dial_chord(c + 10.0) - 44.0, true);
+    let start = c + 18.0 - (rows.len() as f32 - 1.0) * px * 0.56;
+    let mark = format!(r##"<circle cx="{c}" cy="64" r="22" fill="#c4b5fd"/>{}"##, text(c, 64.0 + 10.0, 28.0, "#1b1a20", "?"));
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})"><rect width="{s}" height="{s}" fill="{}"/>{mark}{}</g></svg>"#,
+        super::house::BG,
+        lines(c, start, px, 1.12, super::house::LABEL, &rows)
     )
 }
 
@@ -648,16 +689,7 @@ pub fn cover_dial_svg(cover: &str, title: &str, line: &str, ring: Option<f32>, r
     body += &text(c, 166.0, title_px, DEFAULT_FG, &title[0]);
     body += &text(c, 192.0, line_px, "#d6d1e3", &line[0]);
     if let Some(v) = ring {
-        let v = v.clamp(0.0, 1.0);
-        let r = 114.0;
-        body += &format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#000" stroke-opacity="0.45" stroke-width="7"/>"##);
-        if v > 0.0 {
-            let angle = v * 359.9_f32;
-            let rad = (angle - 90.0).to_radians();
-            let (ex, ey) = (c + r * rad.cos(), c + r * rad.sin());
-            let large = if angle > 180.0 { 1 } else { 0 };
-            body += &format!(r##"<path d="M{c} {} A{r} {r} 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>"##, c - r);
-        }
+        body += &edge_ring(c, v);
     }
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})"><rect width="{s}" height="{s}" fill="#000"/>{body}</g></svg>"##
@@ -744,6 +776,65 @@ impl Renderer {
 
 #[cfg(test)]
 mod tests {
+    use super::super::house;
+
+    /// Everything HubDeck draws on the deck, as SVG files, for a look at all of it at once:
+    /// `HUBDECK_SHEET=<dir> cargo test -p hubdeck dump_render_sheet -- --ignored`.
+    #[test]
+    #[ignore]
+    fn dump_render_sheet() {
+        let dir = std::path::PathBuf::from(std::env::var("HUBDECK_SHEET").expect("HUBDECK_SHEET"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let house_look = |action: &str, label: &str, icon: &str| {
+            let mut l = Look { label: Some(label.into()), icon: Some(icon.into()), ..Look::default() };
+            house::apply_look(&mut l, action, &serde_json::Value::Null);
+            l
+        };
+        let mut n = 0;
+        let mut put = |name: &str, svg: String| {
+            n += 1;
+            std::fs::write(dir.join(format!("{n:02}-{name}.svg")), svg).unwrap();
+        };
+        // the dial
+        let vol = house_look("core.volume", "System", "volume-2");
+        put("dial-volume-turned", dial_svg(&vol, Some((Some(0.72), "System")), 0));
+        put("dial-volume-muted", dial_svg(&vol, Some((Some(0.0), "Music: muted")), 0));
+        put("dial-label-only", dial_svg(&house_look("core.volume", "Volume", "volume-2"), None, 0));
+        let clock = house_look("core.clock", "", "clock");
+        put("dial-clock", time_dial_svg(&clock, "23:58", Some("Tue 13 Oct"), None, 0));
+        put("dial-timer", time_dial_svg(&house_look("core.timer", "Focus", "timer"), "18:42", Some("Focus 25"), Some(0.74), 0));
+        put("dial-cpu", dial_svg(&house_look("core.monitor", "CPU", "cpu"), Some((Some(0.37), "CPU")), 0));
+        put("dial-gpu-temp", dial_svg(&house_look("core.monitor", "GPU", "thermometer"), Some((Some(0.61), "GPU temp")), 0));
+        let np = house_look("core.nowPlaying", "Now playing", "music");
+        put("dial-now-playing-no-cover", now_playing_dial_svg(&np, Some(("Na błysk", "Dawid Podsiadło", true, None)), Some(0.42), 0));
+        put("dial-now-playing-paused", now_playing_dial_svg(&np, Some(("Tear", "Red Hot Chili Peppers", false, None)), Some(0.1), 0));
+        put("dial-now-playing-nothing", now_playing_dial_svg(&np, None, None, 0));
+        put("dial-status", time_dial_svg(&Look { bg: Some(house::BG.into()), fg: Some(house::LABEL.into()), ..Look::default() }, "2/3", Some("Discord · v2"), None, 0));
+        put("dial-question", question_dial_svg("Keep this deck?", 0));
+        put("dial-tour-highlight", with_ring(&dial_svg(&vol, None, 0), "#ffffff"));
+        put("dial-gallery-caption", with_caption(&time_dial_svg(&clock, "23:58", Some("Tue 13 Oct"), None, 0), "Clock", 0));
+        // keys
+        for (name, action, label, icon) in [
+            ("key-app", "core.launch", "Spotify", "app-window"),
+            ("key-hotkey", "core.hotkey", "Copy", "copy"),
+            ("key-mic", "core.mic", "Mic", "mic"),
+            ("key-media", "core.media", "Next", "skip-forward"),
+            ("key-long-label", "core.launch", "Visual Studio Code", "app-window"),
+            ("key-page", "core.page", "Games", "folder"),
+            ("key-obs", "obs.record", "Record", "circle"),
+        ] {
+            put(name, key_svg(&house_look(action, label, icon), 0));
+        }
+        put("key-cpu-value", key_svg(&Look { label: Some("37%\nCPU".into()), icon: None, face: true, ..house_look("core.monitor", "", "cpu") }, 0));
+        put("key-clock-face", key_svg(&Look { label: Some("23:58\nTue 13".into()), icon: None, face: true, ..house_look("core.clock", "", "clock") }, 0));
+        put("key-muted-on", key_svg(&Look { bg: Some("#7a1f24".into()), ..house_look("core.mic", "Mic", "mic-off") }, 0));
+        put("key-prompt-option", key_svg(&Look { label: Some("Yes, keep".into()), bg: Some("#2b2540".into()), fg: Some("#ffffff".into()), ..Look::default() }, 0));
+        put("key-tour-highlight", key_svg(&Look { bg: Some("#ffffff".into()), fg: Some("#111018".into()), ..house_look("core.mic", "Mic", "mic") }, 0));
+        put("key-empty", key_svg(&Look { bg: Some("#000000".into()), ..Look::default() }, 0));
+        put("key-no-icon", key_svg(&house_look("core.text", "Hello", ""), 0));
+        println!("wrote {n} drawings to {}", dir.display());
+    }
+
     use super::*;
 
     #[test]

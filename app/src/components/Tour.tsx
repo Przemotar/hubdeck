@@ -4,11 +4,12 @@
 // parts on the left, the part in the middle, the deck on the right). Each part is kept or left out
 // and has up to two looks; the finale shows HubDeck's showpieces; the end keeps the deck or throws
 // it away. Nothing of the user's changes; Exit puts everything back.
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ControlRef, LiveState } from "../deck";
-import { api, type EngineView, type TourFocus, type TourStop, type TourSuggestion, type TourView } from "../engine";
-import { getLanguage, t, useLanguage, type Key } from "../i18n";
+import { api, type DialFace, type EngineView, type TourFocus, type TourStop, type TourSuggestion, type TourView } from "../engine";
+import { getLanguage, localizeAction, t, useLanguage, type Key } from "../i18n";
 import type { Placement } from "../layout";
 import { DeckView } from "./DeckView";
 import { Icon } from "./Icon";
@@ -37,9 +38,33 @@ function tryWords(stop: TourStop, view: TourView): string {
   return t(`tour.${stop.id}.try` as Key);
 }
 
-export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { live: LiveState; view: EngineView; saved: Record<string, Placement>; onPlace: (key: string, p: Placement | null) => void; onClose: () => void; onBuild: () => void; onAsk: (message: string) => void }) {
+/** `deskCheck`: the first start (owner's pick 1a, 2026-10-14: straight into the tour) begins with
+ * the deck drawing and "Does this look like your desk?"; Fix it goes to Edit layout (`onArrange`)
+ * and the page comes back here after it. Skip, Exit and the end mark the first start done. */
+export function Tour({
+  live,
+  view,
+  saved,
+  onPlace,
+  onClose,
+  onBuild,
+  onAsk,
+  deskCheck = false,
+  onArrange,
+}: {
+  live: LiveState;
+  view: EngineView;
+  saved: Record<string, Placement>;
+  onPlace: (key: string, p: Placement | null) => void;
+  /** `home`: the deck was kept as the home deck ("Use as my home deck"). */
+  onClose: (home?: boolean) => void;
+  onBuild: () => void;
+  onAsk: (message: string) => void;
+  deskCheck?: boolean;
+  onArrange?: () => void;
+}) {
   useLanguage();
-  const [phase, setPhase] = useState<"focus" | "making" | "stops" | "finale" | "end">("focus");
+  const [phase, setPhase] = useState<"desk" | "focus" | "making" | "stops" | "finale" | "end">(deskCheck ? "desk" : "focus");
   const [suggestion, setSuggestion] = useState<TourSuggestion | null>(null);
   const [focus, setFocus] = useState<TourFocus>("mixed");
   const [tour, setTour] = useState<TourView | null>(null);
@@ -77,8 +102,23 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
     return () => void api.tourSound(false).catch(() => {});
   }, [stop?.id]);
 
+  // "One control, many jobs": the holds and double presses done on the deck (the engine says)
+  const [gestured, setGestured] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const off = listen<string>("tour://gesture", (e) => setGestured((g) => ({ ...g, [e.payload]: true })));
+    return () => void off.then((f) => f());
+  }, []);
+  const nextTask = stop?.id === "gestures" ? (stop.tasks ?? []).find((task) => !gestured[task]) : undefined;
+  useEffect(() => {
+    if (stop?.id === "gestures" && (stop.tasks ?? []).length > 0 && !nextTask) setTried((x) => ({ ...x, gestures: true }));
+  }, [stop, nextTask]);
+
   // the control to try blinks on the hardware too, wherever its module sits (until it is touched)
-  const pointAt = stop?.tryControl ?? (phase === "finale" && tour?.stops.some((s) => s.id === "superAnimations" && s.keep) ? "keys.9" : null);
+  const pointAt =
+    stop?.id === "gestures"
+      ? (nextTask?.split(":")[0] ?? null)
+      : (stop?.tryControl ?? (phase === "finale" && tour?.stops.some((s) => s.id === "superAnimations" && s.keep) ? "keys.9" : null));
   useEffect(() => {
     if (!pointAt) return;
     api.tourHighlight(pointAt).catch(() => {});
@@ -87,7 +127,7 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
 
   // the live check: the control of "Try it" was touched on the deck
   useEffect(() => {
-    if (stop && same(live.lastTouched, tryRef)) setTried((x) => ({ ...x, [stop.id]: true }));
+    if (stop && stop.id !== "gestures" && same(live.lastTouched, tryRef)) setTried((x) => ({ ...x, [stop.id]: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live.lastTouched]);
 
@@ -99,14 +139,22 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
       (e) => (setError(String(e)), setPhase("focus")),
     );
   };
-  const set = (id: string, keep: boolean | null, look: number | null) => api.tourSet(id, keep, look).then(setTour, (e) => setError(String(e)));
+  // the button shows the choice at once; the deck follows when HubDeck has made it
+  const set = (id: string, keep: boolean | null, look: number | null) => {
+    setTour((v) => v && { ...v, stops: v.stops.map((s) => (s.id === id ? { ...s, keep: keep ?? s.keep, look: look ?? s.look } : s)) });
+    return api.tourSet(id, keep, look).then(setTour, (e) => setError(String(e)));
+  };
+  // the first start is over once the tour ends, whichever way
+  const onboarded = () => {
+    if (view.state && !view.state.onboarded) api.onboardingDone().catch(() => {});
+  };
   const exit = () => {
     done.current = true;
-    api.tourExit().finally(onClose);
+    api.tourExit().finally(() => (onboarded(), onClose()));
   };
   const finish = (keep: boolean, home: boolean, then: () => void) => {
     done.current = true;
-    api.tourFinish(keep, home).then(then, (e) => setError(String(e)));
+    api.tourFinish(keep, home).then(() => (onboarded(), then()), (e) => setError(String(e)));
   };
   const next = () => (at + 1 < main.length ? setAt(at + 1) : setPhase("finale"));
   const kept = tour ? tour.stops.filter((s) => s.keep && !s.id.startsWith("super")).length : 0;
@@ -121,6 +169,43 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
       {tour && phase !== "end" && <span className="tour-made-for">{t("tour.madeFor", { focus: t(`tour.focus.${tour.focus}` as Key) })}</span>}
     </header>
   );
+
+  if (phase === "desk") {
+    const found = live.deck.modules.filter((m) => m.kind !== "base");
+    return (
+      <div className="tour-page">
+        <header className="settings-head tour-head">
+          <h2>{t("welcome.title")}</h2>
+          <button className="tool ghost tour-skip" onClick={exit}>
+            {t("welcome.skip")}
+          </button>
+        </header>
+        <div className="tour-focus tour-desk">
+          <div className="tour-focus-head">
+            <h3>{t("welcome.deskTitle")}</h3>
+            <p>{found.length === 0 ? t("welcome.none") : `${t("welcome.found", { count: found.length, list: found.map((m) => t(`module.${m.kind}` as Key)).join(", ") })} ${t("welcome.desk")}`}</p>
+          </div>
+          {found.length > 0 && (
+            <div className="builder-deck tour-desk-deck">
+              <DeckView live={live} selected={null} onSelect={() => {}} saved={saved} onPlace={onPlace} arranging={false} profile={view.profile} page={null} />
+            </div>
+          )}
+          <div className="row wrap tour-desk-actions">
+            <button className="tool primary" onClick={() => setPhase("focus")}>
+              <Icon name="check" />
+              {t("tour.deskYes")}
+            </button>
+            {found.length > 0 && onArrange && (
+              <button className="tool" onClick={onArrange}>
+                <Icon name="layout-grid" />
+                {t("welcome.deskFix")}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (phase === "focus" || phase === "making") {
     return (
@@ -145,9 +230,12 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
           <div className="tour-focus-foot">
             <span className="help">{t("tour.promise")}</span>
             <button className="tool primary tour-go" disabled={phase === "making" || suggestion?.kit === "none"} onClick={start}>
+              {phase === "making" && <Icon name="refresh-cw" className="tour-spin" />}
               {phase === "making" ? t("tour.making") : t("tour.make")}
             </button>
           </div>
+          {/* what HubDeck is doing while it makes the deck (owner: show it works, not that it hangs) */}
+          {phase === "making" && <MakingSteps />}
           {error && <p className="help catalog-err">{error}</p>}
         </div>
       </div>
@@ -186,7 +274,10 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
             <h3>{t(`tour.${stop.id}.title` as Key)}</h3>
             <p className="tour-text">{t((stop.id === "volume" && tour.mac ? "tour.volume.bodyMac" : `tour.${stop.id}.body`) as Key)}</p>
             {at === 0 && <p className="help">{t("tour.firstHint")}</p>}
-            <div className="tour-try">
+            {stop.id === "gestures" && <GestureTasks tasks={stop.tasks ?? []} done={gestured} next={nextTask} music={tour.music} />}
+            {stop.id === "gestures" && <PressCard live={live} view={view} />}
+            {stop.id === "dial" && <DialFaces stop={stop} onPick={(i) => set(stop.id, null, i)} />}
+            {stop.id !== "gestures" && stop.id !== "dial" && <div className="tour-try">
               <span className="tour-label">{t("tour.tryIt")}</span>
               <span className="tour-try-text">{tryWords(stop, tour)}</span>
               {tried[stop.id] ? (
@@ -206,10 +297,12 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
               )}
               {stop.id === "streaming" && <span className="help">{t("tour.dryRun")}</span>}
               {stop.id === "music" && tour.mac && <span className="help">{t("tour.macAutomation")}</span>}
-            </div>
-            {stop.looks > 1 && (
+            </div>}
+            {stop.looks > 1 && stop.id !== "dial" && (
               <div className="tour-looks">
                 <span className="tour-label">{t("tour.look")}</span>
+                {/* what the picked look changes, and where to see it (owner, 2026-10-13: "nie do końca rozumiem") */}
+                <span className="help">{t(`tour.lookHelp.${stop.id}.${stop.look}` as Key)}</span>
                 <div className="row wrap">
                   {Array.from({ length: stop.looks }, (_, i) => (
                     <button key={i} className={`tour-look${stop.look === i ? " is-on" : ""}`} aria-pressed={stop.look === i} onClick={() => set(stop.id, null, i)}>
@@ -288,14 +381,14 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
             <DeckView live={live} selected={null} onSelect={() => {}} saved={saved} onPlace={onPlace} arranging={false} profile={view.profile} page={null} />
           </div>
           <div className="row wrap tour-end-actions">
-            <button className="tool primary" onClick={() => finish(true, true, onClose)}>
+            <button className="tool primary" onClick={() => finish(true, true, () => onClose(true))}>
               <Icon name="check" />
               {t("tour.useHome")}
             </button>
             <button className="tool" onClick={() => finish(true, true, onBuild)}>
               {t("tour.changeSteps")}
             </button>
-            <button className="tool ghost" onClick={() => finish(false, false, onClose)}>
+            <button className="tool ghost" onClick={() => finish(false, false, () => onClose())}>
               {t("tour.throwAway")}
             </button>
           </div>
@@ -303,6 +396,7 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
             <input type="checkbox" checked={counting} onChange={(e) => (setCounting(e.target.checked), api.pressesCountSet(e.target.checked).catch(() => {}))} />
             {t("tour.countUse")}
           </label>
+          <p className="help">{t("tour.editLater")}</p>
           <p className="help">{t("tour.appDecks")}</p>
           <p className="help">{t("tour.oldStays")}</p>
           {error && <p className="help catalog-err">{error}</p>}
@@ -317,6 +411,124 @@ export function Tour({ live, view, saved, onPlace, onClose, onBuild, onAsk }: { 
           </button>
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** The steps of making the deck, one after another while it is made. */
+function MakingSteps() {
+  const steps: Key[] = ["tour.makingModules", "tour.makingApps", "tour.makingDeck"];
+  const [at, setAt] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setAt((i) => Math.min(i + 1, steps.length - 1)), 1100);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <ol className="tour-making" aria-live="polite">
+      {steps.map((k, i) => (
+        <li key={k} className={i < at ? "is-done" : i === at ? "is-now" : ""}>
+          <Icon name={i < at ? "check" : i === at ? "refresh-cw" : "circle"} className={i === at ? "tour-spin" : undefined} />
+          {t(k)}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** "One control, many jobs": a hold and a double press on a key, a knob and the dial, ticked off live. */
+function GestureTasks({ tasks, done, next, music }: { tasks: string[]; done: Record<string, boolean>; next?: string; music?: string | null }) {
+  const words = (task: string): [string, string] => {
+    if (task.startsWith("keys.5")) return [t("tour.gestures.keyHold"), t("tour.gestures.keyHoldHelp")];
+    if (task.startsWith("knobs")) return [t("tour.gestures.knobDouble"), t("tour.gestures.knobDoubleHelp")];
+    if (task.startsWith("keys")) return [t("tour.gestures.keyDouble"), t("tour.gestures.keyDoubleHelp")];
+    return [t("tour.gestures.dialHold"), t(music ? "tour.gestures.dialHoldHelp" : "tour.gestures.dialHoldHelpNext", { app: music ?? "" })];
+  };
+  return (
+    <div className="tour-try">
+      <span className="tour-label">{t("tour.tryIt")}</span>
+      <ul className="tour-tasks">
+        {tasks.map((task) => {
+          const [what, how] = words(task);
+          const state = done[task] ? "is-done" : task === next ? "is-now" : "";
+          return (
+            <li key={task} className={state}>
+              <Icon name={done[task] ? "check" : task === next ? "refresh-cw" : "circle"} className={task === next ? "tour-spin" : undefined} />
+              <span>
+                <b>{what}</b>
+                <span className="help">{how}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** What the control just pressed does on each gesture, from the tour's deck (and that a press opens its editor later). */
+function PressCard({ live, view }: { live: LiveState; view: EngineView }) {
+  const c = live.lastTouched;
+  const id = c ? (c.kind === "dial" ? "dial" : `${c.kind}.${c.index}`) : null;
+  const controls = view.profile?.controls ?? {};
+  const actions = view.catalog?.actions ?? [];
+  const say = (control: string) => {
+    const b = controls[control];
+    if (!b) return null;
+    const def = actions.find((a) => a.id === b.action);
+    const name = def ? localizeAction(def).name : b.action;
+    const label = (b.look?.label ?? "").replace(/\n/g, " ").trim();
+    return label && label !== name ? `${label} · ${name}` : name;
+  };
+  const turns = c && c.kind !== "keys";
+  return (
+    <div className="tour-try">
+      <span className="tour-label">{id ? t("tour.gestures.pressed", { control: t(`control.${c!.kind}` as Key) + (c!.kind === "dial" ? "" : ` ${c!.index + 1}`) }) : t("tour.gestures.pressAny")}</span>
+      {id ? (
+        <dl className="tour-gesture-list">
+          <dt>{turns ? t("tour.gestures.turnPress") : t("gesture.tap")}</dt>
+          <dd>{say(id) ?? t("tour.gestures.free")}</dd>
+          <dt>{t("gesture.double")}</dt>
+          <dd className={say(`${id}:double`) ? "" : "is-free"}>{say(`${id}:double`) ?? t("tour.gestures.free")}</dd>
+          <dt>{t("gesture.hold")}</dt>
+          <dd className={say(`${id}:hold`) ? "" : "is-free"}>{say(`${id}:hold`) ?? t("tour.gestures.free")}</dd>
+        </dl>
+      ) : (
+        <span className="tour-try-text">{t("tour.gestures.pressAnyHelp")}</span>
+      )}
+      <span className="help">{t("tour.gestures.editLater")}</span>
+    </div>
+  );
+}
+
+/** "Your dial, many faces": HubDeck's own dial looks; Try puts one on the dial (the tour's deck keeps it). */
+function DialFaces({ stop, onPick }: { stop: TourStop; onPick: (i: number) => void }) {
+  const [gallery, setGallery] = useState<DialFace[]>([]);
+  useEffect(() => {
+    api.dialGallery().then(setGallery, () => {});
+  }, []);
+  const ids = stop.faces ?? [];
+  return (
+    <div className="tour-faces">
+      {ids.map((id, i) => {
+        const face = gallery.find((f) => f.id === id);
+        const on = stop.look === i;
+        return (
+          <div key={id} className={`tour-face${on ? " is-on" : ""}`}>
+            <div className="tour-face-dial" dangerouslySetInnerHTML={{ __html: face?.svg ?? "" }} />
+            <b>{face ? (getLanguage() === "pl" ? face.captionPl : face.caption) : id}</b>
+            <span className="help">{t(`tour.dial.face.${id}` as Key)}</span>
+            {on ? (
+              <span className="tour-face-on">{t("tour.dial.onDial")}</span>
+            ) : (
+              <button className="tool small" onClick={() => onPick(i)}>
+                {t("tour.dial.try")}
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <p className="help tour-faces-more">{t("tour.dial.more")}</p>
     </div>
   );
 }

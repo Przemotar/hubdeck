@@ -2,8 +2,7 @@
 
 How any app (yours, a script, a tool you build with Claude Code) shows its state on the deck and
 offers actions for keys, without knowing anything about HubDeck. HubDeck listens; the app only
-publishes. Agreed with the owner on 2026-10-12 ("to ty nasłuchujesz na to co cię interesuje"):
-the app publishes, HubDeck subscribes, others can listen too.
+publishes: the app publishes, HubDeck subscribes, others can listen too.
 
 Everything is optional. An app that only has `GET /hubdeck/status` already works.
 

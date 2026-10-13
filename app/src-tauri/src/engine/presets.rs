@@ -1255,6 +1255,8 @@ mod tests {
             "presets": commands::presets_list(),
             "profiles": profiles,
             "previews": previews,
+            // the dial's looks with their pictures, for the window's dial gallery in the demo
+            "dialGallery": super::super::gallery::dial_gallery(),
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/demo/fixture.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

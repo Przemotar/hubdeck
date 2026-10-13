@@ -1,6 +1,7 @@
 //! Profiles that make themselves, so nobody has to click a profile together for every app (owner,
-//! 2026-10-12): at start for the installed apps HubDeck has a preset for, and for a game the first
-//! time it comes to the front (it then switches in at once). Each program gets one only once: a
+//! 2026-10-12): at start for the installed apps HubDeck knows (a preset or a shortcut pack), as
+//! "Ready for your apps" that switch in only once the user switches them on (owner's pick 1a,
+//! 2026-10-14), and for a game the first time it comes to the front (it then switches in at once). Each program gets one only once: a
 //! profile the user deleted is not made again (`settings.offered`). The window lists the new ones
 //! until the user has looked (`settings.auto_made`). Off in Settings with `auto_profiles`.
 
@@ -61,6 +62,9 @@ fn consider(engine: &Engine, exe: &str, title: &str, games_too: bool) -> Option<
     let path = super::apps::path_of_seen(exe).unwrap_or_default();
     let found = if let Some(preset) = starter::preset_for(exe) {
         Some(Found { exe: exe.into(), name: preset.name, target: path.clone(), picture: None })
+    } else if let Some(pack) = (!games_too).then(|| super::shortcuts::own_pack(exe)).flatten() {
+        // installed and known by its shortcut pack: a profile from the pack's template
+        Some(Found { exe: exe.into(), name: pack.app.clone(), target: path.clone(), picture: None })
     } else if games_too && starter::is_game(if path.is_empty() { exe } else { &path }, "") {
         let library = installed::games().into_iter().find(|g| same_game(g, exe, &path));
         let title = title.trim();
@@ -104,10 +108,14 @@ fn same_game(game: &Item, exe: &str, path: &str) -> bool {
     !dir.is_empty() && path.starts_with(&format!("{dir}/"))
 }
 
-/// Make and save the profile; returns it.
-fn make(app: &AppHandle, engine: &Engine, found: Found) -> Option<Profile> {
+/// Make and save the profile; returns it. `ready`: one of "Ready for your apps", not switching in
+/// with its app until the user switches it on.
+fn make(app: &AppHandle, engine: &Engine, found: Found, ready: bool) -> Option<Profile> {
     let picture = found.picture.as_ref().and_then(|item| installed::picture(item).ok());
-    let profile = starter::for_app(&found.exe, &found.name, &found.target, picture, None);
+    let mut profile = starter::for_app(&found.exe, &found.name, &found.target, picture, None);
+    if ready {
+        profile.switch_in = Some(false);
+    }
     let (profile, _) = super::api::adapt_to_user(app, profile);
     let mut s = engine.lock();
     let key = found.exe.to_lowercase();
@@ -119,7 +127,11 @@ fn make(app: &AppHandle, engine: &Engine, found: Found) -> Option<Profile> {
         return None;
     }
     s.store.settings.offered.push(key);
-    s.store.settings.auto_made.push(profile.id.clone());
+    if ready {
+        s.store.settings.ready.push(profile.id.clone());
+    } else {
+        s.store.settings.auto_made.push(profile.id.clone());
+    }
     if let Err(e) = s.store.save_settings() {
         log::warn!("settings: {e}");
     }
@@ -137,7 +149,7 @@ pub fn on_foreground(app: &AppHandle, exe: &str, title: &str) {
     std::thread::spawn(move || {
         let engine = app.state::<Engine>();
         if let Some(found) = consider(&engine, &exe, &title, true)
-            && make(&app, &engine, found).is_some()
+            && make(&app, &engine, found, false).is_some()
         {
             engine.changed();
             engine.refresh_foreground();
@@ -145,7 +157,8 @@ pub fn on_foreground(app: &AppHandle, exe: &str, title: &str) {
     });
 }
 
-/// At start: profiles for the installed apps that have a preset (games wait until they are played).
+/// At start: ready profiles for the installed apps that have a preset or a shortcut pack, off until
+/// the user switches them on (games wait until they are played).
 pub fn at_start(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -164,7 +177,7 @@ pub fn at_start(app: &AppHandle) {
             if let Some(mut found) = consider(&engine, &exe, "", false) {
                 found.target = item.target.clone();
                 found.picture = Some(item.clone());
-                made += usize::from(make(&app, &engine, found).is_some());
+                made += usize::from(make(&app, &engine, found, true).is_some());
             }
         }
         if made > 0 {

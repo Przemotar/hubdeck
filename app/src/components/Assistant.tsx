@@ -42,6 +42,8 @@ const talk = {
   knownDrafts: [] as string[],
   /** Tokens in the context now and the model's window, from the last call. */
   context: { used: 0, window: 0 },
+  /** The model this talk runs on, as Claude Code reported it. */
+  model: null as string | null,
   /** Answers offered as buttons (offer_choices), until the next message; several may be ticked. */
   choices: [] as string[],
   multiple: false,
@@ -51,7 +53,29 @@ const talk = {
   wantScan: false,
   /** HubDeck's own suggestion for now (an app without a deck, a new kind of module). */
   nudge: null as Nudge | null,
+  /** "Send without the app list": the first message goes with the deck only. */
+  withoutApps: false,
 };
+
+const CONSENT = "hubdeck.assistantConsent";
+
+/** The answer kept with "Don't ask again" (null: ask). */
+function keptConsent(): "apps" | "noApps" | null {
+  try {
+    const v = localStorage.getItem(CONSENT);
+    return v === "apps" || v === "noApps" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function keepConsent(how: "apps" | "noApps") {
+  try {
+    localStorage.setItem(CONSENT, how);
+  } catch {
+    // blocked storage: it asks again next time
+  }
+}
 
 /** Start a talk with this message (the tour's "Ask the assistant"): the apps are looked at, the
  * message waits in the first box with what will be sent. */
@@ -102,6 +126,7 @@ function ideasLine(): Message {
 function onEvent(e: AssistantEvent) {
   const last = talk.lines[talk.lines.length - 1];
   if (e.kind === "context") talk.context = { used: e.used, window: e.window || talk.context.window };
+  if (e.kind === "model") talk.model = e.model;
   else if (e.kind === "delta") {
     // the message grows as it is written; the whole text replaces it
     if (last?.who === "assistant" && last.streaming) talk.lines = [...talk.lines.slice(0, -1), { ...last, text: last.text + e.text }];
@@ -161,7 +186,7 @@ function listenOnce() {
 function send(message: string, context = "") {
   const text = message.trim();
   if (!text || talk.busy) return;
-  const scan = !talk.sentScan && talk.scan ? talk.scan.text : null;
+  const scan = !talk.sentScan && talk.scan ? (talk.withoutApps ? talk.scan.deckText : talk.scan.text) : null;
   talk.lines = [...talk.lines, { who: "user", text }];
   talk.choices = [];
   talk.busy = true;
@@ -185,7 +210,7 @@ function send(message: string, context = "") {
 
 function startOver() {
   api.assistantReset().catch(() => {});
-  Object.assign(talk, { phase: "start", scan: null, lines: [], busy: false, sentScan: false, knownDrafts: [], context: { used: 0, window: 0 }, choices: [], multiple: false });
+  Object.assign(talk, { phase: "start", scan: null, lines: [], busy: false, sentScan: false, knownDrafts: [], context: { used: 0, window: 0 }, choices: [], multiple: false, withoutApps: false });
   changed();
 }
 
@@ -243,10 +268,19 @@ function SessionBar({ info }: { info: AssistantInfo }) {
   return (
     <div className="as-session" title={info.session ? `${t("assistant.session")}: ${info.session}` : undefined}>
       <Icon name="terminal" />
-      <span className="as-session-text">{["Claude Code", info.model, (info.chosenEffort ?? info.defaultEffort) && `effort ${info.chosenEffort ?? info.defaultEffort}`, planName(info)].filter(Boolean).join(" · ")}</span>
+      <span className="as-session-text">{["Claude Code", modelName(talk.model ?? info.model ?? info.chosenModel ?? info.defaultModel), (info.chosenEffort ?? info.defaultEffort) && `effort ${info.chosenEffort ?? info.defaultEffort}`, planName(info)].filter(Boolean).join(" · ")}</span>
       {window > 0 && <ContextRing used={used} window={window} />}
     </div>
   );
+}
+
+/** "claude-opus-5-5" -> "Opus 5.5"; an alias ("opus") -> "Opus"; anything else as it is. */
+function modelName(id?: string | null): string | null {
+  if (!id) return null;
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?/i.exec(id);
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  if (m) return `${cap(m[1])} ${m[2]}${m[3] && m[3].length <= 2 ? `.${m[3]}` : ""}`;
+  return /^[a-z]+$/.test(id) ? cap(id) : id;
 }
 
 /** How full the conversation's context is, as a ring with the percent (like the Claude app). */
@@ -525,9 +559,13 @@ function DraftCard({ id, view, pick }: { id: string; view: EngineView; pick?: ()
   const summary = view.state?.profiles.find((p) => p.id === id);
   // shortcuts the assistant chose that are not in HubDeck's checked packs (profile_check)
   const unchecked = useUnchecked(id, summary?.name);
+  // the name of the user's deck this draft went into ("Use this" on a new version of it)
+  const [replaced, setReplaced] = useState<string | null>(null);
   useEffect(() => {
     api.profile(id).then(setProfile, () => setProfile(null));
   }, [id, summary?.name]);
+  const use = () => api.settleDraft(id, true).then((k) => setReplaced(k?.replaced ?? null), () => {});
+  if (replaced) return <span className="tag is-acc">{t("assistant.replaced", { name: replaced })}</span>;
   if (!summary) return <p className="as-work">{t("assistant.draftGone")}</p>;
   const trying = view.state?.trying === id;
   const draft = summary.draft;
@@ -568,7 +606,7 @@ function DraftCard({ id, view, pick }: { id: string; view: EngineView; pick?: ()
               {t("assistant.pick")}
             </button>
           ) : (
-            <button className="tool small primary" onClick={() => api.settleDraft(id, true)} title={t("assistant.useHelp")}>
+            <button className="tool small primary" onClick={use} title={t("assistant.useHelp")}>
               <Icon name="check" />
               {t("assistant.use")}
             </button>
@@ -845,21 +883,6 @@ function NudgeSwitch() {
   );
 }
 
-/** "Show me on my deck": HubDeck makes the personal tour at once and puts it on the deck; the
- * assistant only walks the user through it. */
-function showTour() {
-  const text = t("assistant.startShow");
-  api.assistantTour(getLanguage()).then(
-    (id) => {
-      api.tryProfile(id).catch(() => {});
-      send(text, `HubDeck made the personal tour draft ${id} (make_tour) and it is on the deck now: walk them through it in three or four short steps.`);
-      talk.lines = [...talk.lines, { who: "drafts", ids: [id] }];
-      changed();
-    },
-    () => send(text),
-  );
-}
-
 export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; onTour?: () => void; onBuild?: () => void }) {
   useLanguage();
   useSyncExternalStore(subscribe, () => version);
@@ -899,13 +922,46 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
+  // "Don't ask again" (checked by default): the answer given is kept and used from then on
+  const [dontAsk, setDontAsk] = useState(true);
+  // Enter sends: the consent's Send has the focus once the message is in
+  const sendRef = useRef<HTMLButtonElement>(null);
+  const hasFirst = !!first.trim();
+  useEffect(() => {
+    if (talk.phase === "consent" && hasFirst) sendRef.current?.focus();
+  }, [hasFirst]);
   const scan = () => {
     talk.phase = "scanning";
     changed();
     api.assistantScan().then(
-      (s) => ((talk.scan = s), (talk.phase = "consent"), changed()),
+      (s) => {
+        talk.scan = s;
+        // asked before and told not to ask again: the message goes at once, as it went then
+        const kept = keptConsent();
+        if (kept && talk.prefill.trim()) {
+          const message = talk.prefill;
+          talk.prefill = "";
+          talk.withoutApps = kept === "noApps";
+          send(message);
+        } else {
+          talk.phase = "consent";
+          changed();
+        }
+      },
       (e) => ((talk.phase = "start"), (talk.lines = [{ who: "error", text: String(e) }]), changed()),
     );
+  };
+  /** The card's input or an example: the apps are looked at, then the short consent (or not). */
+  const ask = (text: string) => {
+    if (!text.trim() || !ready || talk.phase === "scanning") return;
+    talk.prefill = text.trim();
+    setKnow("");
+    scan();
+  };
+  const consent = (how: "apps" | "noApps") => {
+    if (dontAsk) keepConsent(how);
+    talk.withoutApps = how === "noApps";
+    send(first);
   };
 
   return (
@@ -949,23 +1005,46 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
                 </span>
               </button>
             )}
-            <div className="as-or">
-              <span>{t("assistant.or")}</span>
-            </div>
-            <label className="label" htmlFor="as-know">
-              {t("assistant.knowWhat")}
-            </label>
-            {/* the talk needs Claude Code: without it, one line says so (Details tells how) */}
-            {!ready && <p className="help">{info ? t("assistant.knowNeeds") : t("assistant.checking")}</p>}
-            {ready && <div className="row">
-              <input id="as-know" className="input grow" placeholder={t("assistant.knowPlaceholder")} value={know} onChange={(e) => setKnow(e.target.value)} onKeyDown={(e) => e.key === "Enter" && know.trim() && ready && ((talk.prefill = know.trim()), scan())} />
-              <button className="tool" aria-label={t("assistant.send")} disabled={!know.trim() || !ready || talk.phase === "scanning"} onClick={() => ((talk.prefill = know.trim()), scan())}>
-                <Icon name={talk.phase === "scanning" ? "refresh-cw" : "chevron-right"} />
-              </button>
-            </div>}
+            {/* the assistant's own card (owner's pick 2a, 2026-10-14: "za słabo pokazane") */}
+            <section className="as-card" aria-labelledby="as-card-title">
+              <div className="as-card-head">
+                <span className="as-card-ic">
+                  <Icon name="sparkles" />
+                </span>
+                <span>
+                  <b id="as-card-title">{t("assistant.title")}</b>
+                  <small>{t("assistant.cardLine")}</small>
+                </span>
+              </div>
+              {ready ? (
+                <form
+                  className="row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    ask(know);
+                  }}
+                >
+                  <input id="as-know" className="input grow" placeholder={t("assistant.cardPlaceholder")} aria-label={t("assistant.cardPlaceholder")} value={know} onChange={(e) => setKnow(e.target.value)} />
+                  <button type="submit" className="tool primary" disabled={!know.trim() || talk.phase === "scanning"}>
+                    {talk.phase === "scanning" ? <Icon name="refresh-cw" className="tour-spin" /> : <Icon name="sparkles" />}
+                    {t("assistant.sendShort")}
+                  </button>
+                </form>
+              ) : (
+                <p className="help">{info ? t(!info.cli ? "assistant.cardNoCli" : "assistant.cardSignIn") : t("assistant.checking")}</p>
+              )}
+              {ready && (
+                <div className="as-examples">
+                  {(["assistant.example1", "assistant.example2", "assistant.example3"] as Key[]).map((k) => (
+                    <button key={k} className="chip" disabled={talk.phase === "scanning"} onClick={() => ask(t(k))}>
+                      {t(k)}
+                    </button>
+                  ))}
+                </div>
+              )}
             <details className="as-details">
               <summary>
-                {ready && info ? t("assistant.runsLine", { plan: planName(info) }) : info ? t("assistant.needsLine") : t("assistant.checking")} · {t("assistant.details")}
+                {ready && info ? [t("assistant.runsLine", { plan: planName(info) }), modelName(info.chosenModel ?? info.defaultModel ?? info.model)].filter(Boolean).join(" · ") : info ? t("assistant.needsLine") : t("assistant.checking")} · {t("assistant.details")}
               </summary>
               <RunsOn info={info} onCheck={reload} />
               {ready && <p className="help">{t("assistant.privacy")}</p>}
@@ -976,49 +1055,37 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
                 </button>
               )}
             </details>
+            </section>
           </div>
         )}
 
         {talk.phase === "consent" && talk.scan && (
+          // a short consent (owner's pick 2a, 2026-10-14): the message, what goes, Send
           <div className="as-consent">
-            <b>{t("assistant.sendsTitle")}</b>
-            <ul className="as-found">
-              <li>
-                {t("assistant.foundUsed", { list: talk.scan.used.slice(0, 6).map(([n, h]) => `${n} ${h.toFixed(1)} h`).join(", ") || t("assistant.foundNone") })}
-                <small className="as-since">{t("assistant.since", { since: talk.scan.since })}</small>
-              </li>
-              {talk.scan.recent.length > 0 && <li>{t("assistant.foundRecent", { list: talk.scan.recent.slice(0, 8).join(", ") })}</li>}
-              <li>{t("assistant.foundApps", { count: talk.scan.installed, games: talk.scan.games.length })}</li>
-              <li>
-                {t("assistant.foundDeck", { modules: talk.scan.modules.join(", "), profiles: talk.scan.profiles.length })}
-                {talk.scan.detached.length > 0 && <small className="as-since">{t("assistant.detached", { list: talk.scan.detached.join(", ") })}</small>}
-              </li>
-            </ul>
+            {first.trim() ? (
+              <div className="as-msg is-user">
+                <p>{first}</p>
+              </div>
+            ) : (
+              <textarea className="input" rows={3} aria-label={t("assistant.firstPlaceholder")} placeholder={t("assistant.firstPlaceholder")} value={first} onChange={(e) => setFirst(e.target.value)} />
+            )}
+            <b>{t("assistant.sendThis")}</b>
+            <p className="help">{t("assistant.whatGoes")}</p>
             <details>
-              <summary>{t("assistant.exact")}</summary>
-              <pre className="as-pre">{talk.scan.text}</pre>
+              <summary>{t("assistant.whatExactly")}</summary>
+              <pre className="as-pre">{`${first.trim()}\n\n${talk.scan.text}`}</pre>
             </details>
-            <p className="help">{t("assistant.notSent")}</p>
-            <p className="help">{t("assistant.viaCli")}</p>
-            {/* a quick way in, or the user's own words (owner: encourage describing in words) */}
-            <span className="label">{t("assistant.startWith")}</span>
-            <div className="as-starters">
-              {/* the interview first (owner's pick, 2026-10-12): ideas then come from the answers */}
-              {(["assistant.startInterview", "assistant.startSurprise", "assistant.startShow", "assistant.startMain"] as Key[]).map((k) => (
-                <button key={k} className={`as-starter${k === "assistant.startInterview" ? " is-main" : ""}`} onClick={() => (k === "assistant.startShow" ? showTour() : send(t(k)))}>
-                  <Icon name={k === "assistant.startShow" ? "play" : k === "assistant.startMain" ? "app-window" : k === "assistant.startInterview" ? "bot" : "sparkles"} />
-                  {t(k)}
-                </button>
-              ))}
-            </div>
-            <label className="label" htmlFor="as-first">
-              {t("assistant.firstLabel")}
+            <label className="check">
+              <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} />
+              {t("assistant.dontAsk")}
             </label>
-            <textarea id="as-first" className="input" rows={3} placeholder={t("assistant.firstPlaceholder")} value={first} onChange={(e) => setFirst(e.target.value)} />
-            <div className="row">
-              <button className="tool primary" disabled={!first.trim()} onClick={() => send(first)}>
+            <div className="row wrap">
+              <button ref={sendRef} className="tool primary" disabled={!first.trim()} onClick={() => consent("apps")}>
                 <Icon name="sparkles" />
-                {t("assistant.send")}
+                {t("assistant.sendShort")}
+              </button>
+              <button className="tool" disabled={!first.trim()} onClick={() => consent("noApps")}>
+                {t("assistant.sendNoApps")}
               </button>
               <button className="tool ghost" onClick={startOver}>
                 {t("assistant.cancel")}

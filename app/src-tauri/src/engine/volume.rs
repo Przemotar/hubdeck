@@ -418,14 +418,51 @@ mod platform {
             }
         }
 
+        /// Levels set for apps that were not playing yet: applied as soon as they play (the owner's
+        /// test, session 9: a knob for Zoom showed an error in the tour while Zoom was quiet).
+        /// key -> (what to look for, "every other app", level)
+        type Waiting = HashMap<String, (Vec<String>, bool, f32)>;
+        static PENDING: Mutex<Option<Waiting>> = Mutex::new(None);
+
+        fn apply(key: &str, needles: &[String], others: bool, level: f32) -> i32 {
+            let (Ok(k), Ok(n)) = (CString::new(key), CString::new(needles.join("\n"))) else { return -1 };
+            // SAFETY: NUL-terminated strings we own, alive for the call.
+            unsafe { mh_appvol_set(k.as_ptr(), n.as_ptr(), i32::from(others), level.clamp(0.0, 1.0)) }
+        }
+
+        /// Keep the level and try again every two seconds until the app plays (one thread while any wait).
+        fn wait_for_sound(key: String, needles: Vec<String>, others: bool, level: f32) {
+            let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+            let map = pending.get_or_insert_with(HashMap::new);
+            let start = map.is_empty();
+            map.insert(key, (needles, others, level));
+            if start {
+                std::thread::spawn(|| {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+                        let Some(map) = pending.as_mut() else { return };
+                        map.retain(|k, (n, o, l)| apply(k, n, *o, *l) == 1);
+                        if map.is_empty() {
+                            return;
+                        }
+                    }
+                });
+            }
+        }
+
         pub fn set(target: &Target, level: f32) -> Result<(), String> {
             let (key, needles, others) = key_and_needles(target);
-            let key = CString::new(key).map_err(|e| e.to_string())?;
-            let needles = CString::new(needles.join("\n")).map_err(|e| e.to_string())?;
-            // SAFETY: NUL-terminated strings we own, alive for the call.
-            match unsafe { mh_appvol_set(key.as_ptr(), needles.as_ptr(), i32::from(others), level.clamp(0.0, 1.0)) } {
+            if let Some(map) = PENDING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                map.remove(&key);
+            }
+            match apply(&key, &needles, others, level) {
                 0 => Ok(()),
-                1 => Err("that app is not playing sound now: start something in it, then turn again".into()),
+                // not playing yet: the level waits for its sound
+                1 => {
+                    wait_for_sound(key, needles, others, level);
+                    Ok(())
+                }
                 2 => Err("per-app volume needs macOS 14.2 or later".into()),
                 3 => Err("allow HubDeck in System Settings > Privacy & Security > Screen & System Audio Recording (System Audio Recording only)".into()),
                 _ => Err("the sound output would not start for per-app volume".into()),
@@ -434,6 +471,9 @@ mod platform {
 
         pub fn get(target: &Target) -> f32 {
             let (key, _, _) = key_and_needles(target);
+            if let Some((_, _, level)) = PENDING.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&key)) {
+                return *level;
+            }
             let Ok(key) = CString::new(key) else { return 1.0 };
             // SAFETY: as above.
             unsafe { mh_appvol_get(key.as_ptr()) }

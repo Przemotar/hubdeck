@@ -7,6 +7,7 @@
       "exes": [
         "*"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec",
         "https://support.microsoft.com/en-us/windows/record-your-screen-with-xbox-game-bar-5328cd25-9046-4472-8a14-c485f138802c"
@@ -117,10 +118,157 @@
       ]
     },
     {
+      "app": "macOS",
+      "exes": [
+        "*"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/en-us/102650",
+        "https://support.apple.com/guide/mac-help/use-mission-control-mh35798/mac",
+        "https://support.apple.com/guide/safari/keyboard-and-other-shortcuts-cpsh003/mac"
+      ],
+      "note": "Zoom and Reopen tab are from the Safari guide; most Mac apps with tabs and zoom use the same keys.",
+      "shortcuts": [
+        {
+          "keys": "Cmd+Shift+3",
+          "does": "Screenshot"
+        },
+        {
+          "keys": "Cmd+Shift+4",
+          "does": "Snip region"
+        },
+        {
+          "keys": "Cmd+Shift+5",
+          "does": "Screenshot tools"
+        },
+        {
+          "keys": "Ctrl+Cmd+Q",
+          "does": "Lock screen"
+        },
+        {
+          "keys": "Cmd+Space",
+          "does": "Spotlight"
+        },
+        {
+          "keys": "Ctrl+Cmd+Space",
+          "does": "Emoji & symbols"
+        },
+        {
+          "keys": "Ctrl+Up",
+          "does": "Mission Control"
+        },
+        {
+          "keys": "Ctrl+Down",
+          "does": "App windows"
+        },
+        {
+          "keys": "Cmd+Tab",
+          "does": "Switch app"
+        },
+        {
+          "keys": "Cmd+X",
+          "does": "Cut"
+        },
+        {
+          "keys": "Cmd+C",
+          "does": "Copy"
+        },
+        {
+          "keys": "Cmd+V",
+          "does": "Paste"
+        },
+        {
+          "keys": "Cmd+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Cmd+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Cmd+A",
+          "does": "Select all"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find"
+        },
+        {
+          "keys": "Cmd+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Cmd+O",
+          "does": "Open"
+        },
+        {
+          "keys": "Cmd+P",
+          "does": "Print"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Cmd+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close window",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Alt+W",
+          "does": "Close all windows",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Reopen tab"
+        },
+        {
+          "keys": "Cmd+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Cmd+H",
+          "does": "Hide app"
+        },
+        {
+          "keys": "Cmd+Alt+H",
+          "does": "Hide others"
+        },
+        {
+          "keys": "Cmd+M",
+          "does": "Minimize"
+        },
+        {
+          "keys": "Ctrl+Cmd+F",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Cmd+Q",
+          "does": "Quit app",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Alt+Escape",
+          "does": "Force Quit"
+        }
+      ]
+    },
+    {
       "app": "Windows File Explorer",
       "exes": [
         "explorer.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec"
       ],
@@ -219,6 +367,7 @@
       "exes": [
         "chrome.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop"
       ],
@@ -320,6 +469,7 @@
       "exes": [
         "msedge.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/microsoft-edge/keyboard-shortcuts-in-microsoft-edge-50d3edab-30d9-c7e4-21ce-37fe2713cfad"
       ],
@@ -425,6 +575,7 @@
       "exes": [
         "Photoshop.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://helpx.adobe.com/content/dam/help/en/photoshop/using/default-keyboard-shortcuts/photoshop-keyboard-shortcuts.pdf"
       ],
@@ -536,6 +687,7 @@
       "exes": [
         "Illustrator.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://helpx.adobe.com/illustrator/using/default-keyboard-shortcuts.html"
       ],
@@ -648,6 +800,7 @@
       "exes": [
         "Lightroom.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://helpx.adobe.com/lightroom-classic/help/keyboard-shortcuts.html"
       ],
@@ -760,6 +913,7 @@
       "exes": [
         "Adobe Premiere Pro.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://helpx.adobe.com/premiere-pro/using/keyboard-shortcuts.html"
       ],
@@ -869,6 +1023,7 @@
       "exes": [
         "AfterFX.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://helpx.adobe.com/after-effects/using/keyboard-shortcuts-reference.html"
       ],
@@ -981,6 +1136,7 @@
       "exes": [
         "Resolve.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://documents.blackmagicdesign.com/UserManuals/DaVinci_Resolve_21_Reference_Manual.pdf"
       ],
@@ -1094,6 +1250,7 @@
         "vegas220.exe",
         "vegas230.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://cdn.borisfx.com/borisfx/Documentation/vegas/2026/en/content/topics/13-appendix/shortcutkeys.htm"
       ],
@@ -1207,6 +1364,7 @@
       "exes": [
         "shotcut.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://shotcut.org/howtos/keyboard-shortcuts/"
       ],
@@ -1321,6 +1479,7 @@
       "exes": [
         "blender.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://docs.blender.org/manual/en/latest/interface/keymap/blender_default.html",
         "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/transform/move.html",
@@ -1435,6 +1594,7 @@
       "exes": [
         "Unity.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://docs.unity3d.com/Manual/PositioningGameObjects.html",
         "https://docs.unity3d.com/Manual/SceneViewNavigation.html",
@@ -1506,6 +1666,7 @@
       "exes": [
         "rider64.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://www.jetbrains.com/help/rider/Keymaps_Comparison_Windows.html"
       ],
@@ -1618,6 +1779,7 @@
       "exes": [
         "Code.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://code.visualstudio.com/shortcuts/keyboard-shortcuts-windows.pdf"
       ],
@@ -1730,6 +1892,7 @@
       "exes": [
         "devenv.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://learn.microsoft.com/en-us/visualstudio/ide/default-keyboard-shortcuts-in-visual-studio?view=vs-2022"
       ],
@@ -1839,6 +2002,7 @@
       "exes": [
         "Figma.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://help.figma.com/hc/en-us/articles/360041539473-Frames-in-Figma-Design",
         "https://help.figma.com/hc/en-us/articles/360040450133-Shape-tools",
@@ -1929,6 +2093,7 @@
       "exes": [
         "Discord.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.discord.com/hc/en-us/articles/225977308-Discord-Keyboard-Shortcuts"
       ],
@@ -2028,6 +2193,7 @@
       "exes": [
         "Spotify.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.spotify.com/us/article/keyboard-shortcuts/"
       ],
@@ -2113,11 +2279,102 @@
       ]
     },
     {
+      "app": "Spotify",
+      "exes": [
+        "Spotify.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.spotify.com/us/article/keyboard-shortcuts/"
+      ],
+      "note": "Most of these work while the Spotify window is in front; Play/Pause from anywhere is core.media.",
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/pause"
+        },
+        {
+          "keys": "Alt+Shift+B",
+          "does": "Like song"
+        },
+        {
+          "keys": "Alt+S",
+          "does": "Shuffle"
+        },
+        {
+          "keys": "Alt+R",
+          "does": "Repeat"
+        },
+        {
+          "keys": "M",
+          "does": "Mute/unmute"
+        },
+        {
+          "keys": "Cmd+K",
+          "does": "Search"
+        },
+        {
+          "keys": "Alt+Shift+J",
+          "does": "Now playing"
+        },
+        {
+          "keys": "Alt+Shift+Q",
+          "does": "Queue"
+        },
+        {
+          "keys": "Alt+Shift+S",
+          "does": "Liked songs"
+        },
+        {
+          "keys": "Alt+Shift+H",
+          "does": "Home"
+        },
+        {
+          "keys": "Alt+Shift+0",
+          "does": "Library"
+        },
+        {
+          "keys": "Alt+Shift+1",
+          "does": "Playlists"
+        },
+        {
+          "keys": "Alt+Shift+M",
+          "does": "Made for you"
+        },
+        {
+          "keys": "Alt+Shift+N",
+          "does": "New releases"
+        },
+        {
+          "keys": "Alt+Shift+R",
+          "does": "Now playing sidebar"
+        },
+        {
+          "keys": "Alt+Shift+L",
+          "does": "Library sidebar"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Preferences"
+        },
+        {
+          "keys": "Cmd+/",
+          "does": "Shortcuts help"
+        },
+        {
+          "keys": "Alt+Shift+F6",
+          "does": "Log out",
+          "destructive": true
+        }
+      ]
+    },
+    {
       "app": "Microsoft Teams",
       "exes": [
         "ms-teams.exe",
         "Teams.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/accessibility/teams/keyboard-shortcuts-for-microsoft-teams"
       ],
@@ -2210,6 +2467,7 @@
       "exes": [
         "Zoom.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067050"
       ],
@@ -2306,10 +2564,91 @@
       ]
     },
     {
+      "app": "Zoom",
+      "exes": [
+        "zoom.us.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067050"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+Shift+A",
+          "does": "Mute/unmute"
+        },
+        {
+          "keys": "Cmd+Shift+V",
+          "does": "Start/stop video"
+        },
+        {
+          "keys": "Cmd+Shift+S",
+          "does": "Share screen"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Pause share"
+        },
+        {
+          "keys": "Alt+Y",
+          "does": "Raise/lower hand"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Local recording"
+        },
+        {
+          "keys": "Cmd+Shift+C",
+          "does": "Cloud recording"
+        },
+        {
+          "keys": "Cmd+Shift+P",
+          "does": "Pause recording"
+        },
+        {
+          "keys": "Cmd+Shift+F",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Cmd+Shift+H",
+          "does": "Chat panel"
+        },
+        {
+          "keys": "Cmd+U",
+          "does": "Participants panel"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Invite"
+        },
+        {
+          "keys": "Cmd+Shift+I",
+          "does": "Copy invite link"
+        },
+        {
+          "keys": "Cmd+Shift+W",
+          "does": "Speaker/gallery view"
+        },
+        {
+          "keys": "Ctrl+Cmd+M",
+          "does": "Mute everyone"
+        },
+        {
+          "keys": "Cmd+Shift+Y",
+          "does": "Reactions"
+        },
+        {
+          "keys": "Cmd+Shift+M",
+          "does": "Minimal window"
+        }
+      ]
+    },
+    {
       "app": "Slack",
       "exes": [
         "slack.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://slack.com/help/articles/201374536-Slack-keyboard-shortcuts-and-commands"
       ],
@@ -2415,6 +2754,7 @@
       "exes": [
         "Notion.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://www.notion.com/help/keyboard-shortcuts"
       ],
@@ -2510,6 +2850,7 @@
       "exes": [
         "Obsidian.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://github.com/obsidianmd/obsidian-help/blob/master/en/Plugins/Command%20palette.md",
         "https://github.com/obsidianmd/obsidian-help/blob/master/en/Plugins/Quick%20switcher.md",
@@ -2599,6 +2940,7 @@
       "exes": [
         "WINWORD.EXE"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2"
       ],
@@ -2711,6 +3053,7 @@
       "exes": [
         "EXCEL.EXE"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-excel-1798d9d5-842a-42b8-9c99-9b7213f0040f"
       ],
@@ -2824,6 +3167,7 @@
       "exes": [
         "POWERPNT.EXE"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/office/use-keyboard-shortcuts-to-create-powerpoint-presentations-ebb3d20e-dcd4-444f-a38e-bb5c5ed180f4",
         "https://support.microsoft.com/en-us/office/use-keyboard-shortcuts-to-deliver-powerpoint-presentations-1524ffce-bd2a-45f4-9a7f-f18b992b93a0"
@@ -2933,6 +3277,7 @@
       "exes": [
         "OUTLOOK.EXE"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/office/keyboard-shortcuts-for-outlook-3cdeb221-7ae5-4c1d-8c1d-9e63216c1efd"
       ],
@@ -3033,6 +3378,7 @@
       "exes": [
         "olk.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://support.microsoft.com/en-us/office/keyboard-shortcuts-for-outlook-3cdeb221-7ae5-4c1d-8c1d-9e63216c1efd"
       ],
@@ -3102,6 +3448,7 @@
       "exes": [
         "Audacity.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://manual.audacityteam.org/man/keyboard_shortcut_reference.html"
       ],
@@ -3219,6 +3566,7 @@
         "gimp-3.exe",
         "gimp.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://docs.gimp.org/3.0/en/gimp-edit-undo.html",
         "https://docs.gimp.org/3.0/en/gimp-edit-redo.html",
@@ -3356,6 +3704,7 @@
       "exes": [
         "krita.exe"
       ],
+      "os": "windows",
       "sources": [
         "https://docs.krita.org/en/reference_manual/main_menu/edit_menu.html",
         "https://docs.krita.org/en/reference_manual/main_menu/file_menu.html",
@@ -3471,6 +3820,2316 @@
           "destructive": true
         }
       ]
+    },
+    {
+      "app": "Firefox",
+      "exes": [
+        "firefox.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://web.archive.org/web/2025/https://support.mozilla.org/en-US/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+      ],
+      "note": "Mozilla's page (support.mozilla.org) asks for a captcha from scripts; read through its Web Archive copy of 2025.",
+      "shortcuts": [
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Ctrl+Shift+P",
+          "does": "Private window",
+          "icon": "eye-off",
+          "label": "Private"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find in page",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Bookmark page",
+          "icon": "bookmark",
+          "label": "Bookmark"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Downloads",
+          "icon": "download"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "History sidebar",
+          "icon": "scroll-text",
+          "label": "History"
+        },
+        {
+          "keys": "F5",
+          "does": "Reload",
+          "icon": "refresh-cw"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Mute tab",
+          "icon": "volume-x",
+          "label": "Mute tab"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Reload (override cache)"
+        },
+        {
+          "keys": "Ctrl+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Bookmarks sidebar"
+        },
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Bookmarks toolbar"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Library (bookmarks)"
+        },
+        {
+          "keys": "F12",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Web console"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Screenshot"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+Alt+R",
+          "does": "Reader view"
+        },
+        {
+          "keys": "Alt+D",
+          "does": "Address bar"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Firefox",
+      "exes": [
+        "Firefox.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://web.archive.org/web/2025/https://support.mozilla.org/en-US/kb/keyboard-shortcuts-perform-firefox-tasks-quickly"
+      ],
+      "note": "Mozilla's page (support.mozilla.org) asks for a captcha from scripts; read through its Web Archive copy of 2025.",
+      "shortcuts": [
+        {
+          "keys": "Cmd+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Reopen closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Cmd+Shift+P",
+          "does": "Private window",
+          "icon": "eye-off",
+          "label": "Private"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find in page",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Bookmark page",
+          "icon": "bookmark",
+          "label": "Bookmark"
+        },
+        {
+          "keys": "Cmd+J",
+          "does": "Downloads",
+          "icon": "download"
+        },
+        {
+          "keys": "Cmd+Shift+H",
+          "does": "History sidebar",
+          "icon": "scroll-text",
+          "label": "History"
+        },
+        {
+          "keys": "Cmd+R",
+          "does": "Reload",
+          "icon": "refresh-cw"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Mute tab",
+          "icon": "volume-x",
+          "label": "Mute tab"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Reload (override cache)"
+        },
+        {
+          "keys": "Cmd+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Cmd+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Cmd+B",
+          "does": "Bookmarks sidebar"
+        },
+        {
+          "keys": "Cmd+Shift+B",
+          "does": "Bookmarks toolbar"
+        },
+        {
+          "keys": "Cmd+Shift+O",
+          "does": "Library (bookmarks)"
+        },
+        {
+          "keys": "Cmd+Alt+I",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "Cmd+Alt+K",
+          "does": "Web console"
+        },
+        {
+          "keys": "Cmd+Shift+S",
+          "does": "Screenshot"
+        },
+        {
+          "keys": "Cmd+Shift+F",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Cmd+Alt+R",
+          "does": "Reader view"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Address bar"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Safari",
+      "exes": [
+        "Safari.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/safari/keyboard-and-other-shortcuts-cpsh003/mac"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Reopen last closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Cmd+Shift+\\",
+          "does": "Tab overview",
+          "icon": "layers",
+          "label": "All tabs"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find on page",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Address field",
+          "icon": "globe",
+          "label": "Address"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Reader",
+          "icon": "scroll-text"
+        },
+        {
+          "keys": "Cmd+Shift+D",
+          "does": "Add to Reading List",
+          "icon": "bookmark",
+          "label": "Read later"
+        },
+        {
+          "keys": "Ctrl+Cmd+1",
+          "does": "Bookmarks sidebar",
+          "icon": "list-ordered",
+          "label": "Bookmarks"
+        },
+        {
+          "keys": "Cmd+[",
+          "does": "Back",
+          "icon": "arrow-left"
+        },
+        {
+          "keys": "Cmd+]",
+          "does": "Forward"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Cmd+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+Cmd+2",
+          "does": "Reading List sidebar"
+        },
+        {
+          "keys": "Cmd+Shift+H",
+          "does": "Homepage"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Cmd+P",
+          "does": "Print"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close tab",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Arc",
+      "exes": [
+        "Arc.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://resources.arc.net/hc/en-us/articles/20595231349911-Keyboard-Shortcuts"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Re-open last closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Show/hide the sidebar",
+          "icon": "panel-top",
+          "label": "Sidebar"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Copy tab URL",
+          "icon": "link",
+          "label": "Copy URL"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Change tab URL",
+          "icon": "globe",
+          "label": "Address"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Pin/unpin tab",
+          "icon": "bookmark",
+          "label": "Pin tab"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find in webpage",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Reload",
+          "icon": "refresh-cw"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Clear unpinned tabs",
+          "icon": "x",
+          "label": "Clear tabs"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New incognito window"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "History"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab or window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Arc",
+      "exes": [
+        "Arc.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://resources.arc.net/hc/en-us/articles/20595231349911-Keyboard-Shortcuts"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Re-open last closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Cmd+S",
+          "does": "Show/hide the sidebar",
+          "icon": "panel-top",
+          "label": "Sidebar"
+        },
+        {
+          "keys": "Cmd+Shift+C",
+          "does": "Copy tab URL",
+          "icon": "link",
+          "label": "Copy URL"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Change tab URL",
+          "icon": "globe",
+          "label": "Address"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Pin/unpin tab",
+          "icon": "bookmark",
+          "label": "Pin tab"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find in webpage",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Cmd+R",
+          "does": "Reload",
+          "icon": "refresh-cw"
+        },
+        {
+          "keys": "Cmd+Shift+K",
+          "does": "Clear unpinned tabs",
+          "icon": "x",
+          "label": "Clear tabs"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Cmd+Shift+N",
+          "does": "New incognito window"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Cmd+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Cmd+Alt+N",
+          "does": "Little Arc"
+        },
+        {
+          "keys": "Cmd+Y",
+          "does": "History"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close tab or window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Brave",
+      "exes": [
+        "brave.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://support.brave.app/hc/en-us/articles/360032272171-What-keyboard-shortcuts-can-I-use-in-Brave"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "Private window",
+          "icon": "eye-off",
+          "label": "Private"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find in page",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Bookmark page",
+          "icon": "bookmark",
+          "label": "Bookmark"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Downloads",
+          "icon": "download"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "History",
+          "icon": "scroll-text"
+        },
+        {
+          "keys": "F5",
+          "does": "Reload",
+          "icon": "refresh-cw"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Address bar",
+          "icon": "globe",
+          "label": "Address"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Reload (ignore cache)"
+        },
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Bookmarks bar"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Bookmarks manager"
+        },
+        {
+          "keys": "Shift+Escape",
+          "does": "Brave Task Manager"
+        },
+        {
+          "keys": "F12",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Brave",
+      "exes": [
+        "Brave Browser.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.brave.app/hc/en-us/articles/360032272171-What-keyboard-shortcuts-can-I-use-in-Brave"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Reopen closed tab",
+          "icon": "rotate-ccw",
+          "label": "Reopen tab"
+        },
+        {
+          "keys": "Cmd+Shift+N",
+          "does": "Private window",
+          "icon": "eye-off",
+          "label": "Private"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find in page",
+          "icon": "search",
+          "label": "Find"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Bookmark page",
+          "icon": "bookmark",
+          "label": "Bookmark"
+        },
+        {
+          "keys": "Cmd+Shift+J",
+          "does": "Downloads",
+          "icon": "download"
+        },
+        {
+          "keys": "Cmd+Y",
+          "does": "History",
+          "icon": "scroll-text"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Reload (ignore cache)",
+          "icon": "refresh-cw",
+          "label": "Reload"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Address bar",
+          "icon": "globe",
+          "label": "Address"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Cmd+Shift+B",
+          "does": "Bookmarks bar"
+        },
+        {
+          "keys": "Cmd+Alt+B",
+          "does": "Bookmarks manager"
+        },
+        {
+          "keys": "Cmd+Alt+I",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "Cmd+Alt+J",
+          "does": "JavaScript console"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Cmd+Alt+Right",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Cmd+Alt+Left",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Finder",
+      "exes": [
+        "Finder.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/en-us/102650"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+Shift+N",
+          "does": "New folder",
+          "icon": "folder",
+          "label": "New folder"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New Finder window",
+          "icon": "folder-open",
+          "label": "New window"
+        },
+        {
+          "keys": "Cmd+Alt+L",
+          "does": "Downloads folder",
+          "icon": "download",
+          "label": "Downloads"
+        },
+        {
+          "keys": "Cmd+Shift+D",
+          "does": "Desktop folder",
+          "icon": "monitor",
+          "label": "Desktop"
+        },
+        {
+          "keys": "Cmd+Shift+H",
+          "does": "Home folder",
+          "icon": "home",
+          "label": "Home"
+        },
+        {
+          "keys": "Cmd+Shift+G",
+          "does": "Go to Folder",
+          "icon": "arrow-right-to-line",
+          "label": "Go to"
+        },
+        {
+          "keys": "Cmd+Y",
+          "does": "Quick Look",
+          "icon": "eye"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Get Info",
+          "icon": "file-text",
+          "label": "Get Info"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "AirDrop",
+          "icon": "share-2"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Duplicate"
+        },
+        {
+          "keys": "Cmd+Shift+O",
+          "does": "Documents folder"
+        },
+        {
+          "keys": "Cmd+Shift+F",
+          "does": "Recents"
+        },
+        {
+          "keys": "Cmd+Shift+U",
+          "does": "Utilities folder"
+        },
+        {
+          "keys": "Cmd+K",
+          "does": "Connect to Server"
+        },
+        {
+          "keys": "Cmd+1",
+          "does": "View as icons"
+        },
+        {
+          "keys": "Cmd+2",
+          "does": "View as list"
+        },
+        {
+          "keys": "Cmd+3",
+          "does": "View as columns"
+        },
+        {
+          "keys": "Cmd+4",
+          "does": "View as gallery"
+        },
+        {
+          "keys": "Cmd+[",
+          "does": "Previous folder"
+        },
+        {
+          "keys": "Cmd+]",
+          "does": "Next folder"
+        },
+        {
+          "keys": "Cmd+Up",
+          "does": "Enclosing folder"
+        },
+        {
+          "keys": "Cmd+Alt+P",
+          "does": "Path bar"
+        },
+        {
+          "keys": "Cmd+Alt+S",
+          "does": "Sidebar"
+        },
+        {
+          "keys": "Cmd+Shift+P",
+          "does": "Preview pane"
+        },
+        {
+          "keys": "Cmd+E",
+          "does": "Eject"
+        },
+        {
+          "keys": "Cmd+Delete",
+          "does": "Move to Trash",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Shift+Delete",
+          "does": "Empty Trash",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Keynote",
+      "exes": [
+        "Keynote.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/keynote/keyboard-shortcuts-tanfde4a3e6d/mac"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+Alt+P",
+          "does": "Play slideshow",
+          "icon": "play",
+          "label": "Play"
+        },
+        {
+          "keys": "Right",
+          "does": "Next slide or build",
+          "icon": "skip-forward",
+          "label": "Next"
+        },
+        {
+          "keys": "Left",
+          "does": "Previous slide",
+          "icon": "skip-back",
+          "label": "Previous"
+        },
+        {
+          "keys": "B",
+          "does": "Black screen (playing)",
+          "icon": "moon",
+          "label": "Black"
+        },
+        {
+          "keys": "W",
+          "does": "White screen (playing)",
+          "icon": "sun",
+          "label": "White"
+        },
+        {
+          "keys": "F",
+          "does": "Pause (playing)",
+          "icon": "pause",
+          "label": "Pause"
+        },
+        {
+          "keys": "Cmd+Shift+P",
+          "does": "Presenter notes",
+          "icon": "file-text",
+          "label": "Notes"
+        },
+        {
+          "keys": "Cmd+Alt+G",
+          "does": "Group",
+          "icon": "layers"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Duplicate",
+          "icon": "copy"
+        },
+        {
+          "keys": "Cmd+Alt+Shift+G",
+          "does": "Ungroup"
+        },
+        {
+          "keys": "Cmd+Shift+.",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Cmd+Shift+,",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Cmd+0",
+          "does": "Actual size"
+        },
+        {
+          "keys": "Cmd+Alt+Shift+F",
+          "does": "Bring forward"
+        },
+        {
+          "keys": "Cmd+Alt+Shift+B",
+          "does": "Send backward"
+        },
+        {
+          "keys": "Cmd+Shift+H",
+          "does": "Skip slide (navigator)"
+        },
+        {
+          "keys": "Escape",
+          "does": "Quit presentation"
+        }
+      ]
+    },
+    {
+      "app": "Final Cut Pro",
+      "exes": [
+        "Final Cut Pro.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/final-cut-pro/keyboard-shortcuts-ver90ba5929/mac"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/Pause",
+          "icon": "play",
+          "label": "Play"
+        },
+        {
+          "keys": "Cmd+B",
+          "does": "Blade",
+          "icon": "scissors"
+        },
+        {
+          "keys": "M",
+          "does": "Add marker",
+          "icon": "flag",
+          "label": "Marker"
+        },
+        {
+          "keys": "I",
+          "does": "Set range start",
+          "icon": "arrow-left",
+          "label": "In"
+        },
+        {
+          "keys": "O",
+          "does": "Set range end",
+          "icon": "arrow-right-to-line",
+          "label": "Out"
+        },
+        {
+          "keys": "N",
+          "does": "Snapping",
+          "icon": "target"
+        },
+        {
+          "keys": "S",
+          "does": "Skimming",
+          "icon": "eye"
+        },
+        {
+          "keys": "Shift+Z",
+          "does": "Zoom to fit",
+          "icon": "maximize",
+          "label": "Fit"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Render all",
+          "icon": "zap",
+          "label": "Render"
+        },
+        {
+          "keys": "J",
+          "does": "Play reverse"
+        },
+        {
+          "keys": "K",
+          "does": "Stop"
+        },
+        {
+          "keys": "L",
+          "does": "Play forward"
+        },
+        {
+          "keys": "A",
+          "does": "Select tool"
+        },
+        {
+          "keys": "B",
+          "does": "Blade tool"
+        },
+        {
+          "keys": "T",
+          "does": "Trim tool"
+        },
+        {
+          "keys": "R",
+          "does": "Range selection tool"
+        },
+        {
+          "keys": "Cmd+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Import media"
+        },
+        {
+          "keys": "E",
+          "does": "Append to storyline"
+        },
+        {
+          "keys": "W",
+          "does": "Insert"
+        },
+        {
+          "keys": "D",
+          "does": "Overwrite"
+        },
+        {
+          "keys": "Q",
+          "does": "Connect"
+        },
+        {
+          "keys": "Cmd+T",
+          "does": "Add default transition"
+        },
+        {
+          "keys": "Cmd+Shift+8",
+          "does": "Audio meters"
+        },
+        {
+          "keys": "Cmd+Shift+F",
+          "does": "Play full screen"
+        },
+        {
+          "keys": "Alt+S",
+          "does": "Solo"
+        },
+        {
+          "keys": "Cmd+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Cmd+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Cmd+Shift+B",
+          "does": "Blade all"
+        },
+        {
+          "keys": "Delete",
+          "does": "Delete",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Logic Pro",
+      "exes": [
+        "Logic Pro.app",
+        "Logic Pro X.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/logicpro/global-commands-lgcp02bf31b6/mac"
+      ],
+      "note": "The U.S. default key command set.",
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play or stop",
+          "icon": "play",
+          "label": "Play/Stop"
+        },
+        {
+          "keys": "R",
+          "does": "Record",
+          "icon": "circle-dot"
+        },
+        {
+          "keys": "C",
+          "does": "Cycle mode",
+          "icon": "refresh-cw",
+          "label": "Cycle"
+        },
+        {
+          "keys": "K",
+          "does": "Metronome click",
+          "icon": "timer",
+          "label": "Click"
+        },
+        {
+          "keys": "Return",
+          "does": "Go to beginning",
+          "icon": "skip-back",
+          "label": "To start"
+        },
+        {
+          "keys": "X",
+          "does": "Mixer",
+          "icon": "list-ordered"
+        },
+        {
+          "keys": "Y",
+          "does": "Library",
+          "icon": "folder-open"
+        },
+        {
+          "keys": "P",
+          "does": "Piano roll",
+          "icon": "music"
+        },
+        {
+          "keys": "Alt+'",
+          "does": "Create marker",
+          "icon": "flag",
+          "label": "Marker"
+        },
+        {
+          "keys": ",",
+          "does": "Rewind"
+        },
+        {
+          "keys": ".",
+          "does": "Forward"
+        },
+        {
+          "keys": "Shift+K",
+          "does": "Count-in"
+        },
+        {
+          "keys": "B",
+          "does": "Smart Controls"
+        },
+        {
+          "keys": "O",
+          "does": "Loop browser"
+        },
+        {
+          "keys": "M",
+          "does": "Mute channel strip"
+        },
+        {
+          "keys": "S",
+          "does": "Solo channel strip"
+        },
+        {
+          "keys": "Cmd+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Cmd+Shift+S",
+          "does": "Save project as"
+        }
+      ]
+    },
+    {
+      "app": "Xcode",
+      "exes": [
+        "Xcode.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://developer.apple.com/library/ios/documentation/IDEs/Conceptual/xcode_help-command_shortcuts/MenuCommands/MenuCommands014.html"
+      ],
+      "note": "Apple's Xcode menu reference (Product menu); the newer Xcode help has no shortcut list.",
+      "shortcuts": [
+        {
+          "keys": "Cmd+B",
+          "does": "Build",
+          "icon": "zap"
+        },
+        {
+          "keys": "Cmd+R",
+          "does": "Run",
+          "icon": "play"
+        },
+        {
+          "keys": "Cmd+.",
+          "does": "Stop",
+          "icon": "square"
+        },
+        {
+          "keys": "Cmd+Shift+K",
+          "does": "Clean",
+          "icon": "trash-2"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Profile",
+          "icon": "cpu"
+        },
+        {
+          "keys": "Ctrl+Cmd+R",
+          "does": "Run without building",
+          "icon": "play-circle",
+          "label": "Run only"
+        },
+        {
+          "keys": "Ctrl+Cmd+B",
+          "does": "Analyze",
+          "icon": "search"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Build for running"
+        },
+        {
+          "keys": "Cmd+Alt+Shift+K",
+          "does": "Clean build folder"
+        }
+      ]
+    },
+    {
+      "app": "Terminal",
+      "exes": [
+        "Terminal.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/terminal/keyboard-shortcuts-trmlshtcts/mac"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+T",
+          "does": "New tab",
+          "icon": "plus"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New window",
+          "icon": "app-window"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Split pane",
+          "icon": "layers",
+          "label": "Split"
+        },
+        {
+          "keys": "Cmd+K",
+          "does": "Clear to start",
+          "icon": "x",
+          "label": "Clear"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Find",
+          "icon": "search"
+        },
+        {
+          "keys": "Cmd+=",
+          "does": "Bigger font",
+          "icon": "zoom-in",
+          "label": "Bigger"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Smaller font",
+          "icon": "zoom-out",
+          "label": "Smaller"
+        },
+        {
+          "keys": "Ctrl+Cmd+F",
+          "does": "Full screen",
+          "icon": "maximize"
+        },
+        {
+          "keys": "Cmd+.",
+          "does": "Break (Ctrl-C)",
+          "icon": "square",
+          "label": "Break"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Cmd+Shift+\\",
+          "does": "Show all tabs"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Inspector"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Reverse history search"
+        },
+        {
+          "keys": "Cmd+G",
+          "does": "Find next"
+        },
+        {
+          "keys": "Cmd+Shift+D",
+          "does": "Close split pane",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Cmd+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Ableton Live",
+      "exes": [
+        "Ableton Live*.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://www.ableton.com/en/live-manual/12/live-keyboard-shortcuts/"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop",
+          "icon": "play",
+          "label": "Play/Stop"
+        },
+        {
+          "keys": "F9",
+          "does": "Record",
+          "icon": "circle-dot"
+        },
+        {
+          "keys": "Tab",
+          "does": "Session/Arrangement view",
+          "icon": "layers",
+          "label": "Views"
+        },
+        {
+          "keys": "O",
+          "does": "Metronome",
+          "icon": "timer"
+        },
+        {
+          "keys": "Ctrl+Alt+B",
+          "does": "Browser",
+          "icon": "folder-open"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Duplicate",
+          "icon": "copy"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Split clip",
+          "icon": "scissors",
+          "label": "Split"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Loop brace",
+          "icon": "refresh-cw",
+          "label": "Loop"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Insert audio track",
+          "icon": "plus",
+          "label": "Audio track"
+        },
+        {
+          "keys": "Shift+F9",
+          "does": "Arm arrangement recording"
+        },
+        {
+          "keys": "Ctrl+Shift+F9",
+          "does": "Record to Session view"
+        },
+        {
+          "keys": "Shift+Tab",
+          "does": "Device/clip view"
+        },
+        {
+          "keys": "F10",
+          "does": "Back to arrangement"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Insert MIDI track"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Consolidate"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save Live Set"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Export audio/video"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out window"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "MIDI map mode"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Key map mode"
+        },
+        {
+          "keys": "Ctrl+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        }
+      ]
+    },
+    {
+      "app": "Ableton Live",
+      "exes": [
+        "Ableton Live*.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://www.ableton.com/en/live-manual/12/live-keyboard-shortcuts/"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop",
+          "icon": "play",
+          "label": "Play/Stop"
+        },
+        {
+          "keys": "F9",
+          "does": "Record",
+          "icon": "circle-dot"
+        },
+        {
+          "keys": "Tab",
+          "does": "Session/Arrangement view",
+          "icon": "layers",
+          "label": "Views"
+        },
+        {
+          "keys": "O",
+          "does": "Metronome",
+          "icon": "timer"
+        },
+        {
+          "keys": "Cmd+Alt+B",
+          "does": "Browser",
+          "icon": "folder-open"
+        },
+        {
+          "keys": "Cmd+D",
+          "does": "Duplicate",
+          "icon": "copy"
+        },
+        {
+          "keys": "Cmd+E",
+          "does": "Split clip",
+          "icon": "scissors",
+          "label": "Split"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Loop brace",
+          "icon": "refresh-cw",
+          "label": "Loop"
+        },
+        {
+          "keys": "Cmd+T",
+          "does": "Insert audio track",
+          "icon": "plus",
+          "label": "Audio track"
+        },
+        {
+          "keys": "Shift+F9",
+          "does": "Arm arrangement recording"
+        },
+        {
+          "keys": "Cmd+Shift+F9",
+          "does": "Record to Session view"
+        },
+        {
+          "keys": "Shift+Tab",
+          "does": "Device/clip view"
+        },
+        {
+          "keys": "F10",
+          "does": "Back to arrangement"
+        },
+        {
+          "keys": "Cmd+Shift+T",
+          "does": "Insert MIDI track"
+        },
+        {
+          "keys": "Cmd+J",
+          "does": "Consolidate"
+        },
+        {
+          "keys": "Cmd+S",
+          "does": "Save Live Set"
+        },
+        {
+          "keys": "Cmd+Shift+R",
+          "does": "Export audio/video"
+        },
+        {
+          "keys": "Cmd+-",
+          "does": "Zoom out window"
+        },
+        {
+          "keys": "Cmd+M",
+          "does": "MIDI map mode"
+        },
+        {
+          "keys": "Cmd+K",
+          "does": "Key map mode"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "Settings"
+        },
+        {
+          "keys": "Cmd+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Cmd+Shift+Z",
+          "does": "Redo"
+        }
+      ]
+    },
+    {
+      "app": "FL Studio",
+      "exes": [
+        "FL64.exe",
+        "FL.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/basics_shortcuts.htm"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop",
+          "icon": "play",
+          "label": "Play/Stop"
+        },
+        {
+          "keys": "R",
+          "does": "Record",
+          "icon": "circle-dot"
+        },
+        {
+          "keys": "L",
+          "does": "Pattern/song mode",
+          "icon": "refresh-cw",
+          "label": "Pat/Song"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Metronome",
+          "icon": "timer"
+        },
+        {
+          "keys": "F5",
+          "does": "Playlist",
+          "icon": "list-ordered"
+        },
+        {
+          "keys": "F6",
+          "does": "Channel rack",
+          "icon": "layers",
+          "label": "Channels"
+        },
+        {
+          "keys": "F7",
+          "does": "Piano roll",
+          "icon": "music"
+        },
+        {
+          "keys": "F9",
+          "does": "Mixer",
+          "icon": "volume-2"
+        },
+        {
+          "keys": "Alt+F8",
+          "does": "Browser",
+          "icon": "folder-open"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Save as"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Export wave"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo/redo last edit"
+        },
+        {
+          "keys": "Ctrl+Alt+Z",
+          "does": "Undo step by step"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Typing keyboard to piano"
+        }
+      ]
+    },
+    {
+      "app": "FL Studio",
+      "exes": [
+        "FL Studio*.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/basics_shortcuts.htm"
+      ],
+      "note": "The manual writes both systems in one: Ctrl/Cmd, Alt/Opt.",
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop",
+          "icon": "play",
+          "label": "Play/Stop"
+        },
+        {
+          "keys": "R",
+          "does": "Record",
+          "icon": "circle-dot"
+        },
+        {
+          "keys": "L",
+          "does": "Pattern/song mode",
+          "icon": "refresh-cw",
+          "label": "Pat/Song"
+        },
+        {
+          "keys": "Cmd+M",
+          "does": "Metronome",
+          "icon": "timer"
+        },
+        {
+          "keys": "F5",
+          "does": "Playlist",
+          "icon": "list-ordered"
+        },
+        {
+          "keys": "F6",
+          "does": "Channel rack",
+          "icon": "layers",
+          "label": "Channels"
+        },
+        {
+          "keys": "F7",
+          "does": "Piano roll",
+          "icon": "music"
+        },
+        {
+          "keys": "F9",
+          "does": "Mixer",
+          "icon": "volume-2"
+        },
+        {
+          "keys": "Alt+F8",
+          "does": "Browser",
+          "icon": "folder-open"
+        },
+        {
+          "keys": "Cmd+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Cmd+Shift+S",
+          "does": "Save as"
+        },
+        {
+          "keys": "Cmd+R",
+          "does": "Export wave"
+        },
+        {
+          "keys": "Cmd+Z",
+          "does": "Undo/redo last edit"
+        },
+        {
+          "keys": "Cmd+Alt+Z",
+          "does": "Undo step by step"
+        },
+        {
+          "keys": "Cmd+T",
+          "does": "Typing keyboard to piano"
+        }
+      ]
+    },
+    {
+      "app": "Apple Music",
+      "exes": [
+        "Music.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://support.apple.com/guide/music/keyboard-shortcuts-mus1019/mac"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/pause",
+          "icon": "play",
+          "label": "Play"
+        },
+        {
+          "keys": "Right",
+          "does": "Next song (playing)",
+          "icon": "skip-forward",
+          "label": "Next"
+        },
+        {
+          "keys": "Left",
+          "does": "Previous song (playing)",
+          "icon": "skip-back",
+          "label": "Previous"
+        },
+        {
+          "keys": "Cmd+Up",
+          "does": "Volume up",
+          "icon": "volume-2",
+          "label": "Louder"
+        },
+        {
+          "keys": "Cmd+Down",
+          "does": "Volume down",
+          "icon": "volume-1",
+          "label": "Quieter"
+        },
+        {
+          "keys": "Cmd+L",
+          "does": "Show current song",
+          "icon": "music",
+          "label": "Now"
+        },
+        {
+          "keys": "Cmd+Alt+U",
+          "does": "Queue",
+          "icon": "list-ordered"
+        },
+        {
+          "keys": "Cmd+F",
+          "does": "Search field",
+          "icon": "search",
+          "label": "Search"
+        },
+        {
+          "keys": "Cmd+Alt+E",
+          "does": "Equalizer",
+          "icon": "settings"
+        },
+        {
+          "keys": "Cmd+.",
+          "does": "Stop"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New playlist"
+        },
+        {
+          "keys": "Alt+Space",
+          "does": "Genius Shuffle"
+        },
+        {
+          "keys": "Cmd+O",
+          "does": "Add file to library"
+        },
+        {
+          "keys": "Cmd+Delete",
+          "does": "Delete without asking",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Telegram",
+      "exes": [
+        "Telegram.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/core/shortcuts.cpp"
+      ],
+      "note": "Telegram Desktop's own default bindings in its source; the Mac App Store Telegram is another app with other keys.",
+      "shortcuts": [
+        {
+          "keys": "Ctrl+F",
+          "does": "Search",
+          "icon": "search"
+        },
+        {
+          "keys": "Alt+Down",
+          "does": "Next chat",
+          "icon": "arrow-right-to-line",
+          "label": "Next chat"
+        },
+        {
+          "keys": "Alt+Up",
+          "does": "Previous chat",
+          "icon": "arrow-left",
+          "label": "Prev chat"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Saved Messages",
+          "icon": "bookmark",
+          "label": "Saved"
+        },
+        {
+          "keys": "Ctrl+9",
+          "does": "Archive",
+          "icon": "folder",
+          "label": "Archive"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Contacts",
+          "icon": "users"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Pinned chat 1",
+          "icon": "star",
+          "label": "Pinned 1"
+        },
+        {
+          "keys": "Ctrl+2",
+          "does": "Pinned chat 2",
+          "icon": "star",
+          "label": "Pinned 2"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Lock Telegram",
+          "icon": "lock",
+          "label": "Lock"
+        },
+        {
+          "keys": "Ctrl+PageDown",
+          "does": "Next chat"
+        },
+        {
+          "keys": "Ctrl+PageUp",
+          "does": "Previous chat"
+        },
+        {
+          "keys": "Ctrl+Alt+Home",
+          "does": "First chat"
+        },
+        {
+          "keys": "Ctrl+Alt+End",
+          "does": "Last chat"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Minimize"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed window"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close window",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Quit Telegram",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Cursor",
+      "exes": [
+        "Cursor.exe"
+      ],
+      "os": "windows",
+      "sources": [
+        "https://cursor.com/docs/configuration/kbd"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+L",
+          "does": "Toggle side panel (chat)",
+          "icon": "message-square",
+          "label": "Chat"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Inline edit",
+          "icon": "pen-tool",
+          "label": "Edit"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Agent layout",
+          "icon": "layers",
+          "label": "Agent"
+        },
+        {
+          "keys": "Ctrl+Shift+L",
+          "does": "Add selection to chat",
+          "icon": "plus",
+          "label": "Add to chat"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New chat",
+          "icon": "file-plus",
+          "label": "New chat"
+        },
+        {
+          "keys": "Ctrl+.",
+          "does": "Mode menu",
+          "icon": "list-checks",
+          "label": "Modes"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Next AI model",
+          "icon": "refresh-cw",
+          "label": "Model"
+        },
+        {
+          "keys": "Ctrl+Shift+P",
+          "does": "Command palette",
+          "icon": "search",
+          "label": "Commands"
+        },
+        {
+          "keys": "Ctrl+Shift+Space",
+          "does": "Voice mode",
+          "icon": "mic",
+          "label": "Voice"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Toggle side panel"
+        },
+        {
+          "keys": "Ctrl+Shift+J",
+          "does": "Cursor settings"
+        },
+        {
+          "keys": "Ctrl+,",
+          "does": "General settings"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "New chat tab"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Previous chat"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Next chat"
+        },
+        {
+          "keys": "Ctrl+Shift+Backspace",
+          "does": "Cancel generation"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Toggle inline input focus"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close chat",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Cursor",
+      "exes": [
+        "Cursor.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://cursor.com/docs/configuration/kbd"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Cmd+L",
+          "does": "Toggle side panel (chat)",
+          "icon": "message-square",
+          "label": "Chat"
+        },
+        {
+          "keys": "Cmd+K",
+          "does": "Inline edit",
+          "icon": "pen-tool",
+          "label": "Edit"
+        },
+        {
+          "keys": "Cmd+E",
+          "does": "Agent layout",
+          "icon": "layers",
+          "label": "Agent"
+        },
+        {
+          "keys": "Cmd+Shift+L",
+          "does": "Add selection to chat",
+          "icon": "plus",
+          "label": "Add to chat"
+        },
+        {
+          "keys": "Cmd+N",
+          "does": "New chat",
+          "icon": "file-plus",
+          "label": "New chat"
+        },
+        {
+          "keys": "Cmd+.",
+          "does": "Mode menu",
+          "icon": "list-checks",
+          "label": "Modes"
+        },
+        {
+          "keys": "Cmd+/",
+          "does": "Next AI model",
+          "icon": "refresh-cw",
+          "label": "Model"
+        },
+        {
+          "keys": "Cmd+Shift+P",
+          "does": "Command palette",
+          "icon": "search",
+          "label": "Commands"
+        },
+        {
+          "keys": "Cmd+Shift+Space",
+          "does": "Voice mode",
+          "icon": "mic",
+          "label": "Voice"
+        },
+        {
+          "keys": "Cmd+I",
+          "does": "Toggle side panel"
+        },
+        {
+          "keys": "Cmd+Shift+J",
+          "does": "Cursor settings"
+        },
+        {
+          "keys": "Cmd+,",
+          "does": "General settings"
+        },
+        {
+          "keys": "Cmd+T",
+          "does": "New chat tab"
+        },
+        {
+          "keys": "Cmd+[",
+          "does": "Previous chat"
+        },
+        {
+          "keys": "Cmd+]",
+          "does": "Next chat"
+        },
+        {
+          "keys": "Cmd+Shift+Backspace",
+          "does": "Cancel generation"
+        },
+        {
+          "keys": "Cmd+Shift+K",
+          "does": "Toggle inline input focus"
+        },
+        {
+          "keys": "Cmd+W",
+          "does": "Close chat",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Steam",
+      "exes": [
+        "steam.exe",
+        "Steam.app"
+      ],
+      "sources": [
+        "https://partner.steamgames.com/doc/features/overlay",
+        "https://partner.steamgames.com/doc/features/screenshots"
+      ],
+      "note": "Both work in a game with the Steam Overlay; the user can change them in Steam > Settings.",
+      "shortcuts": [
+        {
+          "keys": "Shift+Tab",
+          "does": "Steam Overlay (in game)",
+          "icon": "gamepad-2",
+          "label": "Overlay"
+        },
+        {
+          "keys": "F12",
+          "does": "Screenshot (in game)",
+          "icon": "camera",
+          "label": "Screenshot"
+        }
+      ]
+    },
+    {
+      "app": "ChatGPT",
+      "exes": [
+        "ChatGPT.app"
+      ],
+      "os": "macos",
+      "sources": [
+        "https://help.openai.com/en/articles/9275200-using-the-chatgpt-macos-app"
+      ],
+      "note": "The only shortcut OpenAI documents for the Mac app.",
+      "shortcuts": [
+        {
+          "keys": "Alt+Space",
+          "does": "Chat bar (from anywhere)",
+          "icon": "message-square",
+          "label": "Ask"
+        }
+      ]
+    },
+    {
+      "app": "ChatGPT",
+      "exes": [
+        "ChatGPT.exe"
+      ],
+      "os": "windows",
+      "sources": [],
+      "note": "OpenAI's Windows help page could not be read (403); no shortcut is listed until it is.",
+      "shortcuts": []
+    },
+    {
+      "app": "Claude",
+      "exes": [
+        "Claude.exe",
+        "Claude.app"
+      ],
+      "sources": [],
+      "note": "Anthropic documents quick entry on a Mac as a double tap of Option, which a key cannot send; no other shortcuts are published.",
+      "shortcuts": []
+    },
+    {
+      "app": "WhatsApp",
+      "exes": [
+        "WhatsApp.exe",
+        "WhatsApp.Root.exe",
+        "WhatsApp.app"
+      ],
+      "sources": [],
+      "note": "WhatsApp publishes no list of desktop shortcuts outside the app (Settings > Keyboard shortcuts).",
+      "shortcuts": []
+    },
+    {
+      "app": "Streamlabs",
+      "exes": [
+        "Streamlabs OBS.exe",
+        "Streamlabs Desktop.exe",
+        "Streamlabs Desktop.app"
+      ],
+      "sources": [],
+      "note": "Streamlabs Desktop has no default hotkeys (the user sets them); its own actions (streamlabs.*) need none.",
+      "shortcuts": []
     }
   ]
 }

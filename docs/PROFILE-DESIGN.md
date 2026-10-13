@@ -49,7 +49,7 @@ and presses, 3 knobs with LED rings, 5 faders with LEDs, 2 rollers, and the base
 - Icons: one family per profile (the built-in line icons, or game icons `game:<name>` for a game
   profile, or your own pictures in one consistent style). Never mix line icons with photos on the
   same row.
-- Color: HubDeck's house look (the owner's pick, 2026-10-12): graphite keys, the icon in its
+- Color: HubDeck's house look: graphite keys, the icon in its
   group's muted color, a white label. HubDeck applies it to drafts; use other backgrounds only
   when the user asks for them. One accent (the profile color and edge light) for the profile.
 - Contrast: text and icon at least 4.5:1 against the background. Check with `preview_control`;

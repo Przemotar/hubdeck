@@ -124,7 +124,10 @@ pub fn hub_rainbow(lights: Option<Lights>, count: usize, unix_ms: u64, brightnes
             let replaced: Vec<bool> = l.leds.iter().map(|led| led.mode == LedMode::Rainbow).collect();
             for (led, r) in l.leds.iter_mut().zip(&replaced) {
                 if *r {
-                    *led = Led::solid(rgb);
+                    // a grey color carries its level (white = full); other colors (an effect's own) do not
+                    let [r, g, b] = led.rgb;
+                    let level = if r == g && g == b && r > 0 { r as f32 / 255.0 } else { 1.0 };
+                    *led = Led::solid(scale(rgb, level));
                 }
             }
             (l, replaced)
@@ -239,7 +242,8 @@ fn style_rgb(profile: Option<&Profile>, cfg: &LightSettings) -> Option<Rgb> {
 
 fn dim(lights: &mut Lights, brightness: u8) {
     if brightness < 100 {
-        for l in &mut lights.leds {
+        // a rainbow LED's color is its level (hub_rainbow dims it by the brightness itself)
+        for l in lights.leds.iter_mut().filter(|l| l.mode != LedMode::Rainbow) {
             l.rgb = l.rgb.map(|c| (c as u32 * brightness as u32 / 100) as u8);
         }
     }
@@ -264,7 +268,12 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
             let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some());
             Led::solid(level.map(|l| scale(rgb, l)).unwrap_or(rgb))
         } else {
-            out.leds.push(Led { rgb: [255, 255, 255], mode: LedMode::Rainbow });
+            // the rainbow: a control with a level keeps it in the LED's color (white = full), so
+            // HubDeck's rainbow gets darker as the volume goes down (owner's tour test, session 9)
+            let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some_and(|b| b.look.led_level));
+            let v = level.map_or(255, |l| (l.clamp(MIN_LEVEL, 1.0) * 255.0).round() as u8);
+            any |= level.is_some();
+            out.leds.push(Led { rgb: [v, v, v], mode: LedMode::Rainbow });
             continue;
         };
         any = true;
@@ -343,6 +352,10 @@ mod tests {
         assert_eq!(l.leds[0], Led::solid([127, 0, 0]));
         assert_eq!(l.leds[1], Led::solid([9, 9, 9]));
         assert_eq!(replaced, vec![true, false]);
+        // a volume at half: the rainbow at half too (its level rides in a grey color)
+        let half = Lights { leds: vec![Led { rgb: [128, 128, 128], mode: LedMode::Rainbow }], speed: None };
+        let (l, _) = hub_rainbow(Some(half), 1, 0, 100);
+        assert_eq!(l.leds[0], Led::solid([128, 0, 0]));
     }
 
     #[test]

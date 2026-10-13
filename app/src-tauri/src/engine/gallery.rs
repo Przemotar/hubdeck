@@ -92,7 +92,7 @@ pub fn previews() -> Vec<Preview> {
             let svg = match f.id {
                 "volume" => render::dial_svg(l, Some((Some(0.72), "Volume")), 0),
                 "clock" => render::time_dial_svg(l, &now.format("%H:%M").to_string(), Some(&now.format("%a %-d %b").to_string()), None, 0),
-                "nowPlaying" => render::now_playing_dial_svg(l, Some(("Midnight City", "M83", true, None)), 0),
+                "nowPlaying" => render::now_playing_dial_svg(l, Some(("Midnight City", "M83", true, None)), Some(0.4), 0),
                 "cpu" => render::dial_svg(l, Some((Some(0.37), "CPU")), 0),
                 "gpuTemp" => render::dial_svg(l, Some((Some(0.54), "GPU temp")), 0),
                 "timer" => render::time_dial_svg(l, "4:32", Some("Timer"), Some(0.9), 0),

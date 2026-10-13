@@ -84,7 +84,16 @@ pub struct Stop {
     pub controls: Vec<String>,
     /// The control the "Try it" task is about.
     pub try_control: Option<String>,
+    /// "One control, many jobs": the gestures to try, in order (`keys.5:hold`, `knobs.2:double`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<String>,
+    /// "Your dial, many faces": the dial looks shown, by the gallery's ids; `look` picks one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<&'static str>,
 }
+
+/// The dial looks the tour offers (owner's pick, 2026-10-14: the dial is what stands out).
+const DIAL_FACES: [&str; 6] = ["nowPlaying", "clock", "timer", "cpu", "brightness", "scroll"];
 
 /// The tour as the window sees it.
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +269,11 @@ fn stop_ids(ctx: &Ctx) -> Vec<&'static str> {
     if let Some(last) = ids.pop() {
         ids.insert(1, last);
     }
+    // press, hold and double press on a key, a knob and the dial; then the dial's other faces
+    ids.push("gestures");
+    if ctx.has("dial") {
+        ids.push("dial");
+    }
     ids.extend(["superAnimations", "superSaver", "superRainbow"]);
     ids
 }
@@ -297,7 +311,7 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
     let dial_music = ctx.has("dial") && keep("music");
     let fun_page = keep("superAnimations");
     for sid in stop_ids(ctx) {
-        let mut stop = Stop { id: sid, keep: keep(sid), look: look(sid), looks: 1, controls: Vec::new(), try_control: None };
+        let mut stop = Stop { id: sid, keep: keep(sid), look: look(sid), looks: 1, controls: Vec::new(), try_control: None, tasks: Vec::new(), faces: Vec::new() };
         match sid {
             "volume" => {
                 stop.looks = 2;
@@ -469,6 +483,39 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                 put(&mut stop, "keys.9", binding("core.page", json!({"page": "fun"}), &ctx.tr("Fun", "Zabawa"), "sparkles"));
                 stop.try_control = Some("keys.9".into());
             }
+            "gestures" => {
+                // the Mic key: a hold turns all sound off
+                put(&mut stop, "keys.5:hold", binding("core.volume", json!({"target": "system"}), &ctx.tr("Sound off", "Bez dźwięku"), "volume-x"));
+                stop.tasks.push("keys.5:hold".into());
+                // the System knob (or a key without knobs): a double press switches speakers and headphones
+                let (control, task) = if ctx.has("knobs") { ("knobs.2:double", "knobs.2:double") } else { ("keys.6:double", "keys.6:double") };
+                put(&mut stop, control, binding("core.audioDevice", json!({"kind": "output", "device": ""}), &ctx.tr("Speakers / headphones", "Głośniki / słuchawki"), "headphones"));
+                stop.tasks.push(task.into());
+                // the dial: a hold opens the music app
+                if ctx.has("dial") {
+                    let b = match ctx.music.as_deref() {
+                        Some(app) => binding("core.launch", json!({"target": app}), &format!("{} {app}", ctx.tr("Open", "Otwórz")), "music"),
+                        None => binding("core.media", json!({"command": "next"}), &ctx.tr("Next", "Następny"), "skip-forward"),
+                    };
+                    put(&mut stop, "dial:hold", b);
+                    stop.tasks.push("dial:hold".into());
+                }
+                stop.try_control = stop.tasks.first().map(|t| t.split(':').next().unwrap_or(t).to_string());
+            }
+            "dial" => {
+                stop.faces = DIAL_FACES.to_vec();
+                stop.looks = DIAL_FACES.len();
+                // the first is what the dial is now (the music); the others come from the dial gallery
+                if look(sid) > 0
+                    && let Some(face) = super::gallery::faces().into_iter().find(|f| f.id == DIAL_FACES[look(sid).min(DIAL_FACES.len() - 1)])
+                {
+                    let mut b = serde_json::to_value(&face.binding).unwrap_or_default();
+                    b["look"]["label"] = json!(face.caption_in(if ctx.polish { "pl" } else { "en" }));
+                    put(&mut stop, "dial", b);
+                }
+                // the first look leaves the dial as the parts before made it (the music, or the volume)
+                stop.try_control = Some("dial".into());
+            }
             "superSaver" | "superRainbow" => {}
             _ => {}
         }
@@ -574,7 +621,12 @@ pub async fn tour_start(app: AppHandle, focus: Focus, language: String) -> Resul
 
 /// Keep or leave out a part, or pick its look; the deck follows at once.
 #[tauri::command]
-pub fn tour_set(app: AppHandle, stop: String, keep: Option<bool>, look: Option<usize>) -> Result<View, String> {
+pub async fn tour_set(app: AppHandle, stop: String, keep: Option<bool>, look: Option<usize>) -> Result<View, String> {
+    // off the window's thread: building and drawing the deck takes a moment
+    tauri::async_runtime::spawn_blocking(move || set_now(&app, stop, keep, look)).await.map_err(|e| e.to_string())?
+}
+
+fn set_now(app: &AppHandle, stop: String, keep: Option<bool>, look: Option<usize>) -> Result<View, String> {
     let engine = app.state::<Engine>();
     let mut guard = TOUR.lock().unwrap_or_else(|e| e.into_inner());
     let t = guard.as_mut().ok_or("no tour runs")?;
@@ -698,6 +750,8 @@ pub fn dry_run_says(action: &str, polish: bool) -> Option<&'static str> {
         ("obs.stream" | "streamlabs.stream", true) => "Tu: na żywo",
         ("obs.record" | "streamlabs.record" | "obs.recordPause", false) => "Would record",
         ("obs.record" | "streamlabs.record" | "obs.recordPause", true) => "Tu: nagrywanie",
+        ("core.audioDevice", false) => "Would switch speakers and headphones",
+        ("core.audioDevice", true) => "Tu: głośniki ↔ słuchawki",
         ("twitch.ad" | "twitch.clearChat" | "twitch.shield" | "twitch.title" | "twitch.chatMode" | "core.run" | "core.http", false) => "Not in the tour",
         ("twitch.ad" | "twitch.clearChat" | "twitch.shield" | "twitch.title" | "twitch.chatMode" | "core.run" | "core.http", true) => "Nie w pokazie",
         _ => return None,
@@ -768,6 +822,25 @@ mod tests {
         assert!(p.controls.contains_key("keys.14"));
         assert!(p.controls.contains_key("fun/keys.14"));
         assert_eq!(p.pages.len(), 1);
+    }
+
+    #[test]
+    fn many_jobs_on_a_key_a_knob_and_the_dial_and_the_dial_s_faces() {
+        let mut ch = Choices::default();
+        let (p, stops) = build(&ctx(&["keys", "dial", "knobs"], Focus::Mixed), &ch, "t5");
+        let gestures = stops.iter().find(|s| s.id == "gestures").unwrap();
+        assert_eq!(gestures.tasks, vec!["keys.5:hold", "knobs.2:double", "dial:hold"]);
+        assert!(p.controls.contains_key("keys.5:hold") && p.controls.contains_key("knobs.2:double") && p.controls.contains_key("dial:hold"));
+        assert_eq!(stops.iter().find(|s| s.id == "dial").unwrap().faces.len(), 6);
+        // another face: the dial shows it; its hold stays
+        ch.look.insert("dial".into(), 1);
+        let (p, _) = build(&ctx(&["keys", "dial", "knobs"], Focus::Mixed), &ch, "t5");
+        assert_eq!(p.controls["dial"].action, super::super::actions::CLOCK);
+        assert!(p.controls.contains_key("dial:hold"));
+        // no dial: no dial part, and the knob task stays
+        let (_, stops) = build(&ctx(&["keys", "faders"], Focus::Mixed), &Choices::default(), "t6");
+        assert!(!stops.iter().any(|s| s.id == "dial"));
+        assert_eq!(stops.iter().find(|s| s.id == "gestures").unwrap().tasks, vec!["keys.5:hold", "keys.6:double"]);
     }
 
     #[test]

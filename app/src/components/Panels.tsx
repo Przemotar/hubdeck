@@ -6,7 +6,7 @@ import { actionFits, api, controlId, GAMES_ENABLED, setPreviewSalt, type AppInfo
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
-import { DeckView, ModuleThumb } from "./DeckView";
+import { ModuleThumb } from "./DeckView";
 import { demoParam } from "../demo/params";
 import { setTheme, useTheme, type Theme } from "../theme";
 import { osName, updates, useAppVersion, useUpdateAvailable, type UpdateInfo } from "../update";
@@ -80,12 +80,12 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
     return () => clearInterval(timer);
   }, []);
   return (
-    <aside className={`library${tab === "assistant" ? " is-wide" : ""}`} aria-label={tab === "actions" ? t("library.title") : tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
+    <aside data-guide="library" className={`library${tab === "assistant" ? " is-wide" : ""}`} aria-label={tab === "actions" ? t("library.title") : tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
       <div className="lib-tabs seg full" role="tablist">
         <button role="tab" aria-selected={tab === "actions"} className={`tab${tab === "actions" ? " is-active" : ""}`} onClick={() => onTab("actions")}>
           {t("library.title")}
         </button>
-        <button role="tab" aria-selected={tab === "profiles"} className={`tab${tab === "profiles" ? " is-active" : ""}`} onClick={() => onTab("profiles")}>
+        <button role="tab" data-guide="profiles" aria-selected={tab === "profiles"} className={`tab${tab === "profiles" ? " is-active" : ""}`} onClick={() => onTab("profiles")}>
           {t("profiles.title")}
         </button>
         <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
@@ -463,8 +463,10 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   if (!state) return null;
   const q = query.trim().toLowerCase();
-  // drafts live in the assistant until picked
-  const list = state.profiles.filter((p) => !p.draft).filter((p) => !q || p.name.toLowerCase().includes(q) || p.apps.some((a) => a.toLowerCase().includes(q)));
+  // drafts live in the assistant until picked; ready profiles have their own group
+  const found = state.profiles.filter((p) => !p.draft).filter((p) => !q || p.name.toLowerCase().includes(q) || p.apps.some((a) => a.toLowerCase().includes(q)));
+  const list = found.filter((p) => !p.ready);
+  const ready = found.filter((p) => p.ready);
   return (
     <>
       <div className="lib-head">
@@ -537,7 +539,44 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
             );
           })}
         </ul>
-        {list.length === 0 && <p className="help">{t("profiles.none")}</p>}
+        {list.length === 0 && ready.length === 0 && <p className="help">{t("profiles.none")}</p>}
+        {ready.length > 0 && (
+          // owner's pick 1a, 2026-10-14: made at once for the apps installed, off until switched on
+          <section className="ready-apps" aria-labelledby="ready-title">
+            <div className="plist-head">
+              <span id="ready-title">{t("profiles.ready", { count: ready.length })}</span>
+            </div>
+            <p className="help">{t("profiles.readyHelp")}</p>
+            <ul className="plist">
+              {ready.map((p) => {
+                const icon = p.apps.map((a) => appIcon(apps, a)).find(Boolean);
+                const active = state.active === p.id;
+                return (
+                  <li key={p.id} className={`prow${active ? " is-active" : ""}`}>
+                    <button className="prow-main" onClick={() => (active ? onOpenProfile() : api.activate(p.id))} title={active ? t("topbar.profileSettings") : t("topbar.activate")}>
+                      <span className="prow-ic">{icon ? <img src={icon} alt="" width={16} height={16} /> : <Icon name="app-window" />}</span>
+                      <span className="prow-text">
+                        <b>{p.name}</b>
+                        <small>
+                          {active && <span className="tag is-acc">{t("profiles.active")}</span>}
+                          <span className="mono">{p.apps.join(", ")}</span>
+                        </small>
+                      </span>
+                    </button>
+                    <label className="bar-toggle" title={t("profiles.switchInHelp", { app: p.name })}>
+                      <input type="checkbox" checked={p.switchIn !== false} aria-label={t("profiles.switchInFor", { app: p.name })} onChange={(e) => api.profileSwitchIn(p.id, e.target.checked).catch(() => {})} />
+                    </label>
+                    <span className="prow-tools">
+                      <button className="icon-btn danger" title={t("profile.delete")} aria-label={t("profile.delete")} disabled={state.profiles.length <= 1} onClick={() => deleteProfile(p)}>
+                        <Icon name="trash" />
+                      </button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
         <button className="tool lib-new" onClick={onNewProfile}>
           <Icon name="plus" />
           {t("topbar.newDeck")}…
@@ -763,7 +802,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
         )}
         {naming === null ? (
           <span className="pop-anchor" ref={addRef}>
-            <button className={`tab new-deck${adding ? " is-active" : ""}`} aria-expanded={adding} onClick={() => (setAdding((a) => !a), setReadyOpen(false))}>
+            <button data-guide="newDeck" className={`tab new-deck${adding ? " is-active" : ""}`} aria-expanded={adding} onClick={() => (setAdding((a) => !a), setReadyOpen(false))}>
               <Icon name="plus" />
               {t("topbar.newDeck")}
             </button>
@@ -2944,81 +2983,6 @@ export function GalleryPanel({ live, saved, onClose }: { live: LiveState; saved:
         </p>
       </section>
     </aside>
-  );
-}
-
-/** First start in two steps (owner's pick 9a after the release audit, 2026-10-13): is this the desk
- *  as it is (yes, or fix it in Edit layout), then the tour. Calibration lives in Settings; the
- *  modules owned but not attached are ticked in Edit layout. */
-export function Welcome({ live, view, onArrange, saved, onPlace, onTour, onForApp }: { live: LiveState; view: EngineView; onArrange: () => void; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void; onTour?: () => void; onForApp: () => void }) {
-  useLanguage();
-  const found = live.deck.modules.filter((m) => m.kind !== "base");
-  const [deskOk, setDeskOk] = useState(false);
-  return (
-    <div className="setup-page welcome">
-      <header className="setup-head">
-        <h2>{t("welcome.setupTitle")}</h2>
-        <button className="tool ghost" onClick={() => api.onboardingDone()}>
-          {t("welcome.skip")}
-        </button>
-      </header>
-      <div className="setup-body">
-      <div className="welcome-hero">
-        <Logo />
-        <h2>{t("welcome.title")}</h2>
-        <p>{live.deck.modules.length === 0 ? t("welcome.none") : t("welcome.found", { count: found.length, list: found.map((m) => moduleName(m.kind)).join(", ") })}</p>
-      </div>
-      <ol className="wsteps">
-        <li className={`wstep${deskOk ? " is-done" : ""}`}>
-          <span className="wnum">{deskOk ? <Icon name="check" /> : 1}</span>
-          <div className="wbody">
-            <b>{t("welcome.deskTitle")}</b>
-            <p className="help">{t("welcome.desk")}</p>
-            {found.length > 0 && !deskOk && (
-              <div className="welcome-deck">
-                <DeckView live={live} selected={null} onSelect={() => {}} saved={saved} onPlace={onPlace} arranging={false} profile={view.profile} page={null} />
-              </div>
-            )}
-            {!deskOk && (
-              <div className="row">
-                <button className="tool small primary" onClick={() => setDeskOk(true)}>
-                  {t("welcome.deskYes")}
-                </button>
-                <button className="tool small" onClick={onArrange}>
-                  <Icon name="layout-grid" />
-                  {t("welcome.deskFix")}
-                </button>
-              </div>
-            )}
-          </div>
-        </li>
-        <li className="wstep">
-          <span className="wnum">2</span>
-          <div className="wbody">
-            <b>{t("welcome.makeTitle")}</b>
-            <p className="help">{t("welcome.make")}</p>
-            <div className="menu-list">
-              <button className="menu-row is-primary" onClick={onTour ?? onForApp}>
-                <span className="menu-ic">
-                  <Icon name="play" />
-                </span>
-                <span className="menu-text">
-                  <b>{t("newDeck.tour")}</b>
-                  <small>{t("newDeck.tourHelp")}</small>
-                </span>
-              </button>
-            </div>
-            <p className="help">
-              {t("welcome.ownWay")}{" "}
-              <button className="link-btn" onClick={() => api.onboardingDone()}>
-                {t("welcome.skip")}
-              </button>
-            </p>
-          </div>
-        </li>
-      </ol>
-      </div>
-    </div>
   );
 }
 

@@ -163,21 +163,25 @@ export interface ProfileSummary {
   inBar?: boolean;
   /** A draft of the deck assistant: not in the bar, not switched to, until picked. */
   draft?: boolean;
+  /** Made at once for an installed app ("Ready for your apps"). */
+  ready?: boolean;
+  /** Switches in when its app comes to the front (off for a ready profile until switched on). */
+  switchIn?: boolean;
 }
 
 /** What the deck assistant's scan found and the text its first message sends. */
 export interface AssistantScan {
   used: [string, number, number][];
-  /** Owned but not attached now (the assistant builds for `modules`). */
-  detached: string[];
   /** Since when the time in front is counted (local, `2026-10-12 16:30`). */
   since: string;
-  recent: string[];
-  installed: number;
-  games: string[];
   modules: string[];
+  /** Owned but not attached now (the assistant builds for `modules`). */
+  detached: string[];
   profiles: string[];
+  /** What goes with the first message: the apps used most, the deck, the taste notes. */
   text: string;
+  /** The same without the app list ("Send without the app list"). */
+  deckText: string;
 }
 
 /** What the deck assistant runs on (read on this computer, nothing sent). */
@@ -221,6 +225,7 @@ export interface Idea {
 
 export type AssistantEvent =
   | { kind: "context"; used: number; window: number }
+  | { kind: "model"; model: string }
   | { kind: "text"; text: string; choices: string[]; ideas: Idea[] }
   /** A piece of the message being written; the `text` event replaces it. */
   | { kind: "delta"; text: string }
@@ -355,6 +360,10 @@ export interface TourStop {
   looks: number;
   controls: string[];
   tryControl: string | null;
+  /** "One control, many jobs": the gestures to try, in order (`keys.5:hold`). */
+  tasks?: string[];
+  /** "Your dial, many faces": the dial gallery's ids; `look` picks one. */
+  faces?: string[];
 }
 
 export interface TourView {
@@ -673,7 +682,11 @@ export const api = {
   /** Compare drafts on the deck (the dial flips them); null stops. */
   /** Put drafts on the deck to compare from the one at `at` (the dial flips them); null stops. */
   compareDrafts: (ids: string[] | null, at = 0) => invoke("compare_drafts", { ids, at }),
-  settleDraft: (id: string, keep: boolean) => invoke("draft_settle", { id, keep }),
+  /** "Use this" (keep: on the deck as home; a new version of one of the user's decks replaces
+   * it, `replaced` = its name) or throw the draft away. */
+  /** "Switch in with the app" of a ready profile. */
+  profileSwitchIn: (id: string, on: boolean) => invoke("profile_switch_in", { id, on }),
+  settleDraft: (id: string, keep: boolean) => invoke<{ id: string; replaced: string | null } | null>("draft_settle", { id, keep }),
   /** A web or mail link in the system's browser or mail app (a test copy only logs it). */
   openLink: (url: string) => invoke("open_link", { url }),
   games: () => invoke<GameSummary[]>("games_list"),
@@ -776,11 +789,13 @@ export function useLeds(): LedsShown | null {
     // window ten times a second (hover lagged on macOS, 2026-10-13)
     // and it waits while the pointer moves: each step repaints the drawing's filters (~80 ms in
     // WebKit), which made hovering the panels lag; the deck itself keeps its rainbow
+    // the same while typing or scrolling (owner, 2026-10-14: typing in the assistant lagged)
     let moved = 0;
     const onMove = () => (moved = Date.now());
-    window.addEventListener("pointermove", onMove, { passive: true });
+    const busy = ["pointermove", "keydown", "wheel"] as const;
+    busy.forEach((type) => window.addEventListener(type, onMove, { passive: true }));
     const tick = () => {
-      if (Date.now() - moved < 700) return;
+      if (Date.now() - moved < 1200) return;
       const color = hubRainbow(Date.now());
       document.querySelectorAll<HTMLElement>(".dk").forEach((el) => el.style.setProperty("--hub-rainbow", color));
     };
@@ -788,7 +803,7 @@ export function useLeds(): LedsShown | null {
     const timer = window.setInterval(tick, 100);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("pointermove", onMove);
+      busy.forEach((type) => window.removeEventListener(type, onMove));
     };
   }, [hub]);
   useEffect(() => {

@@ -9,10 +9,12 @@ Please include:
 - your system (Windows or macOS version) and the HubDeck version;
 - which modules are attached and where (a photo helps);
 - what you did, what you expected and what happened;
-- the log: tray menu > "Open log folder", file `hubdeck.log`.
+- the diagnostics file: Settings > Help and about > Save diagnostics (or the tray menu); it has
+  versions, modules and the log, with web addresses, keys and paths removed.
 
 If a key module or the dial stops showing pictures and the window says it is not responding, pull
-it off the base and put it back (or use "Restart module" on Windows). Please tell us how it
+it off the base and put it back (on Windows the window also offers "Restart module"; on macOS
+HubDeck restarts it by itself after a few tries). Please tell us how it
 happened: it is a firmware problem we work around, and every report helps.
 
 ## Sharing slot data

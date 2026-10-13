@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time. The quickest way to a fix: tray icon > **Save diagnostics for a bug report**, then attach that file below (it has versions, modules and the log, with window titles and tokens removed).
+        Thanks for taking the time. The quickest way to a fix: **Settings > Help and about > Save diagnostics** (or the tray icon menu), then attach that file below (it has versions, modules and the log, with web addresses, keys and paths removed).
   - type: textarea
     id: what
     attributes:
@@ -24,7 +24,7 @@ body:
     id: version
     attributes:
       label: HubDeck version and system
-      placeholder: "HubDeck 0.2.0, Windows 11 23H2"
+      placeholder: "HubDeck 0.1.0, Windows 11 23H2 / macOS 15.5"
     validations:
       required: true
   - type: textarea

@@ -14,6 +14,7 @@ const PATHS: Record<string, string> = {
   "arrow-up": '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  circle: '<circle cx="12" cy="12" r="8"/>',
   "chevron-down": '<path d="m6 9 6 6 6-6"/>',
   "chevron-left": '<path d="m15 18-6-6 6-6"/>',
   "chevron-right": '<path d="m9 18 6-6-6-6"/>',

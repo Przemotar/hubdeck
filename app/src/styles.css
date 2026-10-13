@@ -697,6 +697,16 @@ select.input option {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* "Ready for your apps" (owner's pick 1a, 2026-10-14) */
+.ready-apps {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ln);
+}
+.ready-apps > .help {
+  margin: 0 6px 8px;
+  font-size: 12px;
+}
 .lib-new {
   margin: 10px 0 4px;
   width: 100%;
@@ -3106,37 +3116,6 @@ button.chip.is-active {
 .as-drafts > summary {
   cursor: pointer;
 }
-.as-starter.is-main {
-  box-shadow: inset 0 0 0 1.5px var(--acc);
-}
-.as-starters {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.as-starter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border: 0;
-  border-radius: var(--r);
-  background: var(--accbg);
-  box-shadow: inset 0 0 0 1px var(--accln);
-  color: var(--tx);
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-}
-.as-starter:hover {
-  box-shadow: inset 0 0 0 1px var(--acc);
-}
-.as-starter .i {
-  width: 14px;
-  height: 14px;
-  color: var(--acc2);
-  flex: none;
-}
 .as-idea-keys {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -3432,45 +3411,6 @@ button.chip.is-active {
   border: 0;
   background: #2d2d2d;
   color-scheme: dark;
-}
-
-/* the first start's setup page over the whole window (owner, 2026-10-13: not in the right column) */
-.setup-page {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg1);
-}
-.setup-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--ln);
-}
-.setup-head h2 {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-}
-.setup-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  width: 100%;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 8px 18px 24px;
-  display: flex;
-  flex-direction: column;
-}
-.setup-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 12px;
 }
 
 /* Build the deck step by step (owner's layout A, 2026-10-13): talk | gallery | the deck so far */
@@ -3795,6 +3735,19 @@ button.chip.is-active {
   display: flex;
   flex-direction: column;
   background: var(--bg1);
+}
+/* the first start's desk check (owner's pick 1a, 2026-10-14) */
+.tour-head .tour-skip {
+  margin-left: auto;
+}
+.tour-desk-deck {
+  width: min(960px, 100%);
+  height: clamp(220px, 46vh, 440px);
+  /* the deck's glow is part of the drawing */
+  overflow: visible;
+}
+.tour-desk-deck .dk-shelf {
+  display: none;
 }
 .tour-head .tour-made-for {
   margin-left: auto;
@@ -4166,19 +4119,60 @@ button.chip.is-active {
   font-weight: 400;
   opacity: 0.85;
 }
-.as-or {
+/* the deck assistant's own card (owner's pick 2a, 2026-10-14: it was too weak) */
+.as-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
-  font-size: 12px;
-  color: var(--tx3);
+  margin-top: 6px;
+  padding: 14px;
+  border-radius: calc(var(--r) + 4px);
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--accln);
 }
-.as-or::before,
-.as-or::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--ln2);
+.as-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.as-card-head > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.as-card-head b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.as-card-head small {
+  font-size: 12.5px;
+  color: var(--tx2);
+  line-height: 1.45;
+}
+.as-card-ic {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accbg);
+  color: var(--acc2);
+}
+.as-card-ic .i {
+  width: 18px;
+  height: 18px;
+}
+.as-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.as-examples .chip {
+  height: auto;
+  min-height: 26px;
+  white-space: normal;
+  text-align: left;
 }
 .as-details summary {
   font-size: 12.5px;
@@ -4252,11 +4246,204 @@ button.lib-foot:focus-visible span {
   gap: 16px;
   margin-top: 8px;
 }
-.welcome-deck {
-  max-width: 560px;
-  margin: 8px 0 12px;
+
+/* making the tour's deck: a turning icon and the steps (owner: show that it works) */
+.tour-spin {
+  animation: spin 1s linear infinite;
 }
-.wstep.is-done .wnum {
-  background: var(--accbg);
+.tour-making {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--tx3);
+}
+.tour-making li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tour-making li.is-now {
+  color: var(--tx);
+}
+.tour-making li.is-done {
+  color: var(--tx2);
+}
+.tour-making .i {
+  width: 14px;
+  height: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spin {
+    animation: none;
+  }
+}
+
+/* the tour's "One control, many jobs" and "Your dial, many faces" (owner's picks, 2026-10-14) */
+.tour-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tour-tasks li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-top: 1px solid var(--ln);
+}
+.tour-tasks li > .i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  color: var(--tx3);
+}
+.tour-tasks li.is-done > .i {
+  color: var(--ok, #3fb950);
+}
+.tour-tasks li.is-now > .i {
   color: var(--acc2);
+}
+.tour-tasks li > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tour-tasks b {
+  font-weight: 600;
+}
+.tour-gesture-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+.tour-gesture-list dt {
+  color: var(--tx3);
+}
+.tour-gesture-list dd {
+  margin: 0;
+}
+.tour-gesture-list dd.is-free {
+  color: var(--acc2);
+}
+.tour-faces {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.tour-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  text-align: center;
+}
+.tour-face.is-on {
+  background: var(--accbg);
+  box-shadow: inset 0 0 0 1px var(--accln);
+}
+.tour-face-dial {
+  width: min(104px, 100% - 8px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px #26232e;
+}
+.tour-face-dial svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.tour-face b {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tour-face .help {
+  font-size: 11.5px;
+  line-height: 1.3;
+  min-height: 30px;
+}
+.tour-face-on {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--acc2);
+  padding: 4px 0;
+}
+.tour-faces-more {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+}
+
+/* where things are, after the tour (owner's pick 2a, 2026-10-14): a veil with a cut-out, a card beside it */
+.guide {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.guide-spot,
+.guide-veil {
+  position: fixed;
+  border-radius: 12px;
+  pointer-events: none;
+}
+.guide-spot {
+  box-shadow:
+    0 0 0 2px var(--acc),
+    0 0 0 9999px rgba(6, 6, 10, 0.68);
+  transition:
+    top 0.25s ease,
+    left 0.25s ease,
+    width 0.25s ease,
+    height 0.25s ease;
+}
+.guide-veil {
+  inset: 0;
+  border-radius: 0;
+  background: rgba(6, 6, 10, 0.68);
+}
+.guide-card {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 12px;
+  background: var(--popbg);
+  border-radius: calc(var(--r) + 5px);
+  box-shadow: var(--popsh);
+  transition:
+    top 0.25s ease,
+    left 0.25s ease;
+}
+.guide-card b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.guide-card p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.guide-step {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--acc2);
+}
+.guide-actions {
+  margin-top: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-spot,
+  .guide-card {
+    transition: none;
+  }
 }

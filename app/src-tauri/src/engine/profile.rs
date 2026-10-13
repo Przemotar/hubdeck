@@ -161,6 +161,14 @@ pub struct Profile {
     /// Made by the deck assistant: its shortcuts outside the checked packs get a mark (`check.rs`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub assistant: bool,
+    /// A draft that is a new version of one of the user's own profiles (this id): "Use this"
+    /// puts its controls into that profile instead of keeping a second one (owner's pick 1a).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_of: Option<String>,
+    /// Switches in when its app comes to the front: None = yes (as always); Some(false) = a
+    /// ready profile the user has not switched on ("Ready for your apps", owner's pick 1a).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub switch_in: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -212,6 +220,8 @@ impl Profile {
             panel: None,
             in_bar: None,
             assistant: false,
+            version_of: None,
+            switch_in: None,
         }
     }
 
@@ -442,6 +452,10 @@ pub struct Settings {
     /// the user picks one ("Use this") or throws it away.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<String>,
+    /// Profiles HubDeck made at once for the installed apps it knows ("Ready for your apps",
+    /// owner's pick 1a, 2026-10-14); they switch in with their app only once switched on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ready: Vec<String>,
     /// The deck assistant's model, as a Claude Code alias (`opus`, `sonnet`...); None = what
     /// Claude Code uses by default (an alias follows its newest model after updates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -489,7 +503,7 @@ fn english() -> String {
 }
 
 fn icon_mode() -> String {
-    "icon".into()
+    "fillLabel".into()
 }
 
 /// The folder the profiles are read from and written to (settings' choice or the default).
@@ -555,6 +569,7 @@ impl Default for Settings {
             apps_joined: Vec::new(),
             apps_refused: Vec::new(),
             drafts: Vec::new(),
+            ready: Vec::new(),
             assistant_model: None,
             assistant_effort: None,
             assistant_power: false,
@@ -645,6 +660,7 @@ impl Store {
             self.settings.fallback = None;
         }
         self.settings.drafts.retain(|d| d != id);
+        self.settings.ready.retain(|d| d != id);
         self.save_settings()
     }
 

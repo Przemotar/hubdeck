@@ -87,9 +87,42 @@ pub fn step_profile(ordered: &[String], current: Option<&str>, step: i32) -> Opt
 /// The actions a test copy (`automation`) runs: they change only HubDeck itself.
 const TEST_COPY_RUNS: [&str; 7] = ["core.page", "core.profile", "core.clock", "core.timer", "core.lighting", "core.deckBrightness", "core.dialGallery"];
 
+/// The app, to send keys, clicks and text from its main thread: on macOS 26 enigo's keyboard
+/// layout lookup (TSMGetInputSourceProperty) stops the app when called from any other thread
+/// (the owner's deck test, session 9: a shortcut key crashed HubDeck).
+pub static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+thread_local! {
+    /// One keyboard and mouse per thread that sends (the main thread on macOS).
+    static ENIGO: std::cell::RefCell<Option<Enigo>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with the keyboard and mouse: on the main thread on macOS, here elsewhere.
+fn keyboard<T: Send + 'static>(f: impl FnOnce(&mut Enigo) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    let run = move || {
+        ENIGO.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            if slot.is_none() {
+                // macOS asks for Accessibility permission the first time
+                *slot = Some(Enigo::new(&Settings::default()).map_err(|e| format!("keyboard/mouse control unavailable: {e}"))?);
+            }
+            f(slot.as_mut().expect("just set"))
+        })
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(app) = APP.get() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(run());
+        })
+        .map_err(|e| e.to_string())?;
+        return rx.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_| "the keyboard did not answer in time".to_string())?;
+    }
+    run()
+}
+
 #[derive(Default)]
 pub struct Executor {
-    enigo: Option<Enigo>,
     /// Executable in front, set by the engine before each run (volume of "the app in front").
     pub foreground: String,
     /// Apps whose volume other controls of the active profile set (volume of "everything else").
@@ -102,14 +135,6 @@ pub struct Executor {
 const VOLUME_MEMORY: std::time::Duration = std::time::Duration::from_millis(1500);
 
 impl Executor {
-    fn enigo(&mut self) -> Result<&mut Enigo, String> {
-        if self.enigo.is_none() {
-            // macOS asks for Accessibility permission the first time
-            self.enigo = Some(Enigo::new(&Settings::default()).map_err(|e| format!("keyboard/mouse control unavailable: {e}"))?);
-        }
-        Ok(self.enigo.as_mut().expect("just set"))
-    }
-
     pub fn run(&mut self, binding: &Binding, input: InputEvent) -> Result<Outcome, String> {
         // a test copy runs next to the person working at this computer: only what stays inside
         // HubDeck (no media keys, volume, shortcuts, programs, smart home...)
@@ -191,14 +216,18 @@ impl Executor {
 
             ("core.hotkey", InputEvent::Press(true)) if param_str(p, "mode") == "game" => {
                 let hold = std::time::Duration::from_millis(param_f64(p, "hold", 30.0).clamp(1.0, 500.0) as u64);
-                hotkey::send_game(self.enigo()?, param_str(p, "keys"), hold)?;
+                let keys = param_str(p, "keys").to_string();
+                keyboard(move |e| hotkey::send_game(e, &keys, hold))?;
             }
-            ("core.hotkey", InputEvent::Press(true)) => send_if_set(self.enigo()?, param_str(p, "keys"))?,
+            ("core.hotkey", InputEvent::Press(true)) => {
+                let keys = param_str(p, "keys").to_string();
+                keyboard(move |e| send_if_set(e, &keys))?;
+            }
             ("core.hotkey", InputEvent::Turn(d)) => {
                 let combo = if d > 0 { param_str(p, "clockwise") } else { param_str(p, "counterClockwise") };
-                for _ in 0..d.unsigned_abs() {
-                    send_if_set(self.enigo()?, combo)?;
-                }
+                let combo = combo.to_string();
+                let times = d.unsigned_abs();
+                keyboard(move |e| (0..times).try_for_each(|_| send_if_set(e, &combo)))?;
             }
 
             ("core.media", InputEvent::Press(true)) => {
@@ -209,11 +238,11 @@ impl Executor {
                     "stop" => Key::MediaStop,
                     _ => Key::MediaPlayPause,
                 };
-                self.enigo()?.key(key, Direction::Click).map_err(|e| e.to_string())?;
+                keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
             }
             ("core.media", InputEvent::Turn(d)) => {
                 let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
-                self.enigo()?.key(key, Direction::Click).map_err(|e| e.to_string())?;
+                keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
             }
 
             ("core.volume", input) => {
@@ -231,12 +260,13 @@ impl Executor {
                     "front" => return Err("no app in front yet".into()),
                     _ => volume::Target::System,
                 };
-                let caption = match &target {
+                // the control's own name first ("Music", "Zoom"), so the dial says what it changes
+                let caption = binding.look.label.as_deref().map(|l| l.replace('\n', " ").trim().to_string()).filter(|l| !l.is_empty()).unwrap_or_else(|| match &target {
                     volume::Target::System => "Volume".to_string(),
                     volume::Target::Mic => "Microphone".to_string(),
                     volume::Target::App(app) => app.trim_end_matches(".exe").to_string(),
                     volume::Target::Others(_) => "Other apps".to_string(),
-                };
+                });
                 // system volume with the Windows popup: a volume key shows it (see `volume::with_popup`)
                 let popup = target == volume::Target::System && param_str(p, "popup") != "hide" && volume::POPUP_AVAILABLE;
                 let key = format!("{target:?}");
@@ -271,12 +301,12 @@ impl Executor {
                     InputEvent::Press(true) => {
                         let muted = if popup {
                             let muted = !volume::is_muted(&target)?;
-                            self.enigo()?.key(Key::VolumeMute, Direction::Click).map_err(|e| e.to_string())?;
+                            keyboard(move |e| e.key(Key::VolumeMute, Direction::Click).map_err(|e| e.to_string()))?;
                             muted
                         } else {
                             volume::toggle_mute(&target)?
                         };
-                        out.feedback = Some(Feedback { value: Some(if muted { 0.0 } else { volume::get(&target)? }), caption: if muted { "Muted".into() } else { caption } });
+                        out.feedback = Some(Feedback { value: Some(if muted { 0.0 } else { volume::get(&target)? }), caption: if muted { format!("{caption}: muted") } else { caption } });
                         return Ok(out);
                     }
                     InputEvent::Press(false) => return Ok(out),
@@ -288,13 +318,17 @@ impl Executor {
                 let amount = param_f64(p, "amount", 3.0).round() as i32;
                 let axis = if param_str(p, "axis") == "horizontal" { Axis::Horizontal } else { Axis::Vertical };
                 // a positive length scrolls down/right; turning up or clockwise should scroll up/left
-                self.enigo()?.scroll(-(d as i32) * amount, axis).map_err(|e| e.to_string())?;
+                let by = -(d as i32) * amount;
+                let sent = keyboard(move |e| e.scroll(by, axis).map_err(|e| e.to_string()));
+                log::info!("scroll {by} {axis:?}: {sent:?}");
+                sent?;
             }
 
             ("core.text", InputEvent::Press(true)) => {
                 let text = param_str(p, "text");
                 if !text.is_empty() {
-                    self.enigo()?.text(text).map_err(|e| e.to_string())?;
+                    let text = text.to_string();
+                    keyboard(move |e| e.text(&text).map_err(|e| e.to_string()))?;
                 }
             }
 
@@ -331,14 +365,14 @@ impl Executor {
             ("core.deckBrightness", InputEvent::Turn(d)) => out.deck_brightness = Some(DeckBrightness::By(d as i32 * param_f64(p, "step", 10.0) as i32)),
             ("core.deckBrightness", InputEvent::Slide(v)) => out.deck_brightness = Some(DeckBrightness::Set(v)),
 
-            ("core.nowPlaying", InputEvent::Press(true)) => self.enigo()?.key(Key::MediaPlayPause, Direction::Click).map_err(|e| e.to_string())?,
+            ("core.nowPlaying", InputEvent::Press(true)) => keyboard(move |e| e.key(Key::MediaPlayPause, Direction::Click).map_err(|e| e.to_string()))?,
             ("core.nowPlaying", InputEvent::Turn(d)) => {
                 if param_str(p, "turn") == "seek" {
                     // a detent is five seconds
                     super::media::seek(f64::from(d) * 5.0)?;
                 } else if param_str(p, "turn") == "tracks" {
                     let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
-                    self.enigo()?.key(key, Direction::Click).map_err(|e| e.to_string())?;
+                    keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
                 } else {
                     let volume = Binding { action: "core.volume".into(), params: serde_json::json!({"target": "system", "step": 2}), ..binding.clone() };
                     return self.run(&volume, input);
@@ -476,13 +510,14 @@ impl Executor {
 
             ("core.seek", InputEvent::Press(true)) => {
                 let (fwd, back) = super::seek::keys(param_str(p, "player"));
-                send_if_set(self.enigo()?, if param_str(p, "press") == "back" { back } else { fwd })?;
+                let combo = (if param_str(p, "press") == "back" { back } else { fwd }).to_string();
+                keyboard(move |e| send_if_set(e, &combo))?;
             }
             ("core.seek", InputEvent::Turn(d)) => {
                 let (fwd, back) = super::seek::keys(param_str(p, "player"));
-                for _ in 0..d.unsigned_abs() {
-                    send_if_set(self.enigo()?, if d > 0 { fwd } else { back })?;
-                }
+                let combo = (if d > 0 { fwd } else { back }).to_string();
+                let times = d.unsigned_abs();
+                keyboard(move |e| (0..times).try_for_each(|_| send_if_set(e, &combo)))?;
             }
             ("core.sound", InputEvent::Press(true)) => match param_str(p, "mode") {
                 "stopAll" => super::sound::send(super::sound::Cmd::StopAll),
@@ -650,7 +685,35 @@ fn send_if_set(enigo: &mut Enigo, combo: &str) -> Result<(), String> {
         // SAFETY: a plain call without arguments; it only starts locking the session
         return unsafe { windows::Win32::System::Shutdown::LockWorkStation() }.map_err(|e| format!("cannot lock: {e}"));
     }
+    // macOS takes its screenshot shortcuts only from the real keyboard: run its own tool instead
+    #[cfg(target_os = "macos")]
+    if let Some(shot) = mac_screenshot(combo) {
+        return shot;
+    }
     hotkey::send(enigo, combo)
+}
+
+/// Cmd+Shift+3 / 4 / 5 on a Mac: the whole screen or a part of it to the desktop, or the Screenshot
+/// app (owner, 2026-10-14: the tour's Screenshot key did nothing on his Mac).
+#[cfg(target_os = "macos")]
+fn mac_screenshot(combo: &str) -> Option<Result<(), String>> {
+    let mut parts: Vec<String> = combo.split('+').map(|p| p.trim().to_lowercase()).collect();
+    let key = parts.pop()?;
+    parts.sort();
+    if parts != ["cmd", "shift"] {
+        return None;
+    }
+    let file = || {
+        let home = std::env::var("HOME").unwrap_or_default();
+        format!("{home}/Desktop/Screenshot {}.png", chrono::Local::now().format("%Y-%m-%d at %H.%M.%S"))
+    };
+    let spawn = |cmd: &str, args: Vec<String>| std::process::Command::new(cmd).args(args).spawn().map(|_| ()).map_err(|e| e.to_string());
+    match key.as_str() {
+        "3" => Some(spawn("/usr/sbin/screencapture", vec![file()])),
+        "4" => Some(spawn("/usr/sbin/screencapture", vec!["-i".into(), file()])),
+        "5" => Some(spawn("/usr/bin/open", vec!["-a".into(), "Screenshot".into()])),
+        _ => None,
+    }
 }
 
 /// `Win+L` in any spelling (`win + l`, `Meta+L`).

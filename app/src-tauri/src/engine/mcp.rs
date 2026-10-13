@@ -564,6 +564,11 @@ pub fn call_tool(api: &dyn Api, name: &str, args: &Value) -> Result<Vec<Value>, 
 
 const ASSISTANT_INSTRUCTIONS: &str = "HubDeck's deck assistant tools. You work in drafts only: create_profile always makes a draft, and the other changing tools work on drafts, never on the user's own profiles or deck-wide settings. Propose ideas with propose_idea (one call per idea; HubDeck makes a draft of its sketch at once), offer answers with offer_choices, remember the user's taste with remember. Put only checked shortcuts on keys (list_shortcuts); shortcuts that close, quit or delete go on a hold.";
 
+/// The draft is a new version of one of the user's own profiles (owner's pick 1a, 2026-10-14).
+fn version_of_schema() -> Value {
+    json!({"type": "string", "description": "When this draft is a new version of one of the user's own profiles (they asked to change or extend that deck): its id (list_profiles). Use this then puts the draft's controls and lights into that profile (a backup is made first), keeping its name and apps, and it stays their deck. Leave out for a new deck."})
+}
+
 /// Tools the assistant gets: the builder's, without the ones that change the user's own deck,
 /// and its own (ideas, answers, taste, shortcut packs).
 pub fn assistant_tools() -> Vec<Value> {
@@ -575,6 +580,7 @@ pub fn assistant_tools() -> Vec<Value> {
                 if let Some(props) = t["inputSchema"]["properties"].as_object_mut() {
                     props.remove("replace");
                     props.remove("draft");
+                    props.insert("versionOf".into(), version_of_schema());
                 }
                 t["description"] = json!(format!(
                     "Create a draft profile in one call (always a draft: the user tries it and picks it with Use this). Everything is checked first; the reasons come back. {CONTROL_HELP}"
@@ -606,7 +612,8 @@ pub fn assistant_tools() -> Vec<Value> {
             "app": {"type": "string", "description": "The program it is for (Spotify.exe), or \"\" for a whole-desk idea."},
             "pitch": {"type": "string", "description": "One line: what it does for them."},
             "extras": {"type": "array", "items": {"type": "string"}, "description": "One or two things that make it special."},
-            "deck": deck
+            "deck": deck,
+            "versionOf": version_of_schema()
         }),
         &["title", "pitch", "deck"],
         false,
@@ -771,14 +778,13 @@ fn shortcut_packs(app: Option<&str>) -> Value {
     let Some(app) = app.map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()) else {
         return json!({"apps": packs.iter().map(|p| json!({"app": p.app, "programs": p.exes})).collect::<Vec<_>>()});
     };
-    let fits = |p: &super::shortcuts::Pack| {
-        p.exes.iter().any(|e| e == "*") || p.app.to_lowercase().contains(&app) || p.exes.iter().any(|e| e.to_lowercase().trim_end_matches(".exe") == app.trim_end_matches(".exe"))
-    };
-    let found: Vec<&super::shortcuts::Pack> = packs.iter().filter(|p| fits(p)).collect();
+    let stem = super::profile::app_stem(&app);
+    let fits = |p: &super::shortcuts::Pack| p.exes.iter().any(|e| e == "*" || super::profile::app_stem(e) == stem) || p.app.to_lowercase().contains(&app);
+    let found: Vec<&super::shortcuts::Pack> = packs.into_iter().filter(|p| fits(p)).collect();
     let own = found.iter().any(|p| !p.exes.iter().any(|e| e == "*"));
     json!({
         "packs": found,
-        "note": if own { "Only these are checked for this app." } else { "No checked pack for this app yet: use Windows' own, media, volume and launch actions, or ask the user which shortcut they use; any other shortcut shows as not checked." },
+        "note": if own { "Only these are checked for this app." } else { "No checked pack for this app yet: use the system's own, media, volume and launch actions, or ask the user which shortcut they use; any other shortcut shows as not checked." },
     })
 }
 
@@ -1195,7 +1201,7 @@ mod tests {
             self.calls.lock().unwrap().push((method.into(), path.into(), body.cloned()));
             match (method, path) {
                 ("GET", "/api/profiles") => Ok(json!({"profiles": [{"id": "mine", "draft": false}, {"id": "d1", "draft": true}]})),
-                ("GET", "/api/profiles/d1") => Ok(json!({"id": "d1", "apps": ["Zoom.exe"]})),
+                ("GET", "/api/profiles/d1") => Ok(json!({"id": "d1", "apps": ["Spotify.exe"]})),
                 (_, p) if p.starts_with("/api/profiles") => Ok(json!({"ok": true})),
                 _ => Ok(json!({"ok": true})),
             }
@@ -1213,8 +1219,8 @@ mod tests {
         let media = json!({"action": "core.media", "params": {"command": "playPause"}});
         assert!(assistant_call(&api, "set_control", &json!({"profile": "mine", "control": "keys.0", "binding": media})).unwrap_err().contains("own profiles"));
         assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.0", "binding": media})).is_ok());
-        let end = json!({"action": "core.hotkey", "params": {"keys": "Alt+Q"}});
-        assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1", "binding": end})).unwrap_err().contains("hold"), "Zoom's end meeting on a press");
+        let end = json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}});
+        assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1", "binding": end})).unwrap_err().contains("hold"), "Spotify's log out on a press");
         assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1:hold", "binding": end})).is_ok());
         assert!(assistant_call(&api, "try_on_deck", &json!({"id": "mine"})).is_err());
         assert!(assistant_call(&api, "activate_profile", &json!({"id": "d1"})).is_err());

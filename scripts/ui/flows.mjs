@@ -1,5 +1,5 @@
 // Walk the window as a user would and check that each click shows what it should: a fresh install's
-// setup page (its deck steps go and come back, Skip), a key's editor, Settings is a page with Back, the left tabs switch,
+// tour from its desk check (Fix it goes and comes back, Yes, Skip), a key's editor, Settings is a page with Back, the left tabs switch,
 // panels never stay over the editor. Runs on any system against the browser demo (`pnpm dev` in
 // app/, the vite server on :1420), headless, no focus taken.
 //
@@ -71,24 +71,32 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e.message || e).split('\n')[0]));
   page.hubdeckErrors = errors;
-  // a fresh install: the welcome shows until something is picked
+  // a fresh install: straight into the tour, at its desk check (owner's pick 1a, 2026-10-14)
   await page.goto(`${base}?demo=welcome`);
-  await page.waitForSelector('.setup-page, .deck-area', { timeout: 15000 });
-  await step(page, `${label}: fresh start shows the setup page over the whole window`, async () => (await visible(page, '.setup-page')) && !(await visible(page, '.deck-area')));
-  await step(page, `${label}: a setup step on the deck steps away and comes back`, async () => {
-    await page.locator('.setup-page button', { hasText: /Fix it/ }).first().click();
+  await page.waitForSelector('.tour-page, .deck-area', { timeout: 15000 });
+  await step(page, `${label}: fresh start shows the tour's desk check over the whole window`, async () => (await visible(page, '.tour-desk .dk-ctl')) && !(await visible(page, '.deck-area')));
+  await step(page, `${label}: Fix it opens Edit layout and Done comes back to the desk check`, async () => {
+    await page.locator('.tour-desk button', { hasText: /Fix it/ }).first().click();
     await page.waitForTimeout(300);
     if (!(await visible(page, '.deck-area'))) return 'the deck did not show for Edit layout';
     await page.locator('.chip.layout-chip').click();
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: /Back to setting up/ }).click();
-    await page.waitForTimeout(300);
-    return visible(page, '.setup-page');
+    return visible(page, '.tour-desk');
   });
-  await step(page, `${label}: Skip leaves the setup for the deck`, async () => {
-    await page.locator('.setup-head button', { hasText: 'Skip' }).click();
+  await step(page, `${label}: Yes goes to the tour's question, Exit leaves for the deck`, async () => {
+    await page.locator('.tour-desk button', { hasText: /Yes, make my deck/ }).click();
+    await page.waitForTimeout(300);
+    if (!(await visible(page, '.tour-tiles'))) return 'no question';
+    await page.locator('.tour-head button', { hasText: 'Exit' }).click();
     await page.waitForTimeout(400);
-    return (await visible(page, '.dk-ctl')) && !(await visible(page, '.setup-page'));
+    return (await visible(page, '.dk-ctl')) && !(await visible(page, '.tour-page'));
+  });
+  await page.goto(`${base}?demo=welcome`);
+  await page.waitForSelector('.tour-page, .deck-area', { timeout: 15000 });
+  await step(page, `${label}: Skip leaves the first start for the deck`, async () => {
+    await page.locator('.tour-head button', { hasText: 'Skip' }).click();
+    await page.waitForTimeout(400);
+    return (await visible(page, '.dk-ctl')) && !(await visible(page, '.tour-page'));
   });
   await step(page, `${label}: a key click opens its editor`, async () => {
     await page.locator('.dk-ctl').first().click();
@@ -139,7 +147,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
     await page.waitForTimeout(200);
     // the builder now sits in the Assistant tab's Details (the tour is the way in)
-    await page.locator('.as-details summary').click();
+    await page.locator('.as-details > summary').click();
     await page.waitForTimeout(150);
     await page.getByRole('button', { name: /Build my deck step by step/ }).click();
     await page.waitForTimeout(500);
@@ -177,6 +185,74 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(300);
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
     return (await visible(page, '.deck-area')) && !(await visible(page, '.tour-page'));
+  });
+  // the tour to its end page, from the Get started tab
+  const tourToEnd = async () => {
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
+    await page.waitForTimeout(200);
+    await page.getByRole('button', { name: /Show me on my deck/ }).click();
+    await page.waitForTimeout(400);
+    await page.getByRole('button', { name: 'Make my deck' }).click();
+    await page.waitForTimeout(500);
+    for (let i = 0; i < 8 && (await page.getByRole('button', { name: 'Next', exact: true }).isVisible()); i++) {
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await page.waitForTimeout(150);
+    }
+    await page.getByRole('button', { name: 'See my deck' }).click();
+    await page.waitForTimeout(300);
+  };
+  await step(page, `${label}: Use as my home deck shows where things are once, in 5 steps with a place lit each`, async () => {
+    await page.evaluate(() => localStorage.removeItem('hubdeck.guideSeen'));
+    await tourToEnd();
+    await page.getByRole('button', { name: /Use as my home deck/ }).click();
+    await page.waitForTimeout(500);
+    for (let i = 1; i <= 5; i++) {
+      if (!(await page.locator('.guide-step', { hasText: `${i} of 5` }).isVisible())) return `no step ${i}`;
+      if (!(await visible(page, '.guide-spot'))) return `step ${i} lights nothing`;
+      await page.locator('.guide-card button.primary').click();
+      await page.waitForTimeout(150);
+    }
+    if (await visible(page, '.guide')) return 'Done did not close it';
+    await tourToEnd();
+    await page.getByRole('button', { name: /Use as my home deck/ }).click();
+    await page.waitForTimeout(400);
+    return !(await visible(page, '.guide')) && (await visible(page, '.deck-area'));
+  });
+  await step(page, `${label}: the assistant card sends with Enter, a short consent asks once, then never again`, async () => {
+    await page.evaluate(() => localStorage.removeItem('hubdeck.assistantConsent'));
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
+    await page.waitForTimeout(400);
+    if ((await page.locator('.as-examples .chip').count()) !== 3) return 'no three examples';
+    await page.locator('#as-know').fill('Use my two free knobs');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(500);
+    if (!(await page.locator('.as-consent .as-msg', { hasText: 'Use my two free knobs' }).isVisible())) return 'no consent with the message';
+    if (await page.locator('.as-starter').count()) return 'Start with buttons are back';
+    if (!(await page.locator('.as-consent input[type=checkbox]').isChecked())) return "Don't ask again is not checked";
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(700);
+    if (!(await page.locator('.as-body > .as-msg.is-user', { hasText: 'Use my two free knobs' }).isVisible()) || (await visible(page, '.as-consent'))) return 'Enter did not send';
+    await page.locator('.as-head .icon-btn').click();
+    await page.waitForTimeout(300);
+    await page.locator('.as-examples .chip').first().click();
+    await page.waitForTimeout(700);
+    const again = (await visible(page, '.as-body > .as-msg.is-user')) && !(await visible(page, '.as-consent'));
+    await page.locator('.as-head .icon-btn').click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    return again || 'asked again';
+  });
+  await step(page, `${label}: Ready for your apps lists its profiles, off, and a switch turns one on`, async () => {
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
+    await page.waitForTimeout(300);
+    if (!(await page.locator('.ready-apps .plist-head', { hasText: /Ready for your apps \(3\)/ }).isVisible())) return 'no group';
+    const sw = page.locator('.ready-apps input[type=checkbox]').first();
+    if (await sw.isChecked()) return 'on by default';
+    await sw.click();
+    await page.waitForTimeout(300);
+    const on = await sw.isChecked();
+    await sw.click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    return on || 'the switch did not turn on';
   });
   await step(page, `${label}: Settings toggles closed from the top bar too`, async () => {
     await page.getByRole('button', { name: /^Settings$/ }).first().click();

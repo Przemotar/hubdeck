@@ -996,7 +996,7 @@ const SHOW_CONTROL_CHIPS = false;
 function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdge }: { live: LiveState; profile?: Profile | null; leds: LedsShown | null; edge: Lit | null | undefined; placed: Placed[]; selected: ControlRef | null; onSelect: (c: ControlRef) => void; onEdge?: () => void }) {
   const EdgeChip = onEdge ? "button" : "span";
   const chips: ReactNode[] = [
-    <EdgeChip key="edge" className={`dk-chip${onEdge ? "" : " is-static"}`} onClick={onEdge} title={onEdge ? t("deck.edgeOpen") : undefined}>
+    <EdgeChip key="edge" data-guide={onEdge ? "edge" : undefined} className={`dk-chip${onEdge ? "" : " is-static"}`} onClick={onEdge} title={onEdge ? t("deck.edgeOpen") : undefined}>
       <i className={edge ? `dk-fx-${edge.effect}` : undefined} style={{ background: edge === null ? "var(--tx3, #6c6b7b)" : edge?.color ?? `conic-gradient(${RAINBOW.join(",")}, ${RAINBOW[0]})` }} />
       {t("deck.edge")}
       <b>{edge === null ? t("deck.off") : edge && edge.effect !== "hub" ? edge.color.toUpperCase() : t("deck.rainbow")}</b>

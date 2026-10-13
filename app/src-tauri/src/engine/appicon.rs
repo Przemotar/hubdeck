@@ -1,9 +1,17 @@
 //! The icon of a program, as a PNG for a key: Windows reads it from the `.exe` at 128 px, so it
 //! stays sharp on the key. Other systems: not yet.
 
-/// PNG bytes of the program's icon.
+/// PNG bytes of the program's icon (read once per program and run: reading it is slow, and the
+/// tour rebuilds its deck at every click).
 pub fn png(path: &str) -> Result<Vec<u8>, String> {
-    platform::png(path.trim().trim_matches('"'))
+    static READ: std::sync::Mutex<Option<std::collections::HashMap<String, Vec<u8>>>> = std::sync::Mutex::new(None);
+    let path = path.trim().trim_matches('"');
+    if let Some(bytes) = READ.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(path)).cloned() {
+        return Ok(bytes);
+    }
+    let bytes = platform::png(path)?;
+    READ.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(path.to_string(), bytes.clone());
+    Ok(bytes)
 }
 
 #[cfg(windows)]

@@ -434,6 +434,8 @@ fn create_profile(engine: &Engine, body: &Value) -> Answer {
     let mut p = merged(base, body, &PROFILE_FIELDS)?;
     // made by the deck assistant: its shortcuts outside the checked packs get a mark
     p.assistant = body.get("assistant").and_then(Value::as_bool) == Some(true);
+    // a draft that is a new version of one of the user's profiles: "Use this" replaces that one
+    p.version_of = body.get("versionOf").and_then(Value::as_str).filter(|v| !v.is_empty() && *v != id).map(str::to_string);
     // the assistant's limits hold here too, not only in its own tool process (release audit)
     if p.assistant {
         for (control, b) in &p.controls {

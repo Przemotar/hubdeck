@@ -1,6 +1,6 @@
 # MasterHUB: protocol and verification status
 
-Base sources: `ref/cooltek-sdk-probe` (projectzero7, MIT) and `ref/cooltek-sdk` (MIT/Apache). The "Verified here" column says what we confirmed on our own hardware.
+Base sources: the public research projects cooltek-sdk-probe (projectzero7, MIT) and cooltek-sdk (MIT/Apache). The "Verified here" column says what we confirmed on our own hardware.
 
 ## Devices
 
@@ -15,7 +15,6 @@ Each module is a separate USB HID device (the base contains a Prolific USB hub `
 | 3 knobs 2×2 | M003K / MHKB03AA22 | `0x0202` | MHKB03AA221252301845 | 01.00.05.00 | 1.0.5.0 |
 | Dial IPS 2×2 | M131E / MHDD01AA22 | `0x0206` | MHDD01AA221252300567 | 01.00.04.00 | unknown |
 
-Latest firmware versions: `https://dev.pms.masterctrl.coolermaster.com/api/devices/<uuid>/firmwares/stable` (UUIDs in `ref/cooltek-sdk-probe/docs/MasterHUB/modules/metadata.md`).
 
 ## Reports (HID descriptor read 2026-10-09)
 
@@ -35,10 +34,10 @@ Latest firmware versions: `https://dev.pms.masterctrl.coolermaster.com/api/devic
 | M0 | LED color | output `02 2D target idx R G B save` | yes (base, faders; save=0), demo 2026-10-09 |
 | M0 | LED mode | output `02 2C target idx mode save` | yes, mode 1 = static; reading `0x34` still shows the saved mode (9) with save=0 |
 | M0 | LED brightness | output `02 2E target idx 0..100` | no |
-| M0 | LED effects | `02 2C target FF mode 0` after a color `02 2D`, speed `02 30 50` | yes on knobs (2026-10-11, owner watching, violet, speed 50): 2 breathing = smooth fade in and out; 3 strobe = hard on/off; 4 "spring" = fast blinking; 5 cycling = colors jump in order; 6 random = colors jump; 7 wave = smooth color change; 8 "water" = shimmer, every other LED of the ring lit in turn (so a knob ring has several LEDs, addressed only as one); 9 rainbow = smooth color change. The base edge did not change in that test because it was sent index `FF` (see the next row). Base edge, index 0, step by step with the owner (2026-10-11): static red, breathing, wave (whole strip changes color smoothly) all work; 8 "water" runs a pattern along the strip (every second or third LED, with a visible direction) and changes colors meanwhile, so the edge has many LEDs, addressed only as one; index `FF` is ignored by the base |
+| M0 | LED effects | `02 2C target FF mode 0` after a color `02 2D`, speed `02 30 50` | yes on knobs (2026-10-11, watched on the deck, violet, speed 50): 2 breathing = smooth fade in and out; 3 strobe = hard on/off; 4 "spring" = fast blinking; 5 cycling = colors jump in order; 6 random = colors jump; 7 wave = smooth color change; 8 "water" = shimmer, every other LED of the ring lit in turn (so a knob ring has several LEDs, addressed only as one); 9 rainbow = smooth color change. The base edge did not change in that test because it was sent index `FF` (see the next row). Base edge, index 0, step by step with the owner (2026-10-11): static red, breathing, wave (whole strip changes color smoothly) all work; 8 "water" runs a pattern along the strip (every second or third LED, with a visible direction) and changes colors meanwhile, so the edge has many LEDs, addressed only as one; index `FF` is ignored by the base |
 | M0 | LED addressing limits | the official M0 SDK (`Adjust_LED_Color_CM_M0`) accepts target 0 = base with index 0 only (`FF` rejected), 1 = faders 0-4 or `FF`, 2 = knobs 0-2 or `FF`; the SDK has no other LED command (color, mode, brightness, speed only), so single LEDs inside a knob ring are not addressable through any known command | read from the SDK, 2026-10-11 |
 | Faders | event | input tag `0x2A`, `02 05 v1..v5` | yes (441 events in the demo) |
-| Rollers | event | input tag `0x2A`, `01 02 r1 r2` (0 up, 1 down, ff none) | yes (39 events in the demo) |
+| Rollers | event | input tag `0x2A`, `01 02 r1 r2` (0 up, 1 down, ff none) | yes on Windows (39 events in the demo); on the Mac (2026-10-14) the reference unit's rollers sent no report at all (raw read, two slots) and the left roller squealed: likely a module fault, to check on Windows |
 | Knobs | rotation / press | input tag `0x2A`, `00 03 ...` / `03 03 ...` | yes (335 rotations, 26 presses in the layout A test) |
 | Keys | software mode | feature `03 3A 01` | yes, 2026-10-09 19:0x (before that the module was in a bad state, see below) |
 | Keys | info | get feature `0x3B` → `14 03 05 0f e0 01 10 01 01 48 48` = 3 rows, 5 columns, 15 keys, 480×272, key 72×72 | yes (our decoding) |
@@ -70,7 +69,7 @@ We read the output report length from the HID descriptor (`_output_report_len`):
 
 ## Picture frame rate (measured 2026-10-10)
 
-`cargo run --release -p mh-device --example framerate -- 4 <quality>` on the owner's hardware:
+`cargo run --release -p mh-device --example framerate -- 4 <quality>` on the reference unit:
 full key panel images (480x272) and dial images (240x240) both go in at about **32 frames per
 second**, with JPEG quality 80 (~7 KB panel, ~4 KB dial) and 60 (~5 KB, ~3 KB) alike, and both
 modules together each still at ~32 fps. The limit is on the device side, not the size of the
@@ -78,12 +77,12 @@ picture. Whether the screens show every frame was not checked by eye yet.
 
 ## Base orientation and module placement (2026-10-09)
 
-- **Orientation**: the base has a sensor. When the base is rotated, report `0x35` and event `0x2B` switch between `01` and `00`. The official app treats `1` as "horizontal" and everything else as "vertical". It tells only two states apart. Confirmed on the owner's hardware: base lying flat horizontally = `01` (horizontal), standing upright = `00` (vertical). 4-position test (2026-10-09 20:25–20:28, rotating 90° to the right each time): start `01`, 90° right `00`, 180° `01`, 270° `01`. It is a one-direction tilt switch, not an accelerometer: it only tells the "90° right" position (upright on a stand) apart from the rest. App: automatic horizontal/vertical from the sensor plus a manual rotation in 4 positions, remembered per base. The earlier "heartbeat every 0.5 s" is the same orientation reports. The switch can stick: on 2026-10-13, after the deck was carried to the Mac, the flat base read vertical until the owner lifted it slightly (mechanical, not software); the manual rotation covers it.
-- **Module placement and rotation**: the base contains a tree of USB hubs (Prolific `067B:2586`). A module's port path relative to the base's top hub (e.g. `1-4-3`) identifies the slot, and through it the module's place and rotation. The official app maps it in CSS (`pos` + path, 99 rules for both orientations). Windows: `DEVPKEY_Device_LocationPaths`, e.g. `…#USB(6)#USB(1)#USB(4)#USB(3)`; macOS: `locationID`. On the owner's hardware, 2026-10-09: dial `1-3-4`, knobs `1-4-3`, keys `2-3`, rollers `3-3`, base MCU `1-4-4`.
+- **Orientation**: the base has a sensor. When the base is rotated, report `0x35` and event `0x2B` switch between `01` and `00`. The official app treats `1` as "horizontal" and everything else as "vertical". It tells only two states apart. Confirmed on the reference unit: base lying flat horizontally = `01` (horizontal), standing upright = `00` (vertical). 4-position test (2026-10-09 20:25–20:28, rotating 90° to the right each time): start `01`, 90° right `00`, 180° `01`, 270° `01`. It is a one-direction tilt switch, not an accelerometer: it only tells the "90° right" position (upright on a stand) apart from the rest. App: automatic horizontal/vertical from the sensor plus a manual rotation in 4 positions, remembered per base. The earlier "heartbeat every 0.5 s" is the same orientation reports. The switch can stick: on 2026-10-13, after the deck was carried to the Mac, the flat base read vertical until the owner lifted it slightly (mechanical, not software); the manual rotation covers it.
+- **Module placement and rotation**: the base contains a tree of USB hubs (Prolific `067B:2586`). A module's port path relative to the base's top hub (e.g. `1-4-3`) identifies the slot, and through it the module's place and rotation. The official app maps it in CSS (`pos` + path, 99 rules for both orientations). Windows: `DEVPKEY_Device_LocationPaths`, e.g. `…#USB(6)#USB(1)#USB(4)#USB(3)`; macOS: `locationID`. On the reference unit, 2026-10-09: dial `1-3-4`, knobs `1-4-3`, keys `2-3`, rollers `3-3`, base MCU `1-4-4`.
 
 ### Slot table (2026-10-09)
 
-`prototype/tools/gen_slots.py` converts the official app's board layout (88 module + slot combinations) into a cell and rotation in our 4×6 grid. Their board is rotated 180° relative to ours. The knob and roller drawings are off by another 180°. Verified with identify mode (numbers on the keys, an arrow on the dial, LED colors, roller preview) on the owner's hardware: keys@2-3, dial@1-3-4, knobs@1-4-3, rollers@3-3, faders@1-1-3 (faders placed by the table with no corrections). In the knobs module the order is: knob 2 on the left, 1 on the right, 3 below them. App: the user's manual layout > table > guessing.
+`prototype/tools/gen_slots.py` converts the official app's board layout (88 module + slot combinations) into a cell and rotation in our 4×6 grid. Their board is rotated 180° relative to ours. The knob and roller drawings are off by another 180°. Verified with identify mode (numbers on the keys, an arrow on the dial, LED colors, roller preview) on the reference unit: keys@2-3, dial@1-3-4, knobs@1-4-3, rollers@3-3, faders@1-1-3 (faders placed by the table with no corrections). In the knobs module the order is: knob 2 on the left, 1 on the right, 3 below them. App: the user's manual layout > table > guessing.
 
 ## Blocked in the driver (`_FORBIDDEN` in `prototype/masterhub/driver.py`)
 
@@ -122,16 +121,9 @@ Consequences:
 
 ## Official app (MasterHUB 1.0.0.113)
 
-How to get at the knowledge (all in `ref/official/`, gitignored, do not redistribute):
-- Installer: `ref/official/MasterHUB-Setup_1.0.0.113.exe` (signed by Cooler Master, 2026-05-08; link `https://linkto.cm/dl-masterhub`).
-- The app is Electron: main process `background.js` and a Vue UI in `app.asar`. **The source maps contain the original `.vue`/`.js` files** (`js/app.c762092d.js.map`, field `sourcesContent`): `components/Baseboard.vue` (layout and slots), `App.vue` (input events), `store/module/*.js` (module logic), `lang/pl.js` etc.
-- Unpacking: `python -I prototype/tools/asar.py list|extract <app.asar> <out> [filter]` (a copy of `app.asar` is in `ref/official/installed/`, extracted into `ref/official/extracted/`).
-- Module SDK libraries: `ref/official/installed/sdk/CoolTEK_SDK_CM_*.dll`. Command bytes: `python -I prototype/tools/dis.py <dll> <export>` (e.g. `Display_Picture_On_Screen_CM`, `Set_Sw_Mode_CM`).
-- Firmware: `GET https://dev.pms.masterctrl.coolermaster.com/api/devices/<uuid>/firmwares/stable` (no login). UUIDs: keys `c9ffd9c7-9679-549a-b2be-a9530de33ebd`, **dial `93e23f53-b0b2-509c-8777-09f51522dab7`** (found in the app code), the rest in `ref/cooltek-sdk-probe/docs/MasterHUB/modules/metadata.md`. Status 2026-10-09: keys 2.0.1.0, dial 1.0.4.0 (the owner's units have the same).
 - Slots in the official app: `portNumber` = USB port path (node library `usb`, `portNumbers`) with the base prefix cut off, joined without separators (`143`); CSS classes `.<widget>.pos<path>` in `Baseboard.vue`. Widgets: `control-keypad` (keys), `roller`, `knob3` (knobs), `knobx1` (dial), `control-sliders5` (faders). Our `prototype/tools/gen_slots.py` converts this into `app/src/slots.generated.json`.
 - It drew the keys one by one (72×72, JPEG quality 60) and did not use the full panel for the keys. It exported profiles to `.mhz`. Bundled profiles: only Default (plus Photoshop in the resources). It took the base orientation from the base input report (`data[0] == 1` → horizontal) and offered a manual switch.
 
-Copy of the code and SDK: `ref/official/installed/` (`app.asar`, `sdk/CoolTEK_SDK_CM_*.dll`, `worker/*.js`). Main process: `background.js` in `app.asar`.
 - On exit, on computer sleep and on settings changes the app calls `Set_Sw_Mode_CM_M4315(false)` and `Set_Sw_Mode_CM_M131E(false)`. Our driver should do the same.
 - After `Set_Sw_Mode(true)` the app waits (`200 * i` ms) before reading the firmware.
 - `MHDaemon` (a separate process) reads CPU/GPU sensors every second through the CPUID SDK (kernel driver). Likely cause of the computer freeze on 2026-10-09, in conflict with MSI Mystic Light/Afterburner (a hypothesis with no proof, because the logs were lost in the hard reset).

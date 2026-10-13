@@ -1,6 +1,6 @@
 # Stream Deck plugins in HubDeck (research, 2026-10-13)
 
-The owner's direction (2026-10-13): HubDeck must work with the apps people already use, without
+The aim: HubDeck must work with the apps people already use, without
 changing them; the de facto standard for this kind of device is the Stream Deck plugin. This page
 is what was found before building it, and the plan.
 
@@ -91,7 +91,7 @@ Deck + so encoder actions are offered.
 - Trademarks: HubDeck says "runs Stream Deck plugins" (what it is compatible with); the product
   name does not use it.
 
-## Plan (owner, 2026-10-13: "1. Tak, teraz")
+## Plan
 
 1. Host: a second WebSocket dialect in the plugin host (`engine/plugins.rs`): launch with the
    Stream Deck arguments, registration, the events above for keys and the dial/knobs, the

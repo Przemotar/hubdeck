@@ -11,9 +11,10 @@ import { api, useEngine } from "./engine";
 import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
-import { ArrangePanel, Banner, BaseTurnPicker, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, TopBar, Welcome } from "./components/Panels";
+import { ArrangePanel, Banner, BaseTurnPicker, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, TopBar } from "./components/Panels";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
+import { Guide, guideSeen } from "./components/Guide";
 import { askAssistant } from "./components/Assistant";
 import { Icon } from "./components/Icon";
 import { CalibrationPanel } from "./components/Calibration";
@@ -83,16 +84,26 @@ export default function App() {
   // module kinds the user has (attached and owned), so presets come adapted to them
   const kinds = [...new Set([...live.deck.modules.filter((m) => m.kind !== "base").map((m) => m.kind), ...detachedKinds(live.deck.modules, saved)])];
 
-  // leaving arrange mode confirms every module as it is shown, touched or not
-  // the first start's setup page; a step that works on the deck steps away from it for a while
-  const [setupAway, setSetupAway] = useState(false);
   // "Build my deck step by step" (layout A): a page of its own
   const [builderOpen, setBuilderOpen] = useState(DEMO_PANEL === "builder");
   // the tour (show, then ask, then build): a page of its own
   const [tourOpen, setTourOpen] = useState(DEMO_PANEL === "tour");
+  // the first start goes straight into the tour, from its desk check (owner's pick 1a,
+  // 2026-10-14); Edit layout from there comes back to it when done
+  // where things are, after "Use as my home deck" (owner's pick 2a): once, over the main window
+  const [guideOpen, setGuideOpen] = useState(DEMO_PANEL === "guide");
+  const startGuide = () => {
+    if (guideSeen()) return;
+    // a key is picked so the inspector shows its editor; the actions are on the left
+    const keys = live.deck.modules.find((m) => m.kind === "keys");
+    if (keys) setSelected({ module: keys.id, kind: keys.kind, index: 0 } as ControlRef);
+    setLeftTab("actions");
+    showInspector();
+    setGuideOpen(true);
+  };
   const setupPending = !!view.state && !view.state.onboarded;
-  const setupShown = setupPending && !setupAway && !arranging && !calibrating && !settingsOpen;
-  const awayFromSetup = (then: () => void) => (setSetupAway(true), then());
+  const tourShown = (tourOpen || setupPending) && !arranging && !builderOpen;
+  // leaving arrange mode confirms every module as it is shown, touched or not
   const toggleArrange = () => {
     if (arranging) {
       for (const p of placeModules(live.deck.modules, saved)) {
@@ -146,14 +157,16 @@ export default function App() {
         onOpenProfiles={() => setLeftTab("profiles")}
         onOpenConnections={() => (setSettingsSection("connections"), setSettingsOpen(true))}
       />
-      {tourOpen ? (
+      {tourShown ? (
         <main className="workspace">
           <Tour
             live={live}
             view={view}
             saved={saved}
             onPlace={save}
-            onClose={() => setTourOpen(false)}
+            deskCheck={setupPending}
+            onArrange={toggleArrange}
+            onClose={(home) => (setTourOpen(false), home && startGuide())}
             onBuild={() => (setTourOpen(false), setBuilderOpen(true))}
             onAsk={(message) => (setTourOpen(false), setLeftTab("assistant"), askAssistant(message))}
           />
@@ -161,18 +174,6 @@ export default function App() {
       ) : builderOpen ? (
         <main className="workspace">
           <Builder live={live} view={view} saved={saved} onPlace={save} onClose={() => setBuilderOpen(false)} />
-        </main>
-      ) : setupShown ? (
-        <main className="workspace">
-          <Welcome
-            live={live}
-            view={view}
-            onArrange={() => awayFromSetup(toggleArrange)}
-            saved={saved}
-            onPlace={save}
-            onForApp={() => awayFromSetup(() => setForAppOpen(true))}
-            onTour={() => awayFromSetup(() => setTourOpen(true))}
-          />
         </main>
       ) : settingsOpen && !calibrating ? (
         <main className="workspace">
@@ -196,13 +197,6 @@ export default function App() {
                   {t("assistant.back")}
                 </button>
               </span>
-            )}
-            {/* set-up steps done on the deck: the way back to the setup page */}
-            {setupPending && setupAway && !arranging && (
-              <button className="chip is-trying" onClick={() => setSetupAway(false)}>
-                <Icon name="chevron-left" />
-                {t("welcome.backToSetup")}
-              </button>
             )}
             {live.deck.modules.length > 0 && (
               <button className={`chip layout-chip${arranging ? " is-active" : ""}`} onClick={toggleArrange} title={t("stage.editLayoutHelp")}>
@@ -262,6 +256,7 @@ export default function App() {
         )}
       </main>
       )}
+      {guideOpen && !tourShown && <Guide onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }

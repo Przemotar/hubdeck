@@ -48,8 +48,8 @@ profiles). By theme, in the order the downloads put them:
 9. **Fun**: soundboards (Sound Deck, Soundpad, random sounds), an emoji keyboard, Tamagotchi
    profiles. AI prompt profiles exist but are niche (rank ~30 among profiles).
 
-What this means for the assistant's tour (owner, 2026-10-13: build for what users usually do, not
-for the owner's own setup): the stops follow this order, each one shown only when it fits the
+What this means for the assistant's tour (built for what users usually do, not for one person's
+setup): the stops follow this order, each one shown only when it fits the
 person (a streaming stop only with OBS, Streamlabs or a streaming app installed; games only with
 games found; Claude Code agents only with Claude Code), filled with their own apps.
 

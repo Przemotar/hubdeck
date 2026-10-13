@@ -86,3 +86,38 @@ jobs:
           includeUpdaterJson: true
           # update files (.sig, latest.json) only here: local builds have no private key
           args: ${{ matrix.args }} --config ${{ github.workspace }}/app/src-tauri/tauri.release.conf.json
+      # a file name without the version, so "latest" links (the site's and README's download
+      # buttons) always reach the newest installer; and each file's SHA-256 next to it
+      - name: Stable names and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            src=$(find target -path '*bundle/nsis/*-setup.exe' | head -1); dst=HubDeck-windows-x64-setup.exe; sums=SHA256-windows.txt
+          else
+            src=$(find target -path '*bundle/dmg/*.dmg' | head -1); dst=HubDeck-macos.dmg; sums=SHA256-macos.txt
+          fi
+          test -n "$src"
+          cp "$src" "$dst"
+          { sha256sum "$dst" "$src" 2>/dev/null || shasum -a 256 "$dst" "$src"; } | sed 's#  .*/#  #' > "$sums"
+          gh release upload "$GITHUB_REF_NAME" "$dst" "$sums" --clobber
+      # which file to pick and what the first start asks, under the notes on the release page (added
+      # once, after the update files were made, so the app's "What's new" stays the changelog only)
+      - name: Install help on the release page
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json body -q .body > body.md
+          grep -q '^### Which file' body.md && exit 0
+          cat >> body.md <<'HELP'
+
+          ### Which file
+          - **Windows 10 or 11**: `HubDeck-windows-x64-setup.exe` (the `.msi` is for managed installs). Windows SmartScreen may ask once: *More info > Run anyway* (the app is not signed with a paid certificate).
+          - **macOS 12 or later** (Apple silicon and Intel): `HubDeck-macos.dmg`. The first time, macOS says it could not verify HubDeck: *Done*, then System Settings > Privacy & Security > *Open Anyway*.
+          - Checksums: `SHA256-windows.txt` and `SHA256-macos.txt`. More help: the [README](https://github.com/Przemotar/hubdeck#install).
+          HELP
+          sed -i '' 's/^          //' body.md 2>/dev/null || sed -i 's/^          //' body.md
+          gh release edit "$GITHUB_REF_NAME" --notes-file body.md

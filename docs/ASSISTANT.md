@@ -9,7 +9,7 @@ computer, signed in with their own Claude plan (Pro or Max) or an Anthropic API 
 counts toward that plan's usage limits (or is billed by use with an API key). HubDeck has no
 account and no costs of its own.
 
-The design (session 6, 2026-10-12) follows two independent reviews (`private/assistant-design/`):
+The design follows two independent design reviews:
 **the deck reacts first, the model is the layer of taste**. HubDeck makes sketches and the tour
 itself, at once; the model refines them and talks. Safety lives in code, not in the prompt.
 
@@ -56,10 +56,14 @@ HubDeck window ──assistant_send──▶ HubDeck engine
                                   answer buttons, remembered notes, tool use, the end of a turn
 ```
 
-1. **Scan** (`assistant_scan`): apps used most (time in front), apps in front lately, installed
-   apps (developer tools left out), installed games, attached and owned modules, profile names,
-   and what HubDeck remembers about the user's taste. Nothing is sent yet; the card shows exactly
-   this text.
+1. **Ask and consent** (owner's pick 2a, 2026-10-14): the Get started tab has the assistant's own
+   card (an input with Send, three examples). After the first message, `assistant_scan` makes the
+   text that would go with it: the apps used most (names and hours), attached and owned modules,
+   profile names and the taste notes; installed apps and games are not in it (the model looks
+   them up with `list_apps` / `list_games` when an idea needs them). A short consent shows the
+   message, one sentence of what goes, "What exactly" (the exact text), Send, "Send without the
+   app list" (`deckText`) and "Don't ask again" (checked by default; the answer is kept in the
+   window's local storage and used from then on). Nothing is sent before that.
 2. **First message**: HubDeck makes **quick sketches** of the three apps used most (their preset
    or a starter, for the attached modules, in the house look) as drafts and shows them at once.
    Then it starts Claude Code once for the talk and writes the scan, the list of quick sketches,
@@ -105,7 +109,7 @@ after ~70 s, a tour ~6 min).
   default model and effort are read from `~/.claude/settings.json` and passed on.
 - App names, game names and web values are data, never instructions (said in the rules).
 
-## The start of a talk (owner's picks, session 6)
+## The start of a talk
 
 The first message names two or three things only HubDeck can do for this person (from the scan,
 with their real apps), then a short interview: three or four questions, one at a time, only
@@ -146,7 +150,8 @@ you". No pop-ups, nothing taken over on the deck.
 
 ## What is sent and where it is kept
 
-- Sent to Claude (through Claude Code): the scan text the user saw (with the taste notes), the
+- Sent to Claude (through Claude Code): the scan text the user agreed to (the apps used most
+  unless left out, the deck, the taste notes), the
   catalog, their messages, and what the tools return (actions, icons, drafts, shortcut packs).
   Not sent: the screen, files, window titles.
 - Claude Code keeps the conversation like any of its sessions:

@@ -154,6 +154,19 @@ pub fn store_logo(dir: &Path, logo: &str) -> Option<String> {
 /// The key picture for an item: its local cover (marked so shared profiles leave it out), else
 /// the program's icon.
 pub fn picture(item: &Item) -> Result<String, String> {
+    // the same app's picture is made once per run: the tour rebuilds its deck at every click and
+    // reading an app's icon from its bundle is slow (owner: the looks switched "mega wolno")
+    static MADE: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+    let key = format!("{}|{}|{}|{}", item.target, item.exe, item.logo, item.cover.as_deref().unwrap_or_default());
+    if let Some(name) = MADE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&key)).cloned() {
+        return Ok(name);
+    }
+    let made = picture_uncached(item)?;
+    MADE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, made.clone());
+    Ok(made)
+}
+
+fn picture_uncached(item: &Item) -> Result<String, String> {
     if let Some(cover) = item.cover.as_deref().filter(|c| Path::new(c).is_file()) {
         let name = super::images::import(Path::new(cover))?;
         super::images::mark_local_only(&name);

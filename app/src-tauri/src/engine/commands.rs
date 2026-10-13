@@ -223,6 +223,12 @@ pub fn profile_pin(engine: State<'_, Engine>, pinned: bool) -> Res<()> {
     engine.set_pinned(pinned)
 }
 
+/// "Switch in with the app" of a ready profile.
+#[tauri::command]
+pub fn profile_switch_in(engine: State<'_, Engine>, id: String, on: bool) -> Result<(), String> {
+    engine.set_switch_in(&id, on)
+}
+
 #[tauri::command]
 pub fn settings_set(engine: State<'_, Engine>, auto_switch: Option<bool>, fallback: Option<String>) -> Res<()> {
     {
