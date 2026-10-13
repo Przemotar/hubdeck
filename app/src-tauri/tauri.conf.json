@@ -48,7 +48,13 @@
     ],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "dmg": {
+        "background": "dmg/background.png",
+        "windowSize": { "width": 720, "height": 480 },
+        "appPosition": { "x": 190, "y": 112 },
+        "applicationFolderPosition": { "x": 530, "y": 112 }
+      }
     },
     "category": "Utility",
     "shortDescription": "Open app for the MasterHUB modular controller",

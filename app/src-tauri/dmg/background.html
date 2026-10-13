@@ -1,0 +1,84 @@
+<!doctype html>
+<!--
+  The background of the window the macOS .dmg opens (owner's pick B, 2026-10-13): drag to
+  Applications, then the three steps of the first open of an app Apple has not notarised.
+  Finder draws the real HubDeck and Applications icons (128 px, centred at the positions in
+  tauri.conf.json > bundle.macOS.dmg) and their labels on the grey shelf; the labels are black in
+  the light look and white in the dark one, so the shelf is a grey both read on.
+  Render: node scripts/ui/dmg-background.mjs  ->  background.png (1440x960 at 144 dpi)
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HubDeck installer background</title>
+<style>
+@font-face { font-family: Plex; font-weight: 400; src: url("../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2"); }
+@font-face { font-family: Plex; font-weight: 600; src: url("../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2"); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { width: 720px; height: 480px; background: #1b1b1e; color: #ececf0; font-family: Plex, sans-serif; position: relative; overflow: hidden; }
+.shelf { position: absolute; left: 40px; top: 20px; width: 640px; height: 200px; border-radius: 16px; background: #76767e; }
+.arrow { position: absolute; left: 276px; top: 98px; width: 168px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.arrow span { font-size: 13px; font-weight: 600; color: #fff; }
+.steps { position: absolute; left: 32px; right: 32px; top: 238px; display: flex; flex-direction: column; gap: 12px; }
+h1 { margin: 0; font-size: 13px; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.card { display: flex; flex-direction: column; gap: 8px; }
+.pic { height: 128px; border-radius: 10px; background: #121214; border: 1px solid #2e2e34; display: flex; align-items: center; justify-content: center; }
+.dlg { width: 150px; border-radius: 10px; background: #2c2c31; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+.dlg b { font-size: 9px; text-align: center; }
+.btn { width: 100%; height: 18px; border-radius: 5px; background: #48484f; font-size: 8px; color: #fff; display: flex; align-items: center; justify-content: center; }
+.blue { background: #2f7fe8; }
+.ring { outline: 2px solid #a99bff; outline-offset: 2px; }
+.cap { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.4; color: #d6d6dc; }
+.cap b { color: #fff; }
+.n { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #6d5df5; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.set { width: 176px; height: 100px; border-radius: 8px; background: #2c2c31; display: flex; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+.side { width: 52px; background: #242428; padding: 8px 5px; display: flex; flex-direction: column; gap: 5px; }
+.side i { height: 5px; border-radius: 3px; background: #3c3c43; }
+.side em { height: 12px; border-radius: 3px; background: #2f7fe8; font-size: 5.5px; font-style: normal; color: #fff; display: flex; align-items: center; padding-left: 2px; }
+.main { flex-grow: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+</style>
+</head>
+<body>
+<div class="shelf"></div>
+<div class="arrow">
+  <svg width="168" height="24" viewBox="0 0 168 24"><line x1="4" y1="12" x2="152" y2="12" stroke="#fff" stroke-width="3" stroke-dasharray="8 8" stroke-linecap="round"/><path d="M148 3 L164 12 L148 21" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span>Drag to Applications</span>
+</div>
+<div class="steps">
+  <h1>First open: macOS asks once. Do this:</h1>
+  <div class="grid">
+    <div class="card">
+      <div class="pic"><div class="dlg">
+        <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#8a8a92"/><path d="M12 7 v6 M12 16.5 v.5" stroke="#2c2c31" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <b>“HubDeck.app” Not Opened</b>
+        <span class="btn blue">Move to Trash</span>
+        <span class="btn ring">Done</span>
+      </div></div>
+      <div class="cap"><span class="n">1</span><span>Click <b>Done</b>.</span></div>
+    </div>
+    <div class="card">
+      <div class="pic"><div class="set">
+        <div class="side"><i></i><i></i><em>Privacy &amp; Sec.</em><i></i><i></i></div>
+        <div class="main">
+          <b style="font-size:7px">Security</b>
+          <span style="font-size:6px;line-height:1.35;color:#b9b9c2">“HubDeck.app” was blocked to protect your Mac.</span>
+          <span class="btn ring" style="align-self:flex-end;width:auto;height:16px;padding:0 8px;font-size:7px;margin-top:4px">Open Anyway</span>
+        </div>
+      </div></div>
+      <div class="cap"><span class="n">2</span><span>System Settings › Privacy &amp; Security › <b>Open Anyway</b>.</span></div>
+    </div>
+    <div class="card">
+      <div class="pic"><div class="dlg">
+        <svg width="22" height="22" viewBox="0 0 96 96"><rect x="4" y="4" width="88" height="88" rx="22" fill="#6d5df5"/><circle cx="38" cy="48" r="20" fill="none" stroke="#fff" stroke-width="6"/><rect x="66" y="24" width="14" height="12" rx="3" fill="#fff"/><rect x="66" y="42" width="14" height="12" rx="3" fill="#fff"/></svg>
+        <b>Open “HubDeck.app”?</b>
+        <span class="btn blue ring">Open</span>
+        <span class="btn">Cancel</span>
+      </div></div>
+      <div class="cap"><span class="n">3</span><span>Click <b>Open</b>. Only this once.</span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
