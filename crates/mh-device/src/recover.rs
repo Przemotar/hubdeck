@@ -20,12 +20,7 @@ mod platform {
 
     pub fn reenumerate(hid_path: &CStr) -> Result<(), String> {
         // hidapi's macOS path is `DevSrvsID:<registry entry id>` of the HID service
-        let id: u64 = hid_path
-            .to_str()
-            .ok()
-            .and_then(|p| p.strip_prefix("DevSrvsID:"))
-            .and_then(|n| n.parse().ok())
-            .ok_or_else(|| format!("not a macOS HID path: {hid_path:?}"))?;
+        let id: u64 = hid_path.to_str().ok().and_then(|p| p.strip_prefix("DevSrvsID:")).and_then(|n| n.parse().ok()).ok_or_else(|| format!("not a macOS HID path: {hid_path:?}"))?;
         // SAFETY: a plain C function taking a number; it owns and releases its IOKit objects.
         match unsafe { mh_usb_reenumerate(id) } {
             0 => Ok(()),

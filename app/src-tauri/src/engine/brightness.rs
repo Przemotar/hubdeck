@@ -151,7 +151,8 @@ mod platform {
             Which::All => 0,
             Which::One(n) => n - 1,
         };
-        super::super::machw::get(index).ok_or_else(|| if super::super::machw::monitors() == 0 { "no monitor whose brightness can be set".to_string() } else { format!("monitor {} did not answer", index + 1) })
+        super::super::machw::get(index)
+            .ok_or_else(|| if super::super::machw::monitors() == 0 { "no monitor whose brightness can be set".to_string() } else { format!("monitor {} did not answer", index + 1) })
     }
 
     pub fn set(which: Which, value: u32) -> Result<(), String> {

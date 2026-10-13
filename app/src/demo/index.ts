@@ -84,6 +84,7 @@ const placements: Record<string, { col: number; row: number; rotation: number }>
 
 let active = demoParam("profile") ?? "demo-obs";
 let page: string | null = null;
+let beforeTour: string | null = null;
 let onboarded = new URLSearchParams(location.search).get("demo") !== "welcome" && demoParam("panel") !== "welcome";
 
 const state = (): EngineState => ({
@@ -282,7 +283,13 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   iconpack_use: () => "demo.png",
   claude_connect: ({ on }) => Boolean(on),
   tour_suggest: () => ({ focus: "games", games: 12, obs: true, call: "discord", music: "Spotify", kit: FADERS_KIT ? "faders" : "dialKnobs", mac: false }),
-  tour_start: ({ focus }) => tourView(focus as string),
+  // the tour's deck: Everyday desk stands in for it on the drawing; Exit and Throw away go back
+  tour_start: ({ focus }) => {
+    beforeTour ??= active;
+    active = "demo-everyday";
+    changed();
+    return tourView(focus as string);
+  },
   tour_set: ({ stop, keep, look }) => {
     const s = tour.stops.find((x) => x.id === stop);
     if (s && keep !== null && keep !== undefined) s.keep = keep as boolean;
@@ -315,8 +322,17 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   nudge_get: () => (demoParam("nudge") === "unused" ? { subject: "unused:knobs.2", kind: "unused", exe: "knobs.2", name: "Music", hours: 0, deck: "My deck · dial and knobs", since: "2026-10-13" } : null),
   presses_counting: () => false,
   reduced_motion_set: () => null,
-  tour_finish: ({ keep }) => (keep ? tour.draft : null),
-  tour_exit: () => null,
+  tour_finish: ({ keep }) => {
+    if (!keep && beforeTour) active = beforeTour;
+    beforeTour = null;
+    changed();
+    return keep ? tour.draft : null;
+  },
+  tour_exit: () => {
+    if (beforeTour) active = beforeTour;
+    beforeTour = null;
+    changed();
+  },
   sd_catalog: () => [
     { id: "me.amankhanna.oadiscord", name: "Discord", author: "nekename", description: "Mute, deafen and voice channels in the Discord desktop app", repository: "https://github.com/OpenActionPlugins/discord", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },
     { id: "com.example.hue", name: "Philips Hue", author: "someone", description: "Turn Hue lights and scenes on and off, set brightness with a dial", repository: "https://github.com/example/hue", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },

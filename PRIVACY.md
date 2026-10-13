@@ -17,6 +17,10 @@ What leaves your computer, and only when you use the feature:
 | The deck assistant | your messages, and with your OK a list of the apps you used most, go to Anthropic through your own Claude Code; nothing is sent until you start a talk |
 | Report a problem | a GitHub issue form opens in your browser; you choose what to send |
 
-Counting which keys you press (for the assistant) is off until you switch it on, stays on your
-computer, and switching it off forgets it. Claude Code sessions on keys send only their state, the
+Counting which keys you press (for the assistant, and for the next day's "you never used this
+knob" card after the tour) is off until you switch it on, stays on your computer, and switching it
+off forgets it. The tour looks at your modules and the apps you use on this computer only; its
+sound for the volume part is a file inside HubDeck. On macOS, setting one app's own volume routes
+that app's sound through HubDeck to play it at the level you set (the system calls it System Audio
+Recording): nothing is recorded or saved, and the app plays straight again when HubDeck quits. Claude Code sessions on keys send only their state, the
 project folder's name and the tool's name to HubDeck, never your prompts.

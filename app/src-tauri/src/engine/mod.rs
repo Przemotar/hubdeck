@@ -39,6 +39,8 @@ mod leds;
 mod lhm;
 pub mod live;
 pub mod localize;
+#[cfg(target_os = "macos")]
+pub mod machw;
 pub mod mcp;
 mod media;
 pub mod mhz;
@@ -53,10 +55,7 @@ pub mod profile;
 pub mod recorder;
 pub mod render;
 mod saver;
-#[cfg(target_os = "macos")]
-pub mod machw;
 pub mod sdcatalog;
-pub mod tour;
 pub mod sdplugins;
 pub mod secrets;
 mod seek;
@@ -72,6 +71,7 @@ pub mod suggest;
 pub mod taste;
 mod test_presets;
 mod timer;
+pub mod tour;
 pub mod twitch;
 pub mod usage;
 pub mod vjoy;
@@ -2569,7 +2569,8 @@ impl Worker {
                 wanted
             };
             // the tour points at a knob or fader: its LED blinks white
-            let wanted = match self.highlight_shown.as_ref().filter(|_| game.is_none() && !blanked).and_then(|(c, lit)| Some((c.strip_prefix(m.kind)?.strip_prefix('.')?.parse::<usize>().ok()?, *lit))) {
+            let wanted = match self.highlight_shown.as_ref().filter(|_| game.is_none() && !blanked).and_then(|(c, lit)| Some((c.strip_prefix(m.kind)?.strip_prefix('.')?.parse::<usize>().ok()?, *lit)))
+            {
                 Some((i, lit)) if i < count => {
                     let mut lights = wanted.unwrap_or_else(|| leds::Lights::solid(vec![[0, 0, 0]; count]));
                     if let Some(led) = lights.leds.get_mut(i) {

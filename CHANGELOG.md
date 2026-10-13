@@ -14,10 +14,18 @@ The first public version.
 - Plugins made for Stream Deck run in HubDeck (keys as a 5x3 keypad, the dial and knobs as dials,
   their settings pages in the inspector); a catalog of about 200 open-source plugins to install
   with one click (Settings > Plugins).
+- A tour that needs no AI: one question about what you do most, then a deck made at once for
+  your modules and your apps, shown on the hardware and walked through part by part (the control
+  to try blinks on the deck), each part kept or left out; nothing of yours changes until you keep it.
+  If you let HubDeck count presses, the next day it names a control you never used, to swap it.
 - The deck assistant (Claude Code on your account) that sketches whole decks for you, and a
   step-by-step mode with a gallery of options to try on the deck.
 - Lights: one style for the whole deck with reactions (calls, microphone, agents waiting).
-- Windows 10/11 and macOS (Apple silicon and Intel).
+- Reduce motion (Settings > General, taken from your system the first time): nothing blinks or
+  flashes on the deck or in the window.
+- Windows 10/11 and macOS (Apple silicon and Intel). On macOS: calls, profiles for apps, CPU and
+  GPU temperatures, the built-in screen's brightness, and each app's own volume (macOS 14.2 or
+  later; it asks once for System Audio Recording).
 
 Known issues:
 
@@ -27,3 +35,5 @@ Known issues:
   Open Anyway (see the README).
   Windows: the installer is not code-signed, so SmartScreen asks once (More info > Run anyway).
 - Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own pages do.
+- macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
+- Linux is not supported (a Dependabot alert about `glib` concerns only the Linux build).

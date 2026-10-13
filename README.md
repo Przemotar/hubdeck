@@ -42,19 +42,25 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 **Actions**
 - Open apps, files and websites (with the app's own icon), run commands, hotkeys (F13-F24, media
   keys, and a mode that games can read), type text, scroll.
-- System, per-app, "app in front" and microphone volume; microphone mute for every app; switch the
+- System, per-app, "app in front" and microphone volume (per app on macOS 14.2 or later); microphone mute for every app; switch the
   speakers or microphone; play sounds (a small soundboard).
 - Media control, now playing with cover art, seek in 12 players; monitor brightness (DDC/CI);
-  system monitor (CPU, memory, GPU, temperatures); clock and timer; deck brightness.
+  system monitor (CPU, memory, GPU, temperatures, on macOS too); clock and timer; deck brightness.
 
 **Plugins made for Stream Deck**
-- Install a `.streamDeckPlugin` and its actions join the library: hundreds of open-source plugins
-  for Discord, Spotify, OBS, Home Assistant, Philips Hue, Govee, VS Code and more. Keys are a 5x3
+- Install a `.streamDeckPlugin`, or pick one from a catalog of about 200 open-source plugins
+  (Settings > Plugins), and its actions join the library: Discord, Spotify, OBS, Home Assistant,
+  Philips Hue, Govee, VS Code and more. Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the inspector.
   How it works and what to expect: [docs/STREAMDECK-PLUGINS.md](docs/STREAMDECK-PLUGINS.md).
 
-**A deck assistant**
-- Uses your own Claude Code: it looks at the apps you use (with your OK), asks a few questions and
+**A tour, then a deck assistant**
+- *Show me on my deck* (no AI needed): one question about what you do most, then HubDeck makes a
+  deck for your modules and your apps at once and walks you through it on the hardware, part by
+  part; the control to try blinks on the deck. Keep the parts you like; nothing of yours changes
+  until you keep the deck. With your OK it counts presses, and the next day names a control you
+  never used, to swap it.
+- The assistant uses your own Claude Code: it looks at the apps you use (with your OK), asks a few questions and
   sketches whole decks you try on the hardware before you keep one; or go step by step, control
   by control, through a gallery of options. It changes only drafts; more in
   [docs/ASSISTANT.md](docs/ASSISTANT.md).
@@ -101,13 +107,14 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
   the gallery, the update check.
 - About 1 % of one CPU core and 45 MB of memory while it waits in the tray (measured on the
   release build with the deck attached); the window exists only while it is open.
-- Tray app that starts with the system; dark and light look; English and Polish.
+- Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
+  flashes); English and Polish.
 
 | | |
 |---|---|
 | ![A game profile: skills on the keys, voice chat and music on the knobs, the game volume on the dial](docs/images/hubdeck-game.png) | ![Settings: language, look, lights, screens, connections](docs/images/hubdeck-settings.png) |
 | ![Profile settings: linked apps and switching](docs/images/hubdeck-profile.png) | ![Icon picker with game icons](docs/images/hubdeck-icons.png) |
-| ![Build the deck step by step: a gallery of options for the dial, each tried on the deck](docs/images/hubdeck-builder.png) | |
+| ![Build the deck step by step: a gallery of options for the dial, each tried on the deck](docs/images/hubdeck-builder.png) | ![The tour: a deck made at once and walked through part by part, the control to try lit on the deck](docs/images/hubdeck-tour.png) |
 
 ## Install
 
@@ -127,9 +134,19 @@ Once only:
 
 On macOS 14 and older, right-click HubDeck in Applications and choose *Open* also works. To send
 shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
-app asks for it with a button.
+app asks for it with a button. Setting one app's own volume (macOS 14.2 or later) asks once for
+System Audio Recording: HubDeck plays that app's sound at the level you set and records nothing.
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
+
+### Known issues
+
+- macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck
+  restarts that module by itself, and taking it off the base and putting it back always helps.
+- macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
+- Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
+  pages do.
+- Twitch sign-in is off until the app registration is done. Linux is not supported.
 
 ## Build from source
 

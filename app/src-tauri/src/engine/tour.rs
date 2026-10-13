@@ -155,7 +155,8 @@ fn on_audio_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) ->
 
 fn take_snapshot(draft: &str) -> Snapshot {
     let draft = draft.to_string();
-    on_audio_thread(move || Snapshot { draft, mic_muted: volume::is_muted(&Target::Mic).ok(), volume: volume::get(&Target::System).ok(), muted: volume::is_muted(&Target::System).ok() }).unwrap_or_default()
+    on_audio_thread(move || Snapshot { draft, mic_muted: volume::is_muted(&Target::Mic).ok(), volume: volume::get(&Target::System).ok(), muted: volume::is_muted(&Target::System).ok() })
+        .unwrap_or_default()
 }
 
 fn restore_audio(s: &Snapshot) {
@@ -190,11 +191,7 @@ pub fn context(app: &AppHandle, focus: Option<Focus>, polish: bool) -> Ctx {
     let names: Vec<String> = apps.iter().map(|(exe, name, _)| format!("{exe} {name}")).chain(installed.apps.iter().map(|a| format!("{} {}", a.exe, a.name))).collect();
     let find = |any: &[&str]| names.iter().position(|n| exe_like(n, any));
     // the call app used most (apps come first in `names`, in the order of time in front)
-    let call = [("discord", &["discord"][..]), ("teams", &["teams"][..]), ("zoom", &["zoom"][..])]
-        .iter()
-        .filter_map(|(id, any)| find(any).map(|at| (at, *id)))
-        .min()
-        .map(|(_, id)| id);
+    let call = [("discord", &["discord"][..]), ("teams", &["teams"][..]), ("zoom", &["zoom"][..])].iter().filter_map(|(id, any)| find(any).map(|at| (at, *id))).min().map(|(_, id)| id);
     let music = find(&["spotify"]).map(|_| "Spotify".to_string()).or_else(|| (cfg!(target_os = "macos") && find(&["music.app", " music"]).is_some()).then(|| "Music".to_string()));
     let obs = find(&["obs64", "obs studio", "obs.app", "streamlabs"]).is_some();
     let browser = apps.iter().find(|(exe, name, _)| exe_like(&format!("{exe} {name}"), &["chrome", "firefox", "msedge", "brave", "opera", "safari", "arc"])).map(|(exe, _, _)| exe.clone());
@@ -351,7 +348,11 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                     stop.try_control = Some("knobs.2".into());
                 }
                 if ctx.has("dial") && !dial_music {
-                    let target = if ctx.has("knobs") || ctx.has("faders") { volume_of("system", "", &ctx.tr("System", "System"), "volume-2") } else { volume_of("front", "", &ctx.tr("App in front", "Na wierzchu"), "app-window") };
+                    let target = if ctx.has("knobs") || ctx.has("faders") {
+                        volume_of("system", "", &ctx.tr("System", "System"), "volume-2")
+                    } else {
+                        volume_of("front", "", &ctx.tr("App in front", "Na wierzchu"), "app-window")
+                    };
                     put(&mut stop, "dial", target);
                     stop.try_control.get_or_insert_with(|| "dial".into());
                 }
@@ -406,7 +407,16 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                 stop.try_control = stop.controls.first().cloned();
                 if ctx.has("rollers") {
                     put(&mut stop, "rollers.0", binding("core.scroll", json!({"axis": "vertical", "amount": 3}), &ctx.tr("Scroll", "Przewijanie"), "arrow-up-down"));
-                    put(&mut stop, "rollers.1", binding("core.hotkey", json!({"clockwise": if ctx.mac { "Cmd+=" } else { "Ctrl+=" }, "counterClockwise": if ctx.mac { "Cmd+-" } else { "Ctrl+-" }}), &ctx.tr("Zoom", "Zoom"), "zoom-in"));
+                    put(
+                        &mut stop,
+                        "rollers.1",
+                        binding(
+                            "core.hotkey",
+                            json!({"clockwise": if ctx.mac { "Cmd+=" } else { "Ctrl+=" }, "counterClockwise": if ctx.mac { "Cmd+-" } else { "Ctrl+-" }}),
+                            &ctx.tr("Zoom", "Zoom"),
+                            "zoom-in",
+                        ),
+                    );
                 }
             }
             "games" => {
@@ -466,7 +476,11 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
     }
     // the Fun page: HubDeck's own animations on every key, any key goes back
     if fun_page {
-        for (i, name) in ["fire.gif", "rain.gif", "bars.gif", "orbit.gif", "heartbeat.gif", "lava.gif", "ping.gif", "dots.gif", "spinner.gif", "scope.gif", "typing.gif", "aurora.gif", "rainbow.gif", "fire.gif"].iter().enumerate() {
+        for (i, name) in
+            ["fire.gif", "rain.gif", "bars.gif", "orbit.gif", "heartbeat.gif", "lava.gif", "ping.gif", "dots.gif", "spinner.gif", "scope.gif", "typing.gif", "aurora.gif", "rainbow.gif", "fire.gif"]
+                .iter()
+                .enumerate()
+        {
             let image = super::demo::animation(name);
             controls.insert(format!("fun/keys.{i}"), json!({"action": "core.page", "params": {"page": ""}, "look": {"label": "", "image": image, "fit": "fill"}}));
         }
