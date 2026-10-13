@@ -31,7 +31,7 @@ pub fn scrub(line: &str) -> Option<String> {
             } else if w.len() >= 16 && w.starts_with("MH") && w.chars().all(|c| c.is_ascii_alphanumeric()) {
                 mask(w)
             } else if let Some(i) = w.find("://") {
-                format!("{}://(address)", &w[..i].trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
+                format!("{}://(address)", w[..i].trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
             } else {
                 match &home {
                     Some(h) if w.contains(h.as_str()) => w.replace(h.as_str(), "~"),
