@@ -19,9 +19,48 @@ pub fn scrub(line: &str) -> Option<String> {
     if line.contains("now playing:") {
         return None;
     }
-    // serial numbers in hub lines: "connected keys MHKD15AA431251603100 (...)"
-    let words: Vec<String> = line.split(' ').map(|w| if w.len() >= 16 && w.starts_with("MH") && w.chars().all(|c| c.is_ascii_alphanumeric()) { mask(w) } else { w.to_string() }).collect();
+    // serial numbers in hub lines: "connected keys MHKD15AA431251603100 (...)"; web addresses
+    // (they can carry keys and name the user's machines); a word after "Bearer"; the home folder
+    let home = dirs_home();
+    let mut bearer = false;
+    let words: Vec<String> = line
+        .split(' ')
+        .map(|w| {
+            let out = if bearer {
+                "(hidden)".to_string()
+            } else if w.len() >= 16 && w.starts_with("MH") && w.chars().all(|c| c.is_ascii_alphanumeric()) {
+                mask(w)
+            } else if let Some(i) = w.find("://") {
+                format!("{}://(address)", &w[..i].trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
+            } else {
+                match &home {
+                    Some(h) if w.contains(h.as_str()) => w.replace(h.as_str(), "~"),
+                    _ => w.to_string(),
+                }
+            };
+            bearer = w.eq_ignore_ascii_case("bearer");
+            out
+        })
+        .collect();
     Some(words.join(" "))
+}
+
+fn dirs_home() -> Option<String> {
+    std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok().filter(|h| h.len() > 3)
+}
+
+/// Settings as the diagnostics show them: switches, numbers and short names stay; anything that
+/// could be an address, a path, a key or a name of the user's becomes "(set)"; lists are counted.
+pub fn settings_view(v: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match v {
+        Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), settings_view(v))).collect()),
+        Value::Array(a) if a.iter().all(|x| x.is_string() && x.as_str().is_some_and(|s| s.len() <= 16 && !s.contains(['/', '\\', ':', '.']))) => v.clone(),
+        Value::Array(a) => serde_json::json!(format!("({} items)", a.len())),
+        Value::String(s) if s.is_empty() || (s.len() <= 16 && !s.contains(['/', '\\', ':', '@', '.'])) => v.clone(),
+        Value::String(_) => serde_json::json!("(set)"),
+        _ => v.clone(),
+    }
 }
 
 pub fn write(dir: &Path, log_file: &Path, version: &str, deck: &DeckSnapshot, settings: &serde_json::Value, plugins: &[super::plugins::PluginInfo]) -> std::io::Result<PathBuf> {
@@ -57,6 +96,21 @@ pub fn write(dir: &Path, log_file: &Path, version: &str, deck: &DeckSnapshot, se
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostics_hide_addresses_keys_and_paths() {
+        let l = scrub("GET https://api.example.com/x?key=abc failed: Bearer abc123 for MHKD15AA431251603100").unwrap();
+        assert!(!l.contains("example.com") && !l.contains("abc123") && !l.contains("key=abc") && l.contains("...3100"), "{l}");
+        let v = settings_view(
+            &serde_json::json!({"language": "pl", "obsUrl": "ws://192.168.1.5:4455", "profilesDir": "/Users/me/Dropbox", "count": 3, "on": true, "spotifyClientId": "0123456789abcdef0123456789abcdef", "apps": [{"url": "http://x"}]}),
+        );
+        assert_eq!(v["language"], "pl");
+        assert_eq!(v["obsUrl"], "(set)");
+        assert_eq!(v["profilesDir"], "(set)");
+        assert_eq!(v["spotifyClientId"], "(set)");
+        assert_eq!(v["apps"], "(1 items)");
+        assert_eq!(v["count"], 3);
+    }
 
     #[test]
     fn private_things_stay_out() {

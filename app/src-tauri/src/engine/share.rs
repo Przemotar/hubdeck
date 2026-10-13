@@ -159,13 +159,92 @@ fn add(engine: &Engine, mut profile: Profile, adapt: &dyn Fn(Profile) -> (Profil
     let (profile, moved) = adapt(profile);
     engine.lock().store.save_profile(profile.clone()).map_err(|e| e.to_string())?;
     engine.changed();
-    Ok(Imported { profile, moved })
+    Ok(Imported::new(profile, moved))
+}
+
+/// What a profile runs on this computer beyond opening apps and pages: commands, web requests,
+/// scripts (release audit, 2026-10-13: an imported "Mute" key could run a script). Shown before an
+/// imported profile is used.
+pub fn runs(profile: &Profile) -> Vec<String> {
+    fn walk(action: &str, params: &serde_json::Value, out: &mut Vec<String>, depth: usize) {
+        let s = |k: &str| super::actions::param_str(params, k).to_string();
+        match action {
+            "core.run" => out.push(format!("{} {}", s("command"), s("args")).trim().to_string()),
+            super::actions::HTTP => out.push(format!("{} {}", s("method"), s("url")).trim().to_string()),
+            "core.launch" if super::guard::risky_target(&s("target")).is_some() => out.push(s("target")),
+            "core.live" if s("source") == "command" => out.push(s("command")),
+            _ => {}
+        }
+        if depth < 4 {
+            for list in ["steps", "modes"] {
+                for step in params.get(list).and_then(serde_json::Value::as_array).into_iter().flatten() {
+                    walk(step.get("action").and_then(serde_json::Value::as_str).unwrap_or_default(), step.get("params").unwrap_or(&serde_json::Value::Null), out, depth + 1);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for b in profile.controls.values() {
+        walk(&b.action, &b.params, &mut out, 0);
+    }
+    out.retain(|r| !r.is_empty());
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Import package bytes: pictures into the images folder, the profile as a new one.
 pub fn import_package(engine: &Engine, bytes: &[u8], adapt: &dyn Fn(Profile) -> (Profile, Vec<Moved>)) -> Result<Imported, String> {
     let profile = unpack(bytes, &mut |data, ext| super::images::import_bytes(data, ext).map_err(|e| log::warn!("package picture: {e}")).ok())?;
     add(engine, profile, adapt)
+}
+
+/// Keys never leave in a shared profile (release audit, 2026-10-13): header values of web requests
+/// (`Authorization: Bearer ...`) and URL parameters named like a key, token, secret or password.
+pub fn strip_secrets(profile: &mut Profile) {
+    fn url(u: &str) -> String {
+        let Some((base, query)) = u.split_once('?') else { return u.to_string() };
+        let parts: Vec<String> = query
+            .split('&')
+            .map(|kv| {
+                let name = kv.split('=').next().unwrap_or_default().to_lowercase();
+                if ["key", "token", "secret", "password", "pass", "auth", "sig"].iter().any(|w| name.contains(w)) { format!("{name}=") } else { kv.to_string() }
+            })
+            .collect();
+        format!("{base}?{}", parts.join("&"))
+    }
+    fn walk(action: &str, params: &mut serde_json::Value, depth: usize) {
+        if let Some(o) = params.as_object_mut() {
+            if action == super::actions::HTTP
+                && let Some(h) = o.get("headers").and_then(serde_json::Value::as_str)
+            {
+                let names: Vec<String> = h.lines().filter_map(|l| l.split_once(':').map(|(n, _)| format!("{}: ", n.trim()))).collect();
+                o.insert("headers".into(), names.join("\n").into());
+            }
+            for key in ["url", "target"] {
+                if let Some(u) = o.get(key).and_then(serde_json::Value::as_str).filter(|u| u.contains("://")) {
+                    let clean = url(u);
+                    o.insert(key.into(), clean.into());
+                }
+            }
+        }
+        if depth < 4 {
+            for list in ["steps", "modes"] {
+                if let Some(steps) = params.get_mut(list).and_then(serde_json::Value::as_array_mut) {
+                    for step in steps {
+                        let a = step.get("action").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+                        if let Some(p) = step.get_mut("params") {
+                            walk(&a, p, depth + 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for b in profile.controls.values_mut() {
+        let action = b.action.clone();
+        walk(&action, &mut b.params, 0);
+    }
 }
 
 /// Write a profile as a package file.
@@ -178,6 +257,7 @@ pub fn export_package(engine: &Engine, id: &str, path: &Path) -> Result<(), Stri
             b.look.icon = Some("gamepad-2".into());
         }
     }
+    strip_secrets(&mut profile);
     let images = engine.data_dir().join("images");
     let bytes = pack(&profile, &mut |name| std::fs::read(images.join(name)).ok())?;
     std::fs::write(path, bytes).map_err(|e| e.to_string())
@@ -252,6 +332,22 @@ pub async fn gallery_add(app: tauri::AppHandle, engine: State<'_, Engine>, packa
 mod tests {
     use super::*;
     use crate::engine::profile::Binding;
+
+    #[test]
+    fn what_a_profile_runs_and_no_keys_leave() {
+        let mut p = Profile::new("x");
+        let b = |action: &str, params: serde_json::Value| serde_json::from_value::<Binding>(serde_json::json!({"action": action, "params": params})).unwrap();
+        p.controls.insert("keys.0".into(), b("core.run", serde_json::json!({"command": "evil.ps1"})));
+        p.controls.insert("keys.1".into(), b("core.launch", serde_json::json!({"target": "https://example.com"})));
+        p.controls.insert("keys.2".into(), b("core.http", serde_json::json!({"method": "POST", "url": "https://h.example/x?api_key=SECRET&q=1", "headers": "Authorization: Bearer SECRET\nX-A: 1"})));
+        p.controls.insert("keys.3".into(), b("core.multi", serde_json::json!({"steps": [{"action": "core.run", "params": {"command": "rm"}}]})));
+        let runs = runs(&p);
+        assert!(runs.iter().any(|r| r.contains("evil.ps1")) && runs.iter().any(|r| r == "rm") && runs.iter().any(|r| r.starts_with("POST")));
+        assert!(!runs.iter().any(|r| r.contains("example.com") && !r.starts_with("POST")), "a web page is not a command");
+        strip_secrets(&mut p);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(!json.contains("SECRET") && json.contains("q=1") && json.contains("Authorization: "), "{json}");
+    }
 
     fn look(image: Option<&str>) -> Look {
         Look { label: Some("x".into()), image: image.map(str::to_string), ..Default::default() }

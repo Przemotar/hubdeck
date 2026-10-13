@@ -263,7 +263,7 @@ function ParamField({
       field = (
         <>
           <div className="row">
-            <input id={id} className="input grow" value={str} onChange={(e) => onChange(e.target.value)} placeholder={t(games ? "installed.gamePlaceholder" : "param.targetPlaceholder")} />
+            <input id={id} className="input grow" value={str} onChange={(e) => onChange(e.target.value)} placeholder={t(games ? "installed.gamePlaceholder" : IS_MAC ? "param.targetPlaceholderMac" : "param.targetPlaceholder")} />
             <button className={`tool${picking ? " is-active" : ""}`} onClick={() => setPicking((p) => !p)}>
               <Icon name={games ? "play" : "app-window"} />
               {t(games ? "installed.pickGame" : "installed.pickApp")}

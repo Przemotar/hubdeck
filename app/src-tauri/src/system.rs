@@ -103,7 +103,7 @@ mod platform {
         unsafe {
             ShellExecuteExW(&mut info).map_err(|e| if e.code().0 as u32 == 0x800704C7 { "cancelled".to_string() } else { e.message() })?;
             if info.hProcess.is_invalid() {
-                return Err("could not start the restart".into());
+                return Err("could not restart as administrator: try again and answer Yes when Windows asks".into());
             }
             WaitForSingleObject(info.hProcess, INFINITE);
             let mut code = 0u32;
@@ -139,7 +139,7 @@ mod platform {
         #[cfg(target_os = "macos")]
         if !std::path::Path::new(target).exists() {
             let status = std::process::Command::new("open").arg("-a").arg(target).status().map_err(|e| e.to_string())?;
-            return if status.success() { Ok(()) } else { Err("not found".into()) };
+            return if status.success() { Ok(()) } else { Err(format!("{target} was not found: pick the app again (Pick an app) or check its name")) };
         }
         tauri_plugin_opener::open_path(target, None::<&str>).map_err(|e| e.to_string())
     }

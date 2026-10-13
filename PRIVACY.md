@@ -9,6 +9,8 @@ What leaves your computer, and only when you use the feature:
 | Feature | What is sent, and where |
 |---|---|
 | Checking for updates (on by default, Settings > Updates) | a request for the newest release to GitHub |
+| Now playing with cover art | the cover picture, from the address the music player gives (Spotify's or Apple's servers) |
+| The "Discover HubDeck" sample profile | its Live page shows the Bitcoin price from api.coingecko.com while that page is on the deck; delete the profile or that key to stop it |
 | Shared profiles gallery | a download of the gallery list from GitHub |
 | Plugin catalog (Settings > Plugins) | the catalog list from openactionapi.github.io and its icons; on Install, the plugin file from its author's GitHub |
 | Weather, calendar, live values | requests to the addresses you set (Open-Meteo for weather) |

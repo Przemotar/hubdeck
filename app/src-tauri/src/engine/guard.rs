@@ -28,6 +28,12 @@ fn refusal(control: &str, action: &str, params: &Value, apps: &[String], depth: 
     if let Some((_, what)) = REFUSED.iter().find(|(a, _)| *a == action && !(power && *a == "core.run")) {
         return Some(format!("{control}: {action} is not for the assistant ({what}); leave it to the user"));
     }
+    if action == "core.launch"
+        && !power
+        && let Some(why) = risky_target(super::actions::param_str(params, "target"))
+    {
+        return Some(format!("{control}: opening {why} is not for the assistant; leave it to the user"));
+    }
     let on_hold = control.ends_with(":hold");
     if DESTRUCTIVE_ACTIONS.contains(&action) && !on_hold {
         return Some(format!("{control}: {action} clears or deletes something, so it goes on a hold ({control}:hold), never a plain press"));
@@ -56,6 +62,26 @@ fn refusal(control: &str, action: &str, params: &Value, apps: &[String], depth: 
                 }
             }
         }
+    }
+    None
+}
+
+/// What the assistant may not open with "Open app, file or website" (release audit, 2026-10-13: on
+/// Windows it starts anything): scripts and installers, and links of schemes that are not web pages
+/// or the common apps' own. Apps, documents, folders and web pages are fine.
+pub fn risky_target(target: &str) -> Option<&'static str> {
+    let t = target.trim().trim_matches('"').to_lowercase();
+    const SCRIPTS: [&str; 16] = [".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".msi", ".scr", ".sh", ".command", ".scpt", ".py"];
+    if SCRIPTS.iter().any(|e| t.ends_with(e)) {
+        return Some("a script or an installer");
+    }
+    // `C:\...` is a drive, not a scheme
+    if let Some((scheme, _)) = t.split_once(':')
+        && scheme.len() > 1
+        && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && !matches!(scheme, "http" | "https" | "mailto" | "steam" | "spotify" | "discord" | "zoommtg" | "msteams" | "slack" | "notion" | "figma" | "obsidian" | "ms-settings")
+    {
+        return Some("a link of that kind");
     }
     None
 }
@@ -95,6 +121,18 @@ pub fn unchecked_shortcuts(action: &str, params: &Value, apps: &[String]) -> Vec
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_assistant_opens_apps_and_pages_but_not_scripts() {
+        let launch = |t: &str| check_json("keys.0", &json!({"action": "core.launch", "params": {"target": t}}), &[]);
+        assert!(launch("C:\\Program Files\\Spotify\\Spotify.exe").is_ok());
+        assert!(launch("/Applications/Spotify.app").is_ok());
+        assert!(launch("https://example.com").is_ok());
+        assert!(launch("steam://rungameid/1").is_ok());
+        assert!(launch("C:\\Users\\me\\run.bat").is_err());
+        assert!(launch("search-ms:query=x").is_err());
+        assert!(launch("file:///C:/x.exe").is_err());
+    }
 
     #[test]
     fn the_assistant_keeps_closing_shortcuts_and_commands_off_plain_presses() {

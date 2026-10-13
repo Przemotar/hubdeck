@@ -240,7 +240,7 @@ pub fn catalog() -> Vec<ActionDef> {
             id: MONITOR,
             name: "System monitor",
             group: "System",
-            description: "Shows CPU load or temperature, memory, or GPU load, temperature or memory on a key or the dial, updated every second. A press opens Task Manager.",
+            description: "Shows CPU load or temperature, memory, or GPU load, temperature or memory on a key or the dial, updated every second. A press opens Task Manager (Activity Monitor on a Mac).",
             inputs: vec![Press],
             params: vec![ParamDef {
                 help: Some(

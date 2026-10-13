@@ -20,7 +20,8 @@ const GALLERY_BASE = "https://raw.githubusercontent.com/Przemotar/hubdeck-profil
 const GALLERY = [
   { id: "demo-obs", name: "OBS streaming", author: "Przemotar", description: "Scenes, record, stream and replay on the keys with live state; mic level on the dial; the OBS mixer on the faders.", kinds: ["keys", "dial", "faders"], tags: ["streaming", "obs"], preview: null, package: `${GALLERY_BASE}/obs-streaming/obs-streaming.hubdeck`, version: "1.0" },
   { id: fixture.profiles[0].id, name: fixture.profiles[0].name, author: "Przemotar", description: "Media, copy and paste, app volumes on the faders, scrolling on the rollers.", kinds: ["keys", "faders", "rollers"], tags: ["everyday"], preview: null, package: `${GALLERY_BASE}/everyday/everyday.hubdeck`, version: "1.0" },
-  { id: fixture.profiles[3]?.id ?? fixture.profiles[1].id, name: fixture.profiles[3]?.name ?? fixture.profiles[1].name, author: "a HubDeck user", description: "Tools on the keys, brush size on the dial, zoom and history on the knobs.", kinds: ["keys", "dial", "knobs"], tags: ["design", "adobe"], preview: null, package: `${GALLERY_BASE}/photoshop/photoshop.hubdeck`, version: "0.9" },
+  // by id, not by place in the fixture: the description must belong to the profile it names
+  { id: "demo-photoshop", name: fixture.profiles.find((p) => p.id === "demo-photoshop")?.name ?? "Photoshop", author: "a HubDeck user", description: "Tools on the keys, brush size on the dial, zoom and history on the knobs.", kinds: ["keys", "dial", "knobs"], tags: ["design", "adobe"], preview: null, package: `${GALLERY_BASE}/photoshop/photoshop.hubdeck`, version: "0.9" },
 ];
 
 const UPDATE = {

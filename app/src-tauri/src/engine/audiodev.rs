@@ -32,7 +32,12 @@ pub fn set_default(input: bool, name: &str) -> Result<String, String> {
 pub fn cycle(input: bool, step: i32) -> Result<String, String> {
     let devices = list(input)?;
     if devices.is_empty() {
-        return Err("no audio devices".into());
+        return Err(if input {
+            "no microphone found: connect one, or check it in the system's sound settings"
+        } else {
+            "no speakers or headphones found: connect some, or check them in the system's sound settings"
+        }
+        .into());
     }
     let now = devices.iter().position(|d| d.default).unwrap_or(0) as i32;
     let next = &devices[(now + step).rem_euclid(devices.len() as i32) as usize];

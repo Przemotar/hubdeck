@@ -99,13 +99,30 @@ pub fn is_sd_manifest(v: &Value) -> bool {
     v.get("Actions").is_some() && (v.get("UUID").is_some() || v.get("CodePath").is_some())
 }
 
-/// A file inside the plugin folder; never outside it.
+/// A file inside the plugin folder; never outside it: only plain names (no `..`, no drive or root,
+/// no `:`, so `C:/Users/...` cannot replace the folder on Windows; release audit, 2026-10-13), and
+/// a file that exists must still be inside the folder once links are followed.
 pub fn inside(dir: &Path, rel: &str) -> Option<PathBuf> {
     let rel = rel.trim_start_matches(['/', '\\']);
-    if rel.split(['/', '\\']).any(|p| p == "..") {
+    if rel.split(['/', '\\']).any(|p| p == ".." || p.contains(':')) {
         return None;
     }
-    Some(dir.join(rel))
+    let rel = Path::new(rel);
+    if !rel.components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)) {
+        return None;
+    }
+    let path = dir.join(rel);
+    if let (Ok(real), Ok(base)) = (path.canonicalize(), dir.canonicalize())
+        && !real.starts_with(&base)
+    {
+        return None;
+    }
+    Some(path)
+}
+
+/// A plugin id as it may appear in a URL: letters, digits, `.`, `-`, `_`, not `.` or `..`.
+fn plain_id(id: &str) -> bool {
+    !id.is_empty() && id != "." && id != ".." && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 /// A manifest picture: the path has no extension; Stream Deck picks `@2x.png`, `.png`, `.svg`...
@@ -724,15 +741,28 @@ pub fn start_files(data_dir: &Path, plugins_dir: PathBuf) {
         .name("plugin-files".into())
         .spawn(move || {
             for req in server.incoming_requests() {
+                // only pages of this computer, by this address: a web page that points its own name
+                // at 127.0.0.1 (DNS rebinding) sends another Host
+                let host_ok = req.headers().iter().find(|h| h.field.equiv("Host")).is_some_and(|h| {
+                    let v = h.value.as_str();
+                    v == format!("127.0.0.1:{port}") || v == format!("localhost:{port}")
+                });
+                if !host_ok {
+                    let _ = req.respond(tiny_http::Response::from_data(b"forbidden".to_vec()).with_status_code(403));
+                    continue;
+                }
                 let url = req.url().to_string();
                 let (path, query) = url.split_once('?').unwrap_or((&url, ""));
                 let path = percent_decode(path);
                 let mut parts = path.trim_start_matches('/').splitn(2, '/');
                 let (plugin, rel) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-                let file = super::plugins::folder_of(plugin)
+                let plugin = if plain_id(plugin) { plugin } else { "" };
+                let file = (!plugin.is_empty())
+                    .then(|| super::plugins::folder_of(plugin))
+                    .flatten()
                     .and_then(|d| inside(&d, rel))
                     .filter(|p| p.is_file())
-                    .or_else(|| inside(&plugins_dir.join(format!("{plugin}.sdPlugin")), rel).filter(|p| p.is_file()));
+                    .or_else(|| (!plugin.is_empty()).then(|| inside(&plugins_dir.join(format!("{plugin}.sdPlugin")), rel)).flatten().filter(|p| p.is_file()));
                 let response = match file.and_then(|f| std::fs::read(&f).ok().map(|b| (f, b))) {
                     Some((f, mut body)) => {
                         let ext = f.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -946,6 +976,11 @@ mod tests {
     fn files_stay_inside_the_plugin_folder() {
         let d = Path::new("/p/x.sdPlugin");
         assert!(inside(d, "../secret").is_none());
+        // a drive or an absolute path never replaces the plugin folder
+        assert!(inside(d, "C:/Users/me/.ssh/id_rsa").is_none());
+        assert!(inside(d, "x/C:/Windows/win.ini").is_none());
+        assert!(inside(d, "pi/index.html").is_some_and(|p| p.starts_with(d)));
+        assert!(plain_id("com.example.plugin") && !plain_id("..") && !plain_id("a\\b") && !plain_id(""));
         assert!(inside(d, "pi/../../x").is_none());
         assert_eq!(inside(d, "/pi/a.html"), Some(d.join("pi/a.html")));
     }

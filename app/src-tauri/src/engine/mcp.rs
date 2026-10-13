@@ -728,13 +728,24 @@ fn permission(api: &dyn Api, args: &Value) -> Value {
     deny("The user did not answer in time.")
 }
 
+/// An `http://` address on this computer: the whole authority is read (a `user@` part, as in
+/// `http://127.0.0.1:1@example.com/`, would send the request elsewhere; release audit, 2026-10-13).
+fn on_this_computer(url: &str) -> Result<(), String> {
+    let rest = url.strip_prefix("http://").ok_or("only http:// addresses on this computer (127.0.0.1 or localhost)")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains(['@', '\\']) || authority.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("an address with a user name or odd characters is refused".into());
+    }
+    let host = match authority.strip_prefix('[') {
+        Some(v6) => v6.split_once(']').map_or("", |(h, _)| h),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    if matches!(host, "127.0.0.1" | "localhost" | "::1") { Ok(()) } else { Err(format!("{host} is not this computer: only 127.0.0.1 or localhost (other addresses need more power)")) }
+}
+
 /// `test_address`: one GET to a local address (this computer only: nothing leaves it).
 fn test_address(url: &str) -> Result<Vec<Value>, String> {
-    let rest = url.trim().strip_prefix("http://").ok_or("only http:// addresses on this computer (127.0.0.1 or localhost)")?;
-    let host = rest.split(['/', '?']).next().unwrap_or_default().rsplit_once(':').map_or(rest.split('/').next().unwrap_or_default(), |(h, _)| h);
-    if !matches!(host, "127.0.0.1" | "localhost" | "[::1]") {
-        return Err(format!("{host} is not this computer: only 127.0.0.1 or localhost (other addresses need more power)"));
-    }
+    on_this_computer(url.trim())?;
     let (code, answer) = super::exec::http_request("GET", url, "", "").map_err(|e| format!("no answer: {e}"))?;
     let start: String = answer.chars().take(2000).collect();
     Ok(text(&json!({"status": code, "answer": start, "cut": answer.chars().count() > 2000})))
@@ -816,10 +827,7 @@ pub fn assistant_call(api: &dyn Api, name: &str, args: &Value) -> Result<Vec<Val
         "key_usage" => Ok(text(&api.call("GET", &format!("/api/presses/{}", seg(arg(args, "profile")?)?), None)?)),
         "connect_app" => {
             let url = arg(args, "url")?;
-            let host = url.strip_prefix("http://").unwrap_or_default().split(['/', ':']).next().unwrap_or_default();
-            if !matches!(host, "127.0.0.1" | "localhost") {
-                return Err("only an address on this computer (http://127.0.0.1:... or http://localhost:...)".into());
-            }
+            on_this_computer(url)?;
             Ok(text(&api.call("POST", "/api/apps", Some(&json!({"url": url})))?))
         }
         _ => call_tool(api, name, args),
@@ -1121,6 +1129,17 @@ pub async fn ai_build(prompt: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_addresses_of_this_computer() {
+        for ok in ["http://127.0.0.1:8080/x", "http://localhost/", "http://[::1]:5/a?b"] {
+            assert!(on_this_computer(ok).is_ok(), "{ok}");
+        }
+        for bad in ["http://127.0.0.1:1@example.com/", "http://localhost@evil.com", "http://example.com/127.0.0.1", "https://127.0.0.1/", "http://127.0.0.1\\@evil.com/", "http://127.0.0.1.evil.com/"]
+        {
+            assert!(on_this_computer(bad).is_err(), "{bad}");
+        }
+    }
+
     use super::*;
     use std::sync::Mutex;
 

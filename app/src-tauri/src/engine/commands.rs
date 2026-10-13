@@ -745,7 +745,11 @@ pub struct Catalog {
 
 #[tauri::command]
 pub fn actions_list() -> Catalog {
-    let actions = actions::all().into_iter().filter(|a| super::games::GAMES_ENABLED || a.id != actions::GAMES).collect();
+    let mut actions: Vec<actions::ActionDef> = actions::all().into_iter().filter(|a| super::games::GAMES_ENABLED || a.id != actions::GAMES).collect();
+    // options this system does not have are not offered (Windows' volume popup on a Mac)
+    for a in &mut actions {
+        a.params.retain(|p| super::volume::POPUP_AVAILABLE || p.key != "popup");
+    }
     Catalog { actions, special_keys: hotkey::SPECIAL_KEYS.to_vec() }
 }
 
@@ -786,6 +790,15 @@ pub struct Imported {
     #[serde(flatten)]
     pub profile: Profile,
     pub moved: Vec<super::presets::Moved>,
+    /// Commands, web requests and scripts the profile runs: the window asks before it is used.
+    pub runs: Vec<String>,
+}
+
+impl Imported {
+    pub fn new(profile: Profile, moved: Vec<super::presets::Moved>) -> Self {
+        let runs = super::share::runs(&profile);
+        Self { profile, moved, runs }
+    }
 }
 
 /// Import a profile file as a new profile (fresh id, so it never overwrites one), adapted to the
@@ -816,7 +829,7 @@ pub fn profile_import(app: tauri::AppHandle, engine: State<'_, Engine>, path: St
         }
         engine.changed();
         // the caller activates the returned (first) profile
-        return Ok(Imported { profile: first, moved });
+        return Ok(Imported::new(first, moved));
     }
     let mut profile: Profile = serde_json::from_slice(&bytes).map_err(|e| format!("not a HubDeck profile: {e}"))?;
     if profile.version > PROFILE_VERSION {
@@ -828,7 +841,7 @@ pub fn profile_import(app: tauri::AppHandle, engine: State<'_, Engine>, path: St
     let (profile, moved) = adapt(profile);
     engine.lock().store.save_profile(profile.clone()).map_err(io)?;
     engine.changed();
-    Ok(Imported { profile, moved })
+    Ok(Imported::new(profile, moved))
 }
 
 /// "Adapt to my modules": copy the turn jobs of the module kinds the user does not have to the

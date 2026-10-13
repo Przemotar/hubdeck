@@ -160,7 +160,11 @@ mod platform {
             Which::All => None,
             Which::One(n) => Some(n - 1),
         };
-        if super::super::machw::set(index, value) { Ok(()) } else { Err("no monitor took the brightness".into()) }
+        if super::super::machw::set(index, value) {
+            Ok(())
+        } else {
+            Err("no monitor took the brightness: an external one needs DDC/CI switched on in its own menu, and some connections (docks, some HDMI adapters) do not pass it".into())
+        }
     }
 }
 

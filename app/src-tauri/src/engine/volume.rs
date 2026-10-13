@@ -425,7 +425,7 @@ mod platform {
             // SAFETY: NUL-terminated strings we own, alive for the call.
             match unsafe { mh_appvol_set(key.as_ptr(), needles.as_ptr(), i32::from(others), level.clamp(0.0, 1.0)) } {
                 0 => Ok(()),
-                1 => Err("that app is not playing sound now".into()),
+                1 => Err("that app is not playing sound now: start something in it, then turn again".into()),
                 2 => Err("per-app volume needs macOS 14.2 or later".into()),
                 3 => Err("allow HubDeck in System Settings > Privacy & Security > Screen & System Audio Recording (System Audio Recording only)".into()),
                 _ => Err("the sound output would not start for per-app volume".into()),

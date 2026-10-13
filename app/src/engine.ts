@@ -78,7 +78,8 @@ export interface Moved {
 }
 
 /** An imported profile with what was copied to fit the user's modules. */
-export type Imported = Profile & { moved: Moved[] };
+/** An imported profile; `runs`: commands, web requests and scripts in it (asked before it is used). */
+export type Imported = Profile & { moved: Moved[]; runs?: string[] };
 
 export interface Profile {
   version: number;

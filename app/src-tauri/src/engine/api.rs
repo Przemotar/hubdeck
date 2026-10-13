@@ -434,6 +434,12 @@ fn create_profile(engine: &Engine, body: &Value) -> Answer {
     let mut p = merged(base, body, &PROFILE_FIELDS)?;
     // made by the deck assistant: its shortcuts outside the checked packs get a mark
     p.assistant = body.get("assistant").and_then(Value::as_bool) == Some(true);
+    // the assistant's limits hold here too, not only in its own tool process (release audit)
+    if p.assistant {
+        for (control, b) in &p.controls {
+            super::guard::check(control, b, &p.apps).map_err(bad)?;
+        }
+    }
     let answer = save_checked(engine, p)?;
     // a proposal of the deck assistant: kept out of the bar and of switching until picked
     if body.get("draft").and_then(Value::as_bool) == Some(true) {

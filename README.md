@@ -32,7 +32,8 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 
 **Profiles that follow you**
 - Your home profile is the one you pick. An app with its own profile takes over while it is in
-  front (even one window: `chrome.exe: YouTube`) and gives back when you leave it; *Pin* stops
+  front (even one window: `chrome.exe: YouTube` on Windows, `Google Chrome: YouTube` on macOS) and
+  gives back when you leave it; *Pin* stops
   switching. Switching is drawn in tens of milliseconds.
 - Key pages, press / hold / double press on every key, knob and the dial, multi-actions with delays
   and conditions, a keyboard macro recorder, toggles, several modes on one dial.
@@ -52,7 +53,9 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
   (Settings > Plugins), and its actions join the library: Discord, Spotify, OBS, Home Assistant,
   Philips Hue, Govee, VS Code and more. Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the inspector.
-  How it works and what to expect: [docs/STREAMDECK-PLUGINS.md](docs/STREAMDECK-PLUGINS.md).
+  Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
+  installed; HubDeck says so when one does. How it works and what to expect:
+  [docs/STREAMDECK-PLUGINS.md](docs/STREAMDECK-PLUGINS.md).
 
 **A tour, then a deck assistant**
 - *Show me on my deck* (no AI needed): one question about what you do most, then HubDeck makes a
@@ -60,7 +63,8 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
   part; the control to try blinks on the deck. Keep the parts you like; nothing of yours changes
   until you keep the deck. With your OK it counts presses, and the next day names a control you
   never used, to swap it.
-- The assistant uses your own Claude Code: it looks at the apps you use (with your OK), asks a few questions and
+- The assistant uses your own Claude Code (it needs a Claude Pro or Max plan, or an Anthropic API
+  key; the tour and everything else work without it): it looks at the apps you use (with your OK), asks a few questions and
   sketches whole decks you try on the hardware before you keep one; or go step by step, control
   by control, through a gallery of options. It changes only drafts; more in
   [docs/ASSISTANT.md](docs/ASSISTANT.md).
@@ -103,8 +107,9 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 - The module firmware is never updated or changed. Commands that could rewrite serial numbers,
   reset a module or flash firmware are not part of HubDeck's protocol code, and hand-built reports
   carrying them are refused.
-- No account, no cloud, no telemetry. HubDeck goes online only for what you turn on: an integration,
-  the gallery, the update check.
+- No account, no cloud, no telemetry. HubDeck goes online only for the update check (on by default,
+  Settings > Updates), album covers of what plays, and what you turn on; the full list is in
+  [PRIVACY.md](PRIVACY.md).
 - About 1 % of one CPU core and 45 MB of memory while it waits in the tray (measured on the
   release build with the deck attached); the window exists only while it is open.
 - Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
@@ -141,8 +146,8 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
 ### Known issues
 
-- macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck
-  restarts that module by itself, and taking it off the base and putting it back always helps.
+- macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
+  to restart that module by itself, and taking it off the base and putting it back always helps.
 - macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
 - Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
   pages do.
@@ -151,7 +156,8 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 ## Build from source
 
 You need Rust (1.90 or later), Node 22 or later with pnpm, and on Windows the Visual Studio C++
-build tools. Step-by-step setup for Windows and macOS: [docs/SETUP.md](docs/SETUP.md).
+build tools (the "Desktop development with C++" workload); on macOS the Xcode command line tools
+(`xcode-select --install`).
 
 ```
 cd app
@@ -175,7 +181,7 @@ More in [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Feedback and contributing
 
 - Something does not work: [report a problem](https://github.com/Przemotar/hubdeck/issues/new?template=bug.yml)
-  (Settings > Help and feedback fills in your version and saves a diagnostics file to attach).
+  (Settings > Help and about fills in your version and saves a diagnostics file to attach).
 - An idea: [suggest a feature](https://github.com/Przemotar/hubdeck/issues/new?template=feature.yml).
 - Questions, setups, profiles: [Discussions](https://github.com/Przemotar/hubdeck/discussions).
 - Anything you prefer not to post in public: przemotar+hubdeck@gmail.com

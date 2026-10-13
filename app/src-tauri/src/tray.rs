@@ -122,16 +122,8 @@ fn save_diagnostics(app: &AppHandle) -> Result<(), String> {
     let engine = app.try_state::<Engine>().ok_or("engine not running")?;
     let settings = {
         let s = engine.lock();
-        let mut v = serde_json::to_value(&s.store.settings).unwrap_or_default();
-        // addresses can name the owner's machines; keep only whether they are set
-        if let Some(o) = v.as_object_mut() {
-            for key in ["obsUrl", "haUrl"] {
-                if o.contains_key(key) {
-                    o.insert(key.into(), serde_json::json!("(set)"));
-                }
-            }
-        }
-        v
+        // addresses, paths, keys and names of the user's: only whether they are set
+        crate::engine::diagnostics::settings_view(&serde_json::to_value(&s.store.settings).unwrap_or_default())
     };
     let deck = app.state::<Deck>().snapshot();
     let path =

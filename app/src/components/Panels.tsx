@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { actionFits, api, controlId, GAMES_ENABLED, POPULAR_ACTIONS, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { actionFits, api, controlId, GAMES_ENABLED, POPULAR_ACTIONS, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -674,7 +674,9 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
     const measure = measureRef.current;
     if (!nav || !measure) return;
     const calc = () => {
-      const widths = Array.from(measure.children, (c) => (c as HTMLElement).offsetWidth);
+      // fractional widths rounded up, and a little room: the active tab (its dot, its weight) is wider
+      // than its measured copy (the last tab was cut by 4px at 1440; release audit)
+      const widths = Array.from(measure.children, (c) => Math.ceil(c.getBoundingClientRect().width) + 2);
       const tabs = widths.slice(0, profiles.length);
       const more = widths[profiles.length] ?? 90;
       const gap = 2;
@@ -1208,7 +1210,7 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
               const path = await open({ multiple: false, filters: [{ name: t("profile.fileType"), extensions: ["hubdeck", "json", "mhz"] }] });
               if (typeof path === "string")
                 api.importProfile(path).then(
-                  (p) => (setMessage(movedNote(p.moved, p.pages) || null), api.activate(p.id)),
+                  async (p) => (await keepImported(p)) && (setMessage(movedNote(p.moved, p.pages) || null), api.activate(p.id)),
                   (e) => setMessage(String(e)),
                 );
             }}
@@ -1609,6 +1611,7 @@ function HelpFeedback() {
           {t("help.suggest")}
         </button>
       </div>
+      <p className="help">{t("help.text")}</p>
       <p className="hint">
         <Icon name="info" />
         {t("help.diagnostics")}
@@ -1618,7 +1621,6 @@ function HelpFeedback() {
         {t("help.saveDiagnostics")}
       </button>
       {saved && <p className="help">{saved}</p>}
-      <p className="help">{t("help.text")}</p>
     </section>
   );
 }
@@ -2641,7 +2643,9 @@ function PluginsList() {
   return (
     <>
       <section className="sec">
-        <p className="help">{t("plugins.help")}</p>
+        <p className="help">
+          {t("plugins.help")} <ExternalLink href={`${REPO}/blob/main/docs/PLUGINS.md`}>{t("plugins.howTo")}</ExternalLink>
+        </p>
         <div className="row wrap">
           <button
             className="tool primary align-start"
@@ -2823,7 +2827,12 @@ export function GalleryPanel({ live, saved, onClose }: { live: LiveState; saved:
   const add = (e: GalleryEntry) => {
     setState((s) => ({ ...s, [e.id]: "adding" }));
     share.add(e.package).then(
-      (p) => (setState((s) => ({ ...s, [e.id]: "added" })), setNotes((n) => ({ ...n, [e.id]: movedNote(p.moved, p.pages) })), api.activate(p.id)),
+      async (p) => {
+        if (!(await keepImported(p))) return setState((s) => ({ ...s, [e.id]: "" }));
+        setState((s) => ({ ...s, [e.id]: "added" }));
+        setNotes((n) => ({ ...n, [e.id]: movedNote(p.moved, p.pages) }));
+        api.activate(p.id);
+      },
       (err) => setState((s) => ({ ...s, [e.id]: String(err) })),
     );
   };
@@ -2910,7 +2919,9 @@ export function GalleryPanel({ live, saved, onClose }: { live: LiveState; saved:
         </section>
       )}
       <section className="sec end">
-        <p className="help">{t("gallery.share")}</p>
+        <p className="help">
+          {t("gallery.share")} <ExternalLink href={`${REPO}/blob/main/docs/SHARING.md`}>{t("gallery.howTo")}</ExternalLink>
+        </p>
       </section>
     </aside>
   );
@@ -3115,4 +3126,17 @@ export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live
       )}
     </>
   );
+}
+
+/**
+ * An imported profile that runs commands, web requests or scripts: the user sees them and keeps it
+ * or removes it before it is ever used (release audit, 2026-10-13). True = keep.
+ */
+async function keepImported(p: Imported): Promise<boolean> {
+  const runs = p.runs ?? [];
+  if (!runs.length) return true;
+  const list = runs.slice(0, 8).map((r) => `• ${r.length > 90 ? `${r.slice(0, 90)}…` : r}`).join("\n") + (runs.length > 8 ? `\n${t("import.runsMore", { count: runs.length - 8 })}` : "");
+  const keep = await ask(t("import.runsAsk", { name: p.name, list }), { title: t("import.runsTitle"), kind: "warning", okLabel: t("import.keep"), cancelLabel: t("import.remove") }).catch(() => false);
+  if (!keep) await api.deleteProfile(p.id).catch(() => {});
+  return keep;
 }

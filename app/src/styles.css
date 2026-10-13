@@ -1455,13 +1455,18 @@ button.chip.is-active {
   letter-spacing: 0;
   margin-left: 4px;
 }
+/* two columns that never grow past the panel: a long label wraps inside its button (at 960 wide
+   "Adapt to my modules" pushed the column out by 8px; release audit) */
 .btn-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 .btn-grid .tool {
   justify-content: flex-start;
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
 }
 
 /* slider */

@@ -29,8 +29,8 @@ The first public version.
 
 Known issues:
 
-- macOS: after the app restarts, the keys or the dial module sometimes stops taking pictures until
-  it is taken off the base and put back.
+- macOS: after the app restarts, the keys or the dial module sometimes stops taking pictures;
+  HubDeck tries to restart it by itself, and taking it off the base and putting it back always helps.
 - macOS: the app is not notarised; the first time, allow it in System Settings > Privacy & Security >
   Open Anyway (see the README).
   Windows: the installer is not code-signed, so SmartScreen asks once (More info > Run anyway).
