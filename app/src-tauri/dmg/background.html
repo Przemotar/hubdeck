@@ -4,8 +4,9 @@
   Applications, then the three steps of the first open of an app Apple has not notarised.
   Finder draws the real HubDeck and Applications icons (128 px, centred at the positions in
   tauri.conf.json > bundle.macOS.dmg) and their labels. Light like macOS's own installers (owner's
-  pick, round 2: "opcja nr 3"); in the dark look Finder's white labels read poorly on it, the icons,
-  the arrow and its words still say what to do. 610 tall: a Finder with the tab, path and status
+  pick, round 2: "opcja nr 3"). Finder's two labels are black in the light look and white in the
+  dark one, so grey plates sit under them that both read on (black 5.6:1, white 3.7:1; label centre
+  ~85 pt below the icon centre, measured on the owner's Finder). 610 tall: a Finder with the tab, path and status
   bars shown takes ~120 pt of the window, so the steps sit in the top 480 and the rest is margin.
   Render: node scripts/ui/dmg-background.mjs  ->  background.png (1440x1220 at 144 dpi)
 -->
@@ -19,6 +20,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { width: 720px; height: 610px; background: #ececf0; color: #1d1d22; font-family: Plex, sans-serif; position: relative; overflow: hidden; }
+.label { position: absolute; top: 183px; height: 28px; border-radius: 14px; background: #8a8a92; }
 .arrow { position: absolute; left: 276px; top: 98px; width: 168px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .arrow span { font-size: 13px; font-weight: 600; color: #4b3fd1; }
 .steps { position: absolute; left: 32px; right: 32px; top: 244px; display: flex; flex-direction: column; gap: 12px; }
@@ -42,6 +44,8 @@ h1 { margin: 0; font-size: 13px; font-weight: 600; }
 </style>
 </head>
 <body>
+<div class="label" style="left: 120px; width: 140px"></div>
+<div class="label" style="left: 460px; width: 140px"></div>
 <div class="arrow">
   <svg width="168" height="24" viewBox="0 0 168 24"><line x1="4" y1="12" x2="152" y2="12" stroke="#6d5df5" stroke-width="3" stroke-dasharray="8 8" stroke-linecap="round"/><path d="M148 3 L164 12 L148 21" fill="none" stroke="#6d5df5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <span>Drag to Applications</span>
