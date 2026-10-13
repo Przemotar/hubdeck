@@ -76,7 +76,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
   await page.waitForSelector('.setup-page, .deck-area', { timeout: 15000 });
   await step(page, `${label}: fresh start shows the setup page over the whole window`, async () => (await visible(page, '.setup-page')) && !(await visible(page, '.deck-area')));
   await step(page, `${label}: a setup step on the deck steps away and comes back`, async () => {
-    await page.locator('.setup-page button', { hasText: /Edit layout/ }).first().click();
+    await page.locator('.setup-page button', { hasText: /Fix it/ }).first().click();
     await page.waitForTimeout(300);
     if (!(await visible(page, '.deck-area'))) return 'the deck did not show for Edit layout';
     await page.locator('.chip.layout-chip').click();
@@ -101,7 +101,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     return (await visible(page, '.settings-page')) && !(await visible(page, '.dk-ctl'));
   });
   await step(page, `${label}: Settings sections switch`, async () => {
-    for (const s of ['Lights', 'Screens', 'Connections', 'Plugins', 'Backups', 'Updates', 'Help and about', 'General']) {
+    for (const s of ['Lights and screens', 'Connections', 'Plugins', 'Backups', 'Updates', 'Help and about', 'General']) {
       await page.locator('.settings-nav-item', { hasText: s }).click();
       await page.waitForTimeout(120);
       if (!(await page.locator('.settings-nav-item.is-active', { hasText: s }).isVisible())) return `section ${s} not active`;
@@ -113,8 +113,8 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(300);
     return (await visible(page, '.dk-ctl')) && !(await visible(page, '.settings-page'));
   });
-  await step(page, `${label}: the left tabs switch (Profiles, Assistant, Actions)`, async () => {
-    for (const tab of ['Profiles', 'Assistant', 'Actions']) {
+  await step(page, `${label}: the left tabs switch (Profiles, Get started, Actions)`, async () => {
+    for (const tab of ['Profiles', 'Get started', 'Actions']) {
       await page.locator('.lib-tabs [role="tab"]', { hasText: tab }).click();
       await page.waitForTimeout(200);
       const sel = await page.locator('.lib-tabs [role="tab"][aria-selected="true"]').innerText();
@@ -136,7 +136,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     return visible(page, '#action');
   });
   await step(page, `${label}: Build my deck step by step opens its page, a card can be tried, Back returns`, async () => {
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Assistant' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
     await page.waitForTimeout(200);
     // the builder now sits in the Assistant tab's Details (the tour is the way in)
     await page.locator('.as-details summary').click();
@@ -154,7 +154,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     return (await visible(page, '.deck-area')) && !(await visible(page, '.builder-page'));
   });
   await step(page, `${label}: the tour: one question, the parts with Keep, the finale, the end, Exit back to the deck`, async () => {
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Assistant' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
     await page.waitForTimeout(200);
     await page.getByRole('button', { name: /Show me on my deck/ }).click();
     await page.waitForTimeout(400);

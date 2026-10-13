@@ -17,7 +17,7 @@ itself, at once; the model refines them and talks. Safety lives in code, not in 
 
 | Part | File | What it does |
 |---|---|---|
-| Window | `app/src/components/Assistant.tsx` | The Assistant tab: what it runs on, the taste card, suggestions, the scan card, the talk (streamed text, idea cards with Try / Compare / Pick, answer buttons, "Remembered" lines), drafts, What runs underneath |
+| Window | `app/src/components/Assistant.tsx` | The Get started tab (the Assistant): what it runs on, the taste card, suggestions, the scan card, the talk (streamed text, idea cards with Try / Compare / Pick, answer buttons, "Remembered" lines), drafts, What runs underneath |
 | Conversation | `app/src-tauri/src/engine/assistant.rs` | The scan, the instructions (`assistant-rules.txt`), one Claude Code process per talk, reading its stream, quick sketches, the personal tour, drafts and trying them |
 | Tools | `app/src-tauri/src/engine/mcp.rs` | `hubdeck --mcp-assistant`: the assistant's own MCP server (the builder's tools limited to drafts, plus propose_idea, offer_choices, remember, make_tour, list_shortcuts) |
 | Guard | `app/src-tauri/src/engine/guard.rs` | What may go on a control: no commands; closing, quitting or deleting only on a hold |
@@ -133,12 +133,12 @@ Apps that follow `docs/APP-CONTRACT.md` are connected once (Settings > Connectio
 the dial counts what waits) and `core.http` keys for their actions. More tools: `hubdeck_state`
 (what is set up, so it promises nothing that is off), `tried` (what the user touched while a
 draft was on the deck), `key_usage` (how often each control is pressed, only if the user switched
-counting on in the Assistant tab).
+counting on in the Get started tab, or at the end of the tour).
 
 ## Suggestions outside the talk
 
 HubDeck notices on its own, with no AI: an app in front 30+ minutes on 2+ days with no profile,
-or a kind of module attached for the first time. The Assistant tab gets a dot and a calm card:
+or a kind of module attached for the first time. The Get started tab gets a dot and a calm card:
 Show me a sketch (its quick sketch, tried on the deck), Ask the assistant (the message waits in
 the first box), Not now (7 quiet days), Don't suggest this (30). At most one a day, never during
 a call, with a game in front or while a draft is tried; one switch in "What it remembers about

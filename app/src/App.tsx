@@ -135,10 +135,9 @@ export default function App() {
         onOpenProfile={() => (setProfileOpen((o) => !o), setSettingsOpen(false), setGalleryOpen(false))}
         onOpenGallery={() => (setGalleryOpen(true), setSettingsOpen(false), setProfileOpen(false))}
         onOpenForApp={() => (setForAppOpen(true), setGalleryOpen(false), setSettingsOpen(false), setProfileOpen(false))}
-        onOpenProfiles={() => setLeftTab((tab) => (tab === "profiles" ? "actions" : "profiles"))}
         onOpenAssistant={() => setLeftTab("assistant")}
+        onOpenTour={() => (setTourOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false), setProfileOpen(false))}
         onOpenSettings={() => (setSettingsOpen((o) => !o), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
-        onOpenPlugins={() => (setSettingsSection("plugins"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
         onOpenGames={() => (setGamesOpen((o) => !o), setSettingsOpen(false))}
       />
       <Banner
@@ -167,13 +166,11 @@ export default function App() {
         <main className="workspace">
           <Welcome
             live={live}
+            view={view}
             onArrange={() => awayFromSetup(toggleArrange)}
-            onCalibrate={() => awayFromSetup(() => setCalibrating(true))}
             saved={saved}
             onPlace={save}
-            kinds={kinds}
             onForApp={() => awayFromSetup(() => setForAppOpen(true))}
-            onBrowse={() => awayFromSetup(() => setNewRequest((n) => n + 1))}
             onTour={() => awayFromSetup(() => setTourOpen(true))}
           />
         </main>
@@ -183,7 +180,7 @@ export default function App() {
         </main>
       ) : (
       <main className={`workspace${arranging ? " is-arranging" : ""}`}>
-        <LeftPanel view={view} selected={selected} tab={leftTab} onTab={setLeftTab} onBuild={() => setBuilderOpen(true)} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
+        <LeftPanel view={view} selected={selected} tab={leftTab} onTab={setLeftTab} onBuild={() => setBuilderOpen(true)} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onOpenPlugins={() => (setSettingsSection("plugins"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
         <section className="center">
           <div className="stage-bar">
             {!arranging && live.deck.modules.some((m) => m.kind === "keys") && <PageBar view={view} />}
@@ -228,6 +225,7 @@ export default function App() {
             saved={saved}
             onPlace={save}
             arranging={arranging}
+            onEdge={() => (setSettingsSection("lights"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
             profile={view.profile}
             page={view.state?.page ?? null}
             onDropAction={(c, action) => {
@@ -250,7 +248,7 @@ export default function App() {
         {calibrating ? (
           <CalibrationPanel onClose={() => setCalibrating(false)} />
         ) : arranging ? (
-          <ArrangePanel onDone={toggleArrange} />
+          <ArrangePanel onDone={toggleArrange} live={live} saved={saved} onPlace={save} />
         ) : forAppOpen ? (
           <ForAppPanel view={view} kinds={kinds} onClose={() => setForAppOpen(false)} onMade={(id) => (setForAppOpen(false), setFresh(id), setSelected(null))} />
         ) : galleryOpen ? (

@@ -33,7 +33,7 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 **Profiles that follow you**
 - Your home profile is the one you pick. An app with its own profile takes over while it is in
   front (even one window: `chrome.exe: YouTube` on Windows, `Google Chrome: YouTube` on macOS) and
-  gives back when you leave it; *Pin* stops
+  gives back when you leave it; the *Auto-switch* switch in the top bar stops
   switching. Switching is drawn in tens of milliseconds.
 - Key pages, press / hold / double press on every key, knob and the dial, multi-actions with delays
   and conditions, a keyboard macro recorder, toggles, several modes on one dial.

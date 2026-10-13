@@ -2,11 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { actionFits, api, controlId, GAMES_ENABLED, POPULAR_ACTIONS, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { actionFits, api, controlId, GAMES_ENABLED, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
-import { ModuleThumb } from "./DeckView";
+import { DeckView, ModuleThumb } from "./DeckView";
 import { demoParam } from "../demo/params";
 import { setTheme, useTheme, type Theme } from "../theme";
 import { osName, updates, useAppVersion, useUpdateAvailable, type UpdateInfo } from "../update";
@@ -70,7 +70,7 @@ export const Logo = () => (
 export type LeftTab = "actions" | "profiles" | "assistant";
 
 /** The left column: the action library and the profiles list as two tabs, so neither covers the inspector. */
-export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProfile, onBuild, onTour }: { view: EngineView; selected: ControlRef | null; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void; onTour?: () => void }) {
+export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProfile, onBuild, onTour, onOpenPlugins }: { view: EngineView; selected: ControlRef | null; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void; onTour?: () => void; onOpenPlugins?: () => void }) {
   useLanguage();
   // HubDeck's own suggestion (an app without a deck): a dot on the Assistant tab, looked at now and then
   const nudge = useNudge();
@@ -89,13 +89,12 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
           {t("profiles.title")}
         </button>
         <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
-          <Icon name="sparkles" />
           {t("assistant.tab")}
           {nudge && tab !== "assistant" && <span className="tab-dot" aria-label={t("nudge.ask")} />}
         </button>
       </div>
       {tab === "actions" ? (
-        <ActionLibrary view={view} selected={selected} />
+        <ActionLibrary view={view} selected={selected} onOpenPlugins={onOpenPlugins} />
       ) : tab === "profiles" ? (
         <ProfilesList view={view} onOpenProfile={onOpenProfile} onNewProfile={onNewProfile} />
       ) : (
@@ -105,19 +104,19 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
   );
 }
 
-function ActionLibrary({ view, selected }: { view: EngineView; selected: ControlRef | null }) {
+function ActionLibrary({ view, selected, onOpenPlugins }: { view: EngineView; selected: ControlRef | null; onOpenPlugins?: () => void }) {
   const [query, setQuery] = useState("");
   // search the translated texts and the English ones
   const actions = (view.catalog?.actions ?? [])
     .map((raw) => ({ raw, a: localizeAction(raw) }))
     .filter(({ raw, a }) => !query || `${a.name} ${a.group} ${a.description} ${raw.name} ${raw.group}`.toLowerCase().includes(query.toLowerCase()))
     .map(({ a }) => a);
-  const popularGroup = t("library.popular");
-  // the popular ones first, under their own heading, while nothing is searched
-  const popular = query ? [] : POPULAR_ACTIONS.map((id) => actions.find((a) => a.id === id)).filter(Boolean).map((a) => ({ ...a!, group: popularGroup }));
-  const listed = [...popular, ...actions];
+  // no "Popular" group (it listed Hotkey, Open app and Open game twice; owner's pick 6a)
+  const listed = actions;
   const groups = [...new Set(listed.map((a) => a.group))];
   const [closed, setClosed] = useState<string[]>([]);
+  // actions that do not fit the picked control wait behind "Show" in their group
+  const [unfitOpen, setUnfitOpen] = useState<string[]>([]);
   const page = view.state?.page ?? null;
   const current = selected && view.profile ? view.profile.controls[controlId(selected.kind, selected.index, page)]?.action : undefined;
   const assign = (id: string) => {
@@ -143,9 +142,10 @@ function ActionLibrary({ view, selected }: { view: EngineView; selected: Control
           <button className={`group-head${isClosed ? " is-closed" : ""}`} aria-expanded={!isClosed} onClick={() => setClosed((c) => (c.includes(g) ? c.filter((x) => x !== g) : [...c, g]))}>
             <Icon name="chevron-down" />
             {g}
-            <span className="n">{items.length}</span>
+            <span className="n">{selected && !query ? items.filter((a) => actionFits(a, selected.kind)).length : items.length}</span>
           </button>
           {!isClosed && items
+            .filter((a) => !selected || query || unfitOpen.includes(g) || actionFits(a, selected.kind))
             .map((a) => {
               const fits = !selected || actionFits(a, selected.kind);
               const icon = view.icons.find((i) => i.name === a.icon);
@@ -176,14 +176,19 @@ function ActionLibrary({ view, selected }: { view: EngineView; selected: Control
                 </button>
               );
             })}
+          {!isClosed && selected && !query && !unfitOpen.includes(g) && items.some((a) => !actionFits(a, selected.kind)) && (
+            <button className="link-btn lib-unfit" onClick={() => setUnfitOpen((o) => [...o, g])}>
+              {t("library.showUnfit", { count: items.filter((a) => !actionFits(a, selected.kind)).length, control: t(`on.${selected.kind}` as Key) })}
+            </button>
+          )}
         </section>
         );
       })}
       </div>
-      <div className="lib-foot">
+      <button className="lib-foot" onClick={onOpenPlugins}>
         <Icon name="plug" />
-        {t("library.more")}
-      </div>
+        <span>{t("library.morePlugins")}</span>
+      </button>
     </>
   );
 }
@@ -535,7 +540,7 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
         {list.length === 0 && <p className="help">{t("profiles.none")}</p>}
         <button className="tool lib-new" onClick={onNewProfile}>
           <Icon name="plus" />
-          {t("topbar.newProfile")}…
+          {t("topbar.newDeck")}…
         </button>
         <p className="help">{t("profiles.help")}</p>
       </div>
@@ -596,7 +601,7 @@ export function ForAppPanel({ view, kinds, onClose, onMade }: { view: EngineView
   const running = open.filter((a) => a.running && !/^hubdeck/i.test(a.exe));
   return (
     <aside className="inspector sectioned side-panel">
-      <PanelHead title={t("forApp.title")} crumb={t("topbar.newProfile")} icon="app-window" onClose={onClose} />
+      <PanelHead title={t("forApp.title")} crumb={t("topbar.newDeck")} icon="app-window" onClose={onClose} />
       <section className="sec">
         <p className="help">{t("forApp.help")}</p>
         <label className="check">
@@ -642,7 +647,7 @@ export function ForAppPanel({ view, kinds, onClose, onMade }: { view: EngineView
 }
 
 /** Profile tabs that fit the top bar; the rest go into a "More" menu (the active one always shows). */
-function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpenForApp, onOpenAssistant, kinds, newRequest }: { view: EngineView; onOpenProfile: () => void; onOpenGallery: () => void; onOpenProfiles: () => void; onOpenForApp: () => void; onOpenAssistant: () => void; kinds?: string[]; newRequest?: number }) {
+function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenAssistant, onOpenTour, kinds, newRequest }: { view: EngineView; onOpenProfile: () => void; onOpenGallery: () => void; onOpenForApp: () => void; onOpenAssistant: () => void; onOpenTour: () => void; kinds?: string[]; newRequest?: number }) {
   const state = view.state;
   const all = state?.profiles ?? [];
   // the bar: profiles shown in it, the home profile and the active one
@@ -653,6 +658,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
   const [naming, setNaming] = useState<string | null>(null);
   const [adding, setAdding] = useState(demoParam("popover") === "new");
   const [moreOpen, setMoreOpen] = useState(demoParam("popover") === "more");
+  const [readyOpen, setReadyOpen] = useState(false);
   const [fit, setFit] = useState(Infinity);
   const navRef = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -680,7 +686,8 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
       const tabs = widths.slice(0, profiles.length);
       const more = widths[profiles.length] ?? 90;
       const gap = 2;
-      const room = nav.clientWidth - 36;
+      // the New deck button sits after the tabs: its own width, not a fixed icon's
+      const room = nav.clientWidth - (addRef.current?.getBoundingClientRect().width ?? 36) - 8;
       if (tabs.reduce((s, w) => s + w + gap, 0) <= room) return setFit(profiles.length);
       let used = more + gap;
       let n = 0;
@@ -749,37 +756,44 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
                       </span>
                     </button>
                   ))}
-                  <button role="menuitem" className="menu-row compact" onClick={() => (setMoreOpen(false), onOpenProfiles())}>
-                    <span className="menu-dot" />
-                    <span className="menu-text">
-                      <b>{t("profiles.all", { count: all.length })}</b>
-                    </span>
-                  </button>
                 </div>
               </div>
             )}
           </span>
         )}
-        <button className="tab icon-only" title={t("profiles.all", { count: all.length })} aria-label={t("profiles.all", { count: all.length })} onClick={onOpenProfiles}>
-          <Icon name="layers" />
-        </button>
         {naming === null ? (
           <span className="pop-anchor" ref={addRef}>
-            <button className={`tab icon-only${adding ? " is-active" : ""}`} aria-label={t("topbar.newProfile")} title={t("topbar.newProfile")} aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+            <button className={`tab new-deck${adding ? " is-active" : ""}`} aria-expanded={adding} onClick={() => (setAdding((a) => !a), setReadyOpen(false))}>
               <Icon name="plus" />
+              {t("topbar.newDeck")}
             </button>
             {adding && (
-              <div className="popover" role="dialog" aria-label={t("topbar.newProfile")}>
-                <div className="pop-title">{t("topbar.newProfile")}</div>
+              <div className="popover new-deck-pop" role="dialog" aria-label={t("topbar.newDeck")}>
+                {/* the one way into a new deck (owner's pick after the release audit, 2026-10-13) */}
+                <div className="pop-title">{t("topbar.newDeck")}</div>
                 <button
                   className="menu-row is-primary"
+                  onClick={() => {
+                    setAdding(false);
+                    onOpenTour();
+                  }}
+                >
+                  <span className="menu-ic">
+                    <Icon name="play" />
+                  </span>
+                  <span className="menu-text">
+                    <b>{t("newDeck.tour")}</b>
+                    <small>{t("newDeck.tourHelp")}</small>
+                  </span>
+                </button>
+                <button
+                  className="menu-row"
                   onClick={() => {
                     setAdding(false);
                     onOpenForApp();
                   }}
                 >
-                  {/* the way most people want: a profile for the app they use */}
-                  <span className="menu-ic">
+                  <span className="menu-ic is-plain">
                     <Icon name="app-window" />
                   </span>
                   <span className="menu-text">
@@ -787,6 +801,17 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
                     <small>{t("forApp.menuHelp")}</small>
                   </span>
                 </button>
+                <button className="menu-row" aria-expanded={readyOpen} onClick={() => setReadyOpen((o) => !o)}>
+                  <span className="menu-ic is-plain">
+                    <Icon name="layout-grid" />
+                  </span>
+                  <span className="menu-text">
+                    <b>{t("newDeck.ready")}</b>
+                    <small>{t("newDeck.readyHelp")}</small>
+                  </span>
+                  <Icon name={readyOpen ? "chevron-up" : "chevron-down"} />
+                </button>
+                {readyOpen && <PresetList kinds={kinds} onPicked={() => setAdding(false)} />}
                 <button
                   className="menu-row"
                   onClick={() => {
@@ -794,7 +819,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
                     onOpenAssistant();
                   }}
                 >
-                  <span className="menu-ic">
+                  <span className="menu-ic is-plain">
                     <Icon name="sparkles" />
                   </span>
                   <span className="menu-text">
@@ -813,7 +838,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
                     <Icon name="file-plus" />
                   </span>
                   <span className="menu-text">
-                    <b>{t("topbar.emptyProfile")}</b>
+                    <b>{t("newDeck.empty")}</b>
                   </span>
                 </button>
                 {GALLERY_ONLINE && (
@@ -833,8 +858,6 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenProfiles, onOpe
                     </span>
                   </button>
                 )}
-                <div className="pop-label">{t("topbar.fromPreset")}</div>
-                <PresetList kinds={kinds} onPicked={() => setAdding(false)} />
               </div>
             )}
           </span>
@@ -889,26 +912,24 @@ export function TopBar({
   view,
   onOpenProfile,
   onOpenSettings,
-  onOpenPlugins,
   onOpenGames,
   onOpenGallery,
-  onOpenProfiles,
   onOpenForApp,
   kinds,
   newRequest,
   onOpenAssistant,
+  onOpenTour,
 }: {
   kinds?: string[];
   newRequest?: number;
   onOpenAssistant: () => void;
+  onOpenTour: () => void;
   onOpenForApp: () => void;
   live: LiveState;
   view: EngineView;
   onOpenGallery: () => void;
-  onOpenProfiles: () => void;
   onOpenProfile: () => void;
   onOpenSettings: () => void;
-  onOpenPlugins: () => void;
   onOpenGames: () => void;
 }) {
   useLanguage();
@@ -916,40 +937,24 @@ export function TopBar({
   const orientation = live.deck.orientation;
   const state = view.state;
   const focused = useWindowFocus();
-  const [pluginCount, setPluginCount] = useState(0);
-  useEffect(() => {
-    api.plugins().then((p) => setPluginCount(p.length), () => {});
-  }, []);
   return (
     <header className="topbar">
       <div className="brand">
         <Logo />
         HubDeck
       </div>
-      <ProfileTabs view={view} onOpenProfile={onOpenProfile} onOpenGallery={onOpenGallery} onOpenProfiles={onOpenProfiles} onOpenForApp={onOpenForApp} onOpenAssistant={onOpenAssistant} kinds={kinds} newRequest={newRequest} />
+      <ProfileTabs view={view} onOpenProfile={onOpenProfile} onOpenGallery={onOpenGallery} onOpenForApp={onOpenForApp} onOpenAssistant={onOpenAssistant} onOpenTour={onOpenTour} kinds={kinds} newRequest={newRequest} />
       {state?.autoApp && <TakeoverMark app={state.autoApp} focused={focused} />}
       {state && (
-        <button
-          className={`tool ghost pin-btn${state.pinned ? " is-pinned" : ""}`}
-          aria-pressed={state.pinned}
-          title={state.pinned ? t("topbar.pinnedHelp", { profile: state.profiles.find((p) => p.id === state.active)?.name ?? "" }) : t("topbar.pinHelp")}
-          onClick={() => api.pin(!state.pinned)}
-        >
-          <Icon name="pin" />
-          {state.pinned ? t("topbar.pinned") : t("topbar.pin")}
-        </button>
+        <label className="check auto-switch" title={state.pinned ? t("topbar.autoOffHelp", { profile: state.profiles.find((p) => p.id === state.active)?.name ?? "" }) : t("topbar.autoOnHelp")}>
+          <input type="checkbox" checked={!state.pinned} onChange={(e) => api.pin(!e.target.checked)} />
+          {t("topbar.autoSwitch")}
+        </label>
       )}
       <span className="sep" />
       {GAMES_ENABLED && (
         <button className="tool ghost" onClick={onOpenGames}>
           {t("topbar.games")}
-        </button>
-      )}
-      {/* no plugin installed yet: the entry lives in Settings, the bar stays short */}
-      {pluginCount > 0 && (
-        <button className="tool ghost" onClick={onOpenPlugins}>
-          <Icon name="plug" />
-          {t("topbar.plugins")}
         </button>
       )}
       <button className="tool ghost" onClick={onOpenSettings}>
@@ -1154,29 +1159,33 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
           <p className="help">{t("profile.checkHelp")}</p>
         </section>
       )}
-      <section className="sec">
-        <h3 className="sec-title">{t("profile.edgeTitle")}</h3>
-        <div className="row between">
-          <label className="check">
-            <input type="checkbox" checked={!!draft.edge} onChange={(e) => commit({ ...draft, edge: e.target.checked ? "#8b7cf6" : undefined })} />
-            {t("profile.edge")}
-          </label>
-          {draft.edge && (
-            <label className="color">
-              <input type="color" value={draft.edge} aria-label={t("look.color")} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} onBlur={() => commit(draft)} />
-              <span className="mono">{draft.edge.toUpperCase()}</span>
+      {/* the edge in this profile's own color: shown only on a profile that has one (the tour sets it);
+          the deck's lights live in Settings > Lights and screens (owner's pick 5a) */}
+      {draft.edge && (
+        <section className="sec">
+          <h3 className="sec-title">{t("profile.edgeTitle")}</h3>
+          <div className="row between">
+            <label className="check">
+              <input type="checkbox" checked={!!draft.edge} onChange={(e) => commit({ ...draft, edge: e.target.checked ? "#8b7cf6" : undefined })} />
+              {t("profile.edge")}
             </label>
+            {draft.edge && (
+              <label className="color">
+                <input type="color" value={draft.edge} aria-label={t("look.color")} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} onBlur={() => commit(draft)} />
+                <span className="mono">{draft.edge.toUpperCase()}</span>
+              </label>
+            )}
+          </div>
+          {draft.edge && (
+            <EffectFields
+              idPrefix="edge"
+              effect={draft.edgeEffect}
+              speed={draft.edgeSpeed}
+              onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect, edgeSpeed })}
+            />
           )}
-        </div>
-        {draft.edge && (
-          <EffectFields
-            idPrefix="edge"
-            effect={draft.edgeEffect}
-            speed={draft.edgeSpeed}
-            onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect, edgeSpeed })}
-          />
-        )}
-      </section>
+        </section>
+      )}
       <section className="sec">
         <h3 className="sec-title">{t("profile.manage")}</h3>
         <div className="btn-grid">
@@ -1257,8 +1266,8 @@ export type SettingsSection = "general" | "lights" | "screens" | "connections" |
 
 const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
   { id: "general", icon: "settings", label: "settings.general" },
-  { id: "lights", icon: "sun", label: "lights.title" },
-  { id: "screens", icon: "image", label: "settings.screens" },
+  // lights and screens in one section (owner's pick 5a); "screens" still opens it
+  { id: "lights", icon: "sun", label: "settings.lightsScreens" },
   { id: "connections", icon: "link", label: "settings.connections" },
   { id: "plugins", icon: "plug", label: "topbar.plugins" },
   { id: "backups", icon: "archive", label: "settings.backups" },
@@ -1282,7 +1291,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
       <div className="settings-body">
         <nav className="settings-nav" aria-label={t("settings.title")}>
           {SETTINGS_SECTIONS.map((x) => (
-            <button key={x.id} className={`settings-nav-item${x.id === section ? " is-active" : ""}`} aria-current={x.id === section ? "page" : undefined} onClick={() => onSection(x.id)}>
+            <button key={x.id} className={`settings-nav-item${x.id === section || (x.id === "lights" && section === "screens") ? " is-active" : ""}`} aria-current={x.id === section ? "page" : undefined} onClick={() => onSection(x.id)}>
               <Icon name={x.icon} />
               {t(x.label)}
             </button>
@@ -1303,9 +1312,9 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
               <ProfilesFolder />
             </>
           )}
-          {section === "lights" && <LightsSettings />}
-          {section === "screens" && (
+          {(section === "lights" || section === "screens") && (
             <>
+              <LightsSettings />
               <ScreensSettings />
               {live.deck.modules.some((m) => m.kind === "keys") && (
                 <section className="sec">
@@ -1345,17 +1354,22 @@ function SwitchingSettings({ view }: { view: EngineView }) {
       <h3 className="sec-title">{t("settings.profiles")}</h3>
       <label className="check">
         <input type="checkbox" checked={state.autoSwitch} onChange={(e) => api.settings({ autoSwitch: e.target.checked })} />
-        {t("profile.autoSwitch")}
+        {t("switching.main")}
       </label>
-      <label className="check">
-        <input type="checkbox" checked={state.autoProfiles ?? true} onChange={(e) => api.autoSet(e.target.checked)} />
-        {t("auto.setting")}
-      </label>
-      <label className="check" title={t("call.settingHelp")}>
-        <input type="checkbox" checked={state.callSwitch ?? true} onChange={(e) => api.callSwitchSet(e.target.checked)} />
-        {t("call.setting")}
-      </label>
-      <p className="help">{t("profile.homeHelp")}</p>
+      {/* one switch on top, the rest folded (owner's pick 10a) */}
+      <details className="more-opts">
+        <summary>{t("switching.more")}</summary>
+        <label className="check">
+          <input type="checkbox" checked={state.autoProfiles ?? true} onChange={(e) => api.autoSet(e.target.checked)} />
+          {t("auto.setting")}
+        </label>
+        <label className="check" title={t("call.settingHelp")}>
+          <input type="checkbox" checked={state.callSwitch ?? true} onChange={(e) => api.callSwitchSet(e.target.checked)} />
+          {t("call.setting")}
+        </label>
+        <p className="help">{t("profile.homeHelp")}</p>
+      </details>
+      <p className="help">{t("switching.example")}</p>
     </section>
   );
 }
@@ -1767,7 +1781,7 @@ const TURNS: (number | null)[] = [null, 0, 90, 180, 270];
 
 /** How the base lies on the desk. The sensor only tells "turned right" (90°) from the rest. */
 /** The right column while arranging modules: what to check and how to finish (no key editor). */
-export function ArrangePanel({ onDone }: { onDone: () => void }) {
+export function ArrangePanel({ onDone, live, saved, onPlace }: { onDone: () => void; live: LiveState; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void }) {
   useLanguage();
   return (
     <aside className="inspector sectioned side-panel">
@@ -1778,6 +1792,12 @@ export function ArrangePanel({ onDone }: { onDone: () => void }) {
           <Icon name="check" />
           {t("stage.doneLayout")}
         </button>
+      </section>
+      {/* modules owned but not attached: set up before they are on the base (from the old welcome) */}
+      <section className="sec">
+        <h3 className="sec-title">{t("welcome.ownedTitle")}</h3>
+        <p className="help">{t("welcome.owned")}</p>
+        <OwnedKinds live={live} saved={saved} onPlace={onPlace} />
       </section>
     </aside>
   );
@@ -2927,37 +2947,13 @@ export function GalleryPanel({ live, saved, onClose }: { live: LiveState; saved:
   );
 }
 
-/** First start: what was found and the things worth doing first. */
-export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, onForApp, onBrowse, onTour }: { live: LiveState; onArrange: () => void; onCalibrate: () => void; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void; kinds?: string[]; onForApp: () => void; onBrowse: () => void; onTour?: () => void }) {
+/** First start in two steps (owner's pick 9a after the release audit, 2026-10-13): is this the desk
+ *  as it is (yes, or fix it in Edit layout), then the tour. Calibration lives in Settings; the
+ *  modules owned but not attached are ticked in Edit layout. */
+export function Welcome({ live, view, onArrange, saved, onPlace, onTour, onForApp }: { live: LiveState; view: EngineView; onArrange: () => void; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void; onTour?: () => void; onForApp: () => void }) {
   useLanguage();
   const found = live.deck.modules.filter((m) => m.kind !== "base");
-  const hasKeys = found.some((m) => m.kind === "keys");
-  const steps: [string, string, React.ReactNode][] = [
-    [
-      t("welcome.checkTitle"),
-      t("welcome.check"),
-      <button className="tool small" onClick={onArrange}>
-        <Icon name="layout-grid" />
-        {t("stage.editLayout")}
-      </button>,
-    ],
-    [t("welcome.ownedTitle"), t("welcome.owned"), <OwnedKinds live={live} saved={saved} onPlace={onPlace} />],
-    ...(hasKeys
-      ? ([
-          [
-            t("welcome.calibrateTitle"),
-            t("welcome.calibrate"),
-            <button className="tool small" onClick={onCalibrate}>
-              <Icon name="crosshair" />
-              {t("topbar.calibrate")}
-            </button>,
-          ],
-        ] as [string, string, React.ReactNode][])
-      : []),
-    [t("welcome.profilesTitle"), t("welcome.profiles"), <WelcomeStart onForApp={onForApp} onBrowse={onBrowse} onTour={onTour} />],
-  ];
-  // the first start's own page over the whole window (owner's pick A, 2026-10-13): it no longer
-  // holds the right column, where it covered the editor of a picked key
+  const [deskOk, setDeskOk] = useState(false);
   return (
     <div className="setup-page welcome">
       <header className="setup-head">
@@ -2973,53 +2969,55 @@ export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, onForApp
         <p>{live.deck.modules.length === 0 ? t("welcome.none") : t("welcome.found", { count: found.length, list: found.map((m) => moduleName(m.kind)).join(", ") })}</p>
       </div>
       <ol className="wsteps">
-        {steps.map(([title, text, body], i) => (
-          <li key={i} className="wstep">
-            <span className="wnum">{i + 1}</span>
-            <div className="wbody">
-              <b>{title}</b>
-              <p className="help">{text}</p>
-              {body}
+        <li className={`wstep${deskOk ? " is-done" : ""}`}>
+          <span className="wnum">{deskOk ? <Icon name="check" /> : 1}</span>
+          <div className="wbody">
+            <b>{t("welcome.deskTitle")}</b>
+            <p className="help">{t("welcome.desk")}</p>
+            {found.length > 0 && !deskOk && (
+              <div className="welcome-deck">
+                <DeckView live={live} selected={null} onSelect={() => {}} saved={saved} onPlace={onPlace} arranging={false} profile={view.profile} page={null} />
+              </div>
+            )}
+            {!deskOk && (
+              <div className="row">
+                <button className="tool small primary" onClick={() => setDeskOk(true)}>
+                  {t("welcome.deskYes")}
+                </button>
+                <button className="tool small" onClick={onArrange}>
+                  <Icon name="layout-grid" />
+                  {t("welcome.deskFix")}
+                </button>
+              </div>
+            )}
+          </div>
+        </li>
+        <li className="wstep">
+          <span className="wnum">2</span>
+          <div className="wbody">
+            <b>{t("welcome.makeTitle")}</b>
+            <p className="help">{t("welcome.make")}</p>
+            <div className="menu-list">
+              <button className="menu-row is-primary" onClick={onTour ?? onForApp}>
+                <span className="menu-ic">
+                  <Icon name="play" />
+                </span>
+                <span className="menu-text">
+                  <b>{t("newDeck.tour")}</b>
+                  <small>{t("newDeck.tourHelp")}</small>
+                </span>
+              </button>
             </div>
-          </li>
-        ))}
+            <p className="help">
+              {t("welcome.ownWay")}{" "}
+              <button className="link-btn" onClick={() => api.onboardingDone()}>
+                {t("welcome.skip")}
+              </button>
+            </p>
+          </div>
+        </li>
       </ol>
-      <div className="setup-foot">
-        <button className="tool primary" onClick={() => api.onboardingDone()}>
-          <Icon name="check" />
-          {t("welcome.done")}
-        </button>
       </div>
-      </div>
-    </div>
-  );
-}
-
-/** Welcome step 4: three ways in instead of the whole list (owner's pick, common to 1A-1C). */
-function WelcomeStart({ onForApp, onBrowse, onTour }: { onForApp: () => void; onBrowse: () => void; onTour?: () => void }) {
-  const [presets, setPresets] = useState<PresetSummary[]>([]);
-  useEffect(() => {
-    api.presets().then(setPresets, () => {});
-  }, []);
-  const ready = presets.filter((p) => !p.test);
-  const groups = new Set(ready.map((p) => p.group)).size;
-  const tile = (icon: string, title: string, help: string, onClick: () => void, primary = false) => (
-    <button className={`menu-row${primary ? " is-primary" : ""}`} onClick={onClick}>
-      <span className={`menu-ic${primary ? "" : " is-plain"}`}>
-        <Icon name={icon} />
-      </span>
-      <span className="menu-text">
-        <b>{title}</b>
-        <small>{help}</small>
-      </span>
-    </button>
-  );
-  return (
-    <div className="menu-list">
-      {/* the tour first (owner, 2026-10-13: show what the deck can do before asking) */}
-      {onTour && tile("play", t("assistant.showMe"), t("assistant.letsSetHelp"), onTour, true)}
-      {tile("app-window", t("forApp.menu"), t("welcome.forApp"), onForApp, !onTour)}
-      {tile("layers", t("welcome.browse"), t("welcome.browseHelp", { count: ready.length, groups }), onBrowse)}
     </div>
   );
 }

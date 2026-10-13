@@ -913,7 +913,7 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
       <div className="as-head">
         <span className="as-title">
           <Icon name="sparkles" />
-          {t("assistant.title")}
+          {talk.phase === "start" || talk.phase === "scanning" ? t("assistant.tab") : t("assistant.title")}
         </span>
         {talk.phase !== "start" && (
           <button className="icon-btn" title={t("assistant.new")} aria-label={t("assistant.new")} onClick={startOver}>
@@ -955,12 +955,14 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
             <label className="label" htmlFor="as-know">
               {t("assistant.knowWhat")}
             </label>
-            <div className="row">
+            {/* the talk needs Claude Code: without it, one line says so (Details tells how) */}
+            {!ready && <p className="help">{info ? t("assistant.knowNeeds") : t("assistant.checking")}</p>}
+            {ready && <div className="row">
               <input id="as-know" className="input grow" placeholder={t("assistant.knowPlaceholder")} value={know} onChange={(e) => setKnow(e.target.value)} onKeyDown={(e) => e.key === "Enter" && know.trim() && ready && ((talk.prefill = know.trim()), scan())} />
               <button className="tool" aria-label={t("assistant.send")} disabled={!know.trim() || !ready || talk.phase === "scanning"} onClick={() => ((talk.prefill = know.trim()), scan())}>
                 <Icon name={talk.phase === "scanning" ? "refresh-cw" : "chevron-right"} />
               </button>
-            </div>
+            </div>}
             <details className="as-details">
               <summary>
                 {ready && info ? t("assistant.runsLine", { plan: planName(info) }) : info ? t("assistant.needsLine") : t("assistant.checking")} · {t("assistant.details")}

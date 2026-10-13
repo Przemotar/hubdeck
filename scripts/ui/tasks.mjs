@@ -137,7 +137,7 @@ const TASKS = [
     name: 'A deck for an app that comes by itself (Discord)',
     run: async (page, t) => {
       const before = await page.locator('.topbar .profile-chip, header button').count();
-      await t.click(page.getByRole('button', { name: 'New profile' }));
+      await t.click(page.getByRole('button', { name: 'New deck' }));
       await t.click(page.getByRole('button', { name: /For an app or game/ }));
       await t.click(page.getByRole('button', { name: /^Discord/ }).last());
       return (await page.locator('header button').count()) >= before;
@@ -146,8 +146,8 @@ const TASKS = [
   {
     name: 'The edge light in one color',
     run: async (page, t) => {
-      await t.click(page.getByRole('button', { name: /^Settings$/ }));
-      await t.click(page.locator('.settings-nav-item', { hasText: 'Lights' }));
+      // the Edge chip under the deck opens Lights and screens (owner's pick 5a)
+      await t.click(page.locator('button.dk-chip', { hasText: 'Edge' }));
       await t.pick(`select[aria-label="Light style"], .settings-content select`, 'color');
       const ok = await page.locator('.settings-content input[type=color]').first().isVisible();
       await page.getByRole('button', { name: /Back to the deck/ }).click();

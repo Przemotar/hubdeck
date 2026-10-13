@@ -755,6 +755,8 @@ interface DeckViewProps extends Props {
   /** Stores a placement; null forgets the entry. */
   onPlace: (key: string, placement: Placement | null) => void;
   arranging: boolean;
+  /** The Edge chip under the deck opens the lights' settings (owner's pick 5a). */
+  onEdge?: () => void;
 }
 
 interface Drag {
@@ -981,7 +983,7 @@ export function DeckView(props: DeckViewProps) {
           </g>
         </svg>
       </div>
-      {!arranging && <LedStrip live={live} profile={profile} leds={leds} edge={edgeLit} placed={placed} selected={selected} onSelect={onSelect} />}
+      {!arranging && <LedStrip live={live} profile={profile} leds={leds} edge={edgeLit} placed={placed} selected={selected} onSelect={onSelect} onEdge={props.onEdge} />}
       {shelf}
     </div>
   );
@@ -991,13 +993,14 @@ export function DeckView(props: DeckViewProps) {
 const SHOW_CONTROL_CHIPS = false;
 
 /** Chips under the deck: the edge light (and, switched off, every knob and fader with its LED and value). */
-function LedStrip({ live, profile, leds, edge, placed, selected, onSelect }: { live: LiveState; profile?: Profile | null; leds: LedsShown | null; edge: Lit | null | undefined; placed: Placed[]; selected: ControlRef | null; onSelect: (c: ControlRef) => void }) {
+function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdge }: { live: LiveState; profile?: Profile | null; leds: LedsShown | null; edge: Lit | null | undefined; placed: Placed[]; selected: ControlRef | null; onSelect: (c: ControlRef) => void; onEdge?: () => void }) {
+  const EdgeChip = onEdge ? "button" : "span";
   const chips: ReactNode[] = [
-    <span key="edge" className="dk-chip is-static">
+    <EdgeChip key="edge" className={`dk-chip${onEdge ? "" : " is-static"}`} onClick={onEdge} title={onEdge ? t("deck.edgeOpen") : undefined}>
       <i className={edge ? `dk-fx-${edge.effect}` : undefined} style={{ background: edge === null ? "var(--tx3, #6c6b7b)" : edge?.color ?? `conic-gradient(${RAINBOW.join(",")}, ${RAINBOW[0]})` }} />
       {t("deck.edge")}
       <b>{edge === null ? t("deck.off") : edge && edge.effect !== "hub" ? edge.color.toUpperCase() : t("deck.rainbow")}</b>
-    </span>,
+    </EdgeChip>,
   ];
   const chip = (c: ControlRef, led: Lit | null, value?: string) => {
     const color = led?.color;

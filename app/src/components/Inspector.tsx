@@ -1044,6 +1044,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
   const popular = fitting.filter((a) => POPULAR_ACTIONS.includes(a.id)).sort((a, b) => POPULAR_ACTIONS.indexOf(a.id) - POPULAR_ACTIONS.indexOf(b.id));
   const groups = [...new Set(fitting.map((a) => a.group))];
   const gestureHelp = GESTURES.find(([g]) => g === activeGesture)?.[2];
+  const showGestureTabs = activeGesture !== "tap" || (["hold", "double"] as Gesture[]).some((g) => !!profile?.controls[controlId(selected.kind, selected.index, page, g)]);
   const canAccel = !!action?.inputs.includes("turn") && selected.kind !== "faders" && selected.kind !== "keys" && activeGesture === "tap";
   // on a dial or knob the first tab holds what turning does too
   const turns = selected.kind === "dial" || selected.kind === "knobs";
@@ -1075,7 +1076,8 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
           </div>
         </div>
       )}
-      {canGesture && (
+      {/* hold and double press as tabs only once one is set or open (owner's pick 7a); else links under the action */}
+      {canGesture && showGestureTabs && (
         <div className="gesture-tabs seg" role="tablist" aria-label={t("inspector.gesture")}>
           {GESTURES.map(([g, label]) => {
             const bound = !!profile?.controls[controlId(selected.kind, selected.index, page, g)];
@@ -1096,7 +1098,6 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
       )}
 
       {profile && activeGesture === "tap" && selected.kind === "dial" && <DialLooks bound={!!draft} onPick={(b) => update(b, 0)} />}
-      {profile && activeGesture === "tap" && selected.kind !== "dial" && <Suggestions profile={profile} control={control} kind={selected.kind} bound={!!draft} onPick={(b) => update(b, 0)} actions={view.catalog?.actions ?? []} />}
 
       <div className="field">
         <label htmlFor="action" className="label">
@@ -1142,7 +1143,18 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
         {action && <p className="help">{action.description}</p>}
         {/* an empty action is a look without an action (made so by an assistant), not a missing plugin */}
         {draft && draft.action && !action && view.catalog && <div className="banner-inline">{t("inspector.missing", { plugin: draft.action.split("/")[0] })}</div>}
+        {canGesture && !showGestureTabs && (
+          <div className="row wrap gesture-links">
+            <button className="link-btn" onClick={() => setGesture("hold")}>
+              {t("gesture.addHold")}
+            </button>
+            <button className="link-btn" onClick={() => setGesture("double")}>
+              {t("gesture.addDouble")}
+            </button>
+          </div>
+        )}
       </div>
+      {profile && activeGesture === "tap" && selected.kind !== "dial" && <Suggestions profile={profile} control={control} kind={selected.kind} bound={!!draft} onPick={(b) => update(b, 0)} actions={view.catalog?.actions ?? []} />}
 
       {draft &&
         basic.map((p) => (
