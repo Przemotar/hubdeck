@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HubDeck: an open app for the MasterHUB deck</title>
+<meta name="description" content="Free, open-source app for Cooler Master's MasterHUB modular deck on Windows and macOS: every module, profiles that follow your apps, Stream Deck plugins and an AI assistant that builds the deck with you.">
+<meta property="og:title" content="HubDeck: the app your MasterHUB deserved">
+<meta property="og:description" content="Free and open source, for Windows and macOS. Every key, screen, knob, fader and light, Stream Deck plugins and a deck assistant.">
+<meta property="og:image" content="images/hubdeck-main.png">
+<link rel="icon" href="images/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0b0b0f; --card: #14131b; --line: #25232f; --text: #e8e6f0; --muted: #b8b4c8; --dim: #8f8aa3; --accent: #8b7cf6; --accent-text: #120f1f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+  a { color: #c4b5fd; } a:hover { color: #ddd6fe; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 22px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; font-size: 18px; }
+  .brand img { width: 30px; height: 30px; border-radius: 8px; }
+  nav { display: flex; flex-wrap: wrap; gap: 20px; margin-left: auto; font-size: 15px; }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--text); }
+  .hero { padding: 56px 0 32px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .eyebrow { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #a99cf9; font-weight: 600; }
+  h1 { margin: 0; font-size: clamp(36px, 6vw, 64px); line-height: 1.05; font-weight: 700; letter-spacing: -0.02em; max-width: 900px; }
+  .lead { margin: 0; font-size: 19px; line-height: 1.55; color: var(--muted); max-width: 720px; }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 12px; font-weight: 600; text-decoration: none; font-size: 16px; }
+  .btn.primary { background: var(--accent); color: var(--accent-text); }
+  .btn.secondary { background: #1d1b28; border: 1px solid #3a3550; color: var(--text); }
+  .small { font-size: 13px; color: var(--dim); }
+  .shot { width: 100%; border-radius: 18px; border: 1px solid #2a2836; box-shadow: 0 40px 120px rgba(139, 124, 246, .18); display: block; }
+  section { padding-bottom: 72px; }
+  h2 { margin: 0 0 24px; font-size: 32px; font-weight: 700; letter-spacing: -0.01em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { border-radius: 16px; padding: 22px; background: var(--card); border: 1px solid var(--line); }
+  .card h3 { margin: 0 0 8px; font-size: 17px; font-weight: 600; }
+  .card p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+  .split { display: flex; flex-wrap: wrap; gap: 32px; align-items: center; }
+  .split > div { flex: 1 1 420px; min-width: 0; }
+  .split > img { flex: 1 1 520px; min-width: 0; width: 100%; border-radius: 16px; border: 1px solid #2a2836; }
+  .split p { font-size: 17px; line-height: 1.6; color: var(--muted); margin: 0; }
+  .story { border-radius: 20px; padding: 36px; background: var(--card); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 28px; align-items: center; }
+  .story > div { flex: 1 1 520px; min-width: 0; }
+  .story h2 { font-size: 28px; margin-bottom: 12px; }
+  .story p { margin: 0; font-size: 16px; line-height: 1.6; color: var(--muted); }
+  footer { border-top: 1px solid #1f1d29; padding: 28px 0 48px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; font-size: 14px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="./"><img src="images/icon.png" alt="">HubDeck</a>
+    <nav aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#assistant">Assistant</a>
+      <a href="#story">How it was built</a>
+      <a href="https://github.com/Przemotar/hubdeck">GitHub</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <span class="eyebrow">Free and open source · Windows and macOS</span>
+    <h1>The app your MasterHUB deserved</h1>
+    <p class="lead">Every key, screen, knob, fader and light of Cooler Master's modular deck, profiles that follow the app you are in, hundreds of Stream Deck plugins, and an assistant that builds the deck with you.</p>
+    <div class="buttons">
+      <a class="btn primary" href="https://github.com/Przemotar/hubdeck/releases/latest">Download for Windows</a>
+      <a class="btn secondary" href="https://github.com/Przemotar/hubdeck/releases/latest">Download for macOS</a>
+    </div>
+    <span class="small">Version 0.1 preview · no account, no cloud, no telemetry</span>
+  </section>
+
+  <section>
+    <img class="shot" src="images/hubdeck-main.png" alt="HubDeck's window: the deck drawn live with its light, the action library and the key editor">
+  </section>
+
+  <section id="features">
+    <h2>Everything the deck can do</h2>
+    <div class="grid">
+      <article class="card"><h3>Every module, live</h3><p>Keys, the round dial screen, knobs, faders, rollers and the edge light, found and placed as they sit on your base, while it runs.</p></article>
+      <article class="card"><h3>Profiles that follow you</h3><p>Your home profile, and an app's own profile takes over while it is in front. Pages, holds, double presses, modes.</p></article>
+      <article class="card"><h3>Hundreds of plugins</h3><p>Plugins made for Stream Deck run as they are: Discord, Spotify, OBS, Home Assistant, lights and more.</p></article>
+      <article class="card"><h3>Your apps on the deck</h3><p>Your own tools can show their state (an agent waiting, a build running) and offer actions through a small HTTP contract.</p></article>
+      <article class="card"><h3>Lights that mean something</h3><p>One style for the whole deck, with reactions: a call, a muted mic, an agent that needs you.</p></article>
+      <article class="card"><h3>Light and private</h3><p>About one percent of a core in the tray. No account, no cloud, no telemetry.</p></article>
+    </div>
+  </section>
+
+  <section id="assistant" class="split">
+    <div>
+      <h2>Build it with the assistant</h2>
+      <p>Go control by control through a gallery of ideas and try each one on the real deck before you keep it. Or let the assistant, running on your own Claude Code, look at the apps you use and sketch whole decks for you.</p>
+    </div>
+    <img src="images/hubdeck-builder.png" alt="Building the deck step by step: a gallery of options for the dial">
+  </section>
+
+  <section id="story">
+    <div class="story">
+      <div>
+        <h2>Written from scratch, in the open</h2>
+        <p>The USB protocol of every module was worked out and checked on real hardware, then the app was built around it with Claude Code. The code, the protocol and the story are public: take it, change it, extend it, with or without AI.</p>
+      </div>
+      <a class="btn secondary" href="https://github.com/Przemotar/hubdeck/blob/main/docs/CASE-STUDY.md">Read the case study</a>
+    </div>
+  </section>
+
+  <footer>
+    <span>Made by Przemysław Tarkowski · <a href="mailto:przemotar+hubdeck@gmail.com">przemotar+hubdeck@gmail.com</a></span>
+    <span>Not affiliated with Cooler Master. MIT or Apache-2.0.</span>
+  </footer>
+</div>
+</body>
+</html>

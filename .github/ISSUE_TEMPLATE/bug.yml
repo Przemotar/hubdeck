@@ -1,0 +1,34 @@
+name: Something does not work
+description: A bug, a crash, a module that is not found or behaves oddly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The quickest way to a fix: tray icon > **Save diagnostics for a bug report**, then attach that file below (it has versions, modules and the log, with window titles and tokens removed).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "I turned knob 2 (Volume, Spotify) and nothing changed; I expected Spotify to get quieter."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1. ...
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: HubDeck version and system
+      placeholder: "HubDeck 0.2.0, Windows 11 23H2"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics file
+      description: Drag the file from "Save diagnostics for a bug report" here.

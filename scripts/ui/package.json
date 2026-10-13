@@ -1,0 +1,9 @@
+{
+  "name": "hubdeck-ui-checks",
+  "private": true,
+  "type": "module",
+  "description": "Drive the test copy's window (scripts/automation.ps1) with Playwright over DevTools",
+  "devDependencies": {
+    "playwright-core": "1.48.2"
+  }
+}

@@ -1,0 +1,3476 @@
+{
+  "version": 1,
+  "checked": "2026-10-13",
+  "packs": [
+    {
+      "app": "Windows",
+      "exes": [
+        "*"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec",
+        "https://support.microsoft.com/en-us/windows/record-your-screen-with-xbox-game-bar-5328cd25-9046-4472-8a14-c485f138802c"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Win+D",
+          "does": "Show desktop"
+        },
+        {
+          "keys": "Win+E",
+          "does": "File Explorer"
+        },
+        {
+          "keys": "Win+L",
+          "does": "Lock PC"
+        },
+        {
+          "keys": "Win+Shift+S",
+          "does": "Snip region"
+        },
+        {
+          "keys": "Win+V",
+          "does": "Clipboard history"
+        },
+        {
+          "keys": "Win+Tab",
+          "does": "Task View"
+        },
+        {
+          "keys": "Win+I",
+          "does": "Settings"
+        },
+        {
+          "keys": "Win+A",
+          "does": "Action center"
+        },
+        {
+          "keys": "Win+N",
+          "does": "Notifications"
+        },
+        {
+          "keys": "Win+.",
+          "does": "Emoji panel"
+        },
+        {
+          "keys": "Win+R",
+          "does": "Run dialog"
+        },
+        {
+          "keys": "Win+M",
+          "does": "Minimize all"
+        },
+        {
+          "keys": "Win+Z",
+          "does": "Snap layouts"
+        },
+        {
+          "keys": "Win+H",
+          "does": "Voice typing"
+        },
+        {
+          "keys": "Win+Ctrl+V",
+          "does": "Sound output"
+        },
+        {
+          "keys": "Win+Alt+K",
+          "does": "Mute mic in call"
+        },
+        {
+          "keys": "Win+Ctrl+D",
+          "does": "New desktop"
+        },
+        {
+          "keys": "Win+Ctrl+Left",
+          "does": "Desktop left"
+        },
+        {
+          "keys": "Win+Ctrl+Right",
+          "does": "Desktop right"
+        },
+        {
+          "keys": "Win+Ctrl+F4",
+          "does": "Close desktop",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Shift+Escape",
+          "does": "Task Manager"
+        },
+        {
+          "keys": "Win+G",
+          "does": "Game Bar"
+        },
+        {
+          "keys": "Win+Alt+R",
+          "does": "Record clip"
+        },
+        {
+          "keys": "Alt+F4",
+          "does": "Close window",
+          "destructive": true
+        },
+        {
+          "keys": "Win+PrintScreen",
+          "does": "Screenshot"
+        }
+      ]
+    },
+    {
+      "app": "Windows File Explorer",
+      "exes": [
+        "explorer.exe"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New folder"
+        },
+        {
+          "keys": "F2",
+          "does": "Rename"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Alt+Up",
+          "does": "Up one folder"
+        },
+        {
+          "keys": "Alt+Left",
+          "does": "Back"
+        },
+        {
+          "keys": "Alt+Right",
+          "does": "Forward"
+        },
+        {
+          "keys": "Alt+P",
+          "does": "Preview pane"
+        },
+        {
+          "keys": "Alt+Shift+P",
+          "does": "Details pane"
+        },
+        {
+          "keys": "Alt+Enter",
+          "does": "Properties"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Address bar"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Search box"
+        },
+        {
+          "keys": "F5",
+          "does": "Refresh"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Expand all folders"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Delete",
+          "does": "Move to Recycle Bin",
+          "destructive": true
+        },
+        {
+          "keys": "Shift+Delete",
+          "does": "Delete permanently",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Google Chrome",
+      "exes": [
+        "chrome.exe"
+      ],
+      "sources": [
+        "https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed tab"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "Incognito window"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        },
+        {
+          "keys": "F5",
+          "does": "Reload"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Hard reload"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find on page"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Bookmark page"
+        },
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Bookmarks bar"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Bookmarks manager"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "History"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Downloads"
+        },
+        {
+          "keys": "Shift+Escape",
+          "does": "Chrome Task Manager"
+        },
+        {
+          "keys": "F12",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "Ctrl+Shift+Delete",
+          "does": "Clear browsing data"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Address bar"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Print"
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Edge",
+      "exes": [
+        "msedge.exe"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/microsoft-edge/keyboard-shortcuts-in-microsoft-edge-50d3edab-30d9-c7e4-21ce-37fe2713cfad"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed tab"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Duplicate tab"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "InPrivate window"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close tab",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Shift+W",
+          "does": "Close window",
+          "destructive": true
+        },
+        {
+          "keys": "F5",
+          "does": "Reload"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Hard reload"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Reset zoom"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find on page"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Add favorite"
+        },
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Favorites bar"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Favorites"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "History"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Downloads"
+        },
+        {
+          "keys": "Ctrl+Shift+Y",
+          "does": "Collections"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Read aloud"
+        },
+        {
+          "keys": "F9",
+          "does": "Immersive Reader"
+        },
+        {
+          "keys": "F12",
+          "does": "Developer tools"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Print"
+        }
+      ]
+    },
+    {
+      "app": "Adobe Photoshop",
+      "exes": [
+        "Photoshop.exe"
+      ],
+      "sources": [
+        "https://helpx.adobe.com/content/dam/help/en/photoshop/using/default-keyboard-shortcuts/photoshop-keyboard-shortcuts.pdf"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Step forward"
+        },
+        {
+          "keys": "Ctrl+Alt+Z",
+          "does": "Step backward"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Free transform"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Deselect"
+        },
+        {
+          "keys": "Shift+F7",
+          "does": "Inverse selection"
+        },
+        {
+          "keys": "Shift+F5",
+          "does": "Fill"
+        },
+        {
+          "keys": "[",
+          "does": "Smaller brush"
+        },
+        {
+          "keys": "]",
+          "does": "Larger brush"
+        },
+        {
+          "keys": "D",
+          "does": "Default colors"
+        },
+        {
+          "keys": "X",
+          "does": "Swap colors"
+        },
+        {
+          "keys": "Q",
+          "does": "Quick Mask"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New layer"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Layer via copy"
+        },
+        {
+          "keys": "Ctrl+G",
+          "does": "Group layers"
+        },
+        {
+          "keys": "Ctrl+Alt+G",
+          "does": "Clipping mask"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Merge layers"
+        },
+        {
+          "keys": "Ctrl+Shift+Alt+E",
+          "does": "Stamp visible"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Zoom 100%"
+        },
+        {
+          "keys": "F7",
+          "does": "Layers panel"
+        },
+        {
+          "keys": "V",
+          "does": "Move tool"
+        },
+        {
+          "keys": "B",
+          "does": "Brush tool"
+        },
+        {
+          "keys": "E",
+          "does": "Eraser tool"
+        },
+        {
+          "keys": "S",
+          "does": "Clone Stamp"
+        },
+        {
+          "keys": "C",
+          "does": "Crop tool"
+        }
+      ]
+    },
+    {
+      "app": "Adobe Illustrator",
+      "exes": [
+        "Illustrator.exe"
+      ],
+      "sources": [
+        "https://helpx.adobe.com/illustrator/using/default-keyboard-shortcuts.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Save as"
+        },
+        {
+          "keys": "Ctrl+Alt+E",
+          "does": "Export for screens"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Paste in front"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste in place"
+        },
+        {
+          "keys": "Ctrl+G",
+          "does": "Group"
+        },
+        {
+          "keys": "Ctrl+Shift+G",
+          "does": "Ungroup"
+        },
+        {
+          "keys": "Ctrl+2",
+          "does": "Lock selection"
+        },
+        {
+          "keys": "Ctrl+3",
+          "does": "Hide selection"
+        },
+        {
+          "keys": "Ctrl+Alt+3",
+          "does": "Show all"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Bring forward"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Send backward"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Join paths"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Create outlines"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Outline view"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Rulers"
+        },
+        {
+          "keys": "Ctrl+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+Alt+0",
+          "does": "All artboards"
+        },
+        {
+          "keys": "V",
+          "does": "Selection tool"
+        },
+        {
+          "keys": "A",
+          "does": "Direct Selection"
+        },
+        {
+          "keys": "P",
+          "does": "Pen tool"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close document",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Adobe Lightroom Classic",
+      "exes": [
+        "Lightroom.exe"
+      ],
+      "sources": [
+        "https://helpx.adobe.com/lightroom-classic/help/keyboard-shortcuts.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "P",
+          "does": "Flag pick"
+        },
+        {
+          "keys": "X",
+          "does": "Flag reject"
+        },
+        {
+          "keys": "U",
+          "does": "Unflag"
+        },
+        {
+          "keys": "G",
+          "does": "Grid view"
+        },
+        {
+          "keys": "E",
+          "does": "Loupe view"
+        },
+        {
+          "keys": "D",
+          "does": "Develop module"
+        },
+        {
+          "keys": "R",
+          "does": "Crop tool"
+        },
+        {
+          "keys": "Q",
+          "does": "Spot removal"
+        },
+        {
+          "keys": "K",
+          "does": "Brush tool"
+        },
+        {
+          "keys": "\\",
+          "does": "Before only"
+        },
+        {
+          "keys": "Y",
+          "does": "Before and after"
+        },
+        {
+          "keys": "J",
+          "does": "Show clipping"
+        },
+        {
+          "keys": "V",
+          "does": "Black and white"
+        },
+        {
+          "keys": "Ctrl+U",
+          "does": "Auto tone"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Copy settings"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste settings"
+        },
+        {
+          "keys": "Ctrl+Alt+V",
+          "does": "Paste previous"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Sync settings"
+        },
+        {
+          "keys": "Ctrl+Shift+I",
+          "does": "Import"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Export"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+E",
+          "does": "Export as previous"
+        },
+        {
+          "keys": "Tab",
+          "does": "Side panels"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Reset all settings",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Adobe Premiere Pro",
+      "exes": [
+        "Adobe Premiere Pro.exe"
+      ],
+      "sources": [
+        "https://helpx.adobe.com/premiere-pro/using/keyboard-shortcuts.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Export media"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Import"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Add edit"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Add edit all tracks"
+        },
+        {
+          "keys": "I",
+          "does": "Mark in"
+        },
+        {
+          "keys": "O",
+          "does": "Mark out"
+        },
+        {
+          "keys": "M",
+          "does": "Add marker"
+        },
+        {
+          "keys": ";",
+          "does": "Lift"
+        },
+        {
+          "keys": "'",
+          "does": "Extract"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Video transition"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Audio transition"
+        },
+        {
+          "keys": "Enter",
+          "does": "Render in to out"
+        },
+        {
+          "keys": "F",
+          "does": "Match frame"
+        },
+        {
+          "keys": "S",
+          "does": "Snap"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Link"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Speed/Duration"
+        },
+        {
+          "keys": "=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Shift+Delete",
+          "does": "Ripple delete",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Adobe After Effects",
+      "exes": [
+        "AfterFX.exe"
+      ],
+      "sources": [
+        "https://helpx.adobe.com/after-effects/using/keyboard-shortcuts-reference.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Start/stop preview"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save project"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+S",
+          "does": "Increment and save"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New composition"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Composition settings"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "New solid"
+        },
+        {
+          "keys": "Ctrl+Alt+Y",
+          "does": "Adjustment layer"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+Y",
+          "does": "New null"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Precompose"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Duplicate"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Split layer"
+        },
+        {
+          "keys": "Alt+[",
+          "does": "Trim in point"
+        },
+        {
+          "keys": "Alt+]",
+          "does": "Trim out point"
+        },
+        {
+          "keys": "F9",
+          "does": "Easy ease"
+        },
+        {
+          "keys": "Shift+F3",
+          "does": "Graph editor"
+        },
+        {
+          "keys": "U",
+          "does": "Keyframed properties"
+        },
+        {
+          "keys": "Ctrl+Alt+F",
+          "does": "Fit to comp"
+        },
+        {
+          "keys": "Ctrl+Shift+/",
+          "does": "Add to render queue"
+        },
+        {
+          "keys": "Ctrl+Alt+M",
+          "does": "Media Encoder queue"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Import"
+        },
+        {
+          "keys": "V",
+          "does": "Selection tool"
+        },
+        {
+          "keys": "Q",
+          "does": "Shape tools"
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Quit",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "DaVinci Resolve",
+      "exes": [
+        "Resolve.exe"
+      ],
+      "sources": [
+        "https://documents.blackmagicdesign.com/UserManuals/DaVinci_Resolve_21_Reference_Manual.pdf"
+      ],
+      "note": "The manual lists macOS keys; per its own rule Command maps to Ctrl and Option to Alt on Windows.",
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save project"
+        },
+        {
+          "keys": "A",
+          "does": "Selection mode"
+        },
+        {
+          "keys": "B",
+          "does": "Blade tool"
+        },
+        {
+          "keys": "Ctrl+\\",
+          "does": "Split clip"
+        },
+        {
+          "keys": "I",
+          "does": "Mark in"
+        },
+        {
+          "keys": "O",
+          "does": "Mark out"
+        },
+        {
+          "keys": "M",
+          "does": "Add marker"
+        },
+        {
+          "keys": "N",
+          "does": "Snapping"
+        },
+        {
+          "keys": "Ctrl+Shift+L",
+          "does": "Linked selection"
+        },
+        {
+          "keys": "E",
+          "does": "Extend edit"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Change duration"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Retime controls"
+        },
+        {
+          "keys": "F9",
+          "does": "Insert edit"
+        },
+        {
+          "keys": "F10",
+          "does": "Overwrite edit"
+        },
+        {
+          "keys": "F12",
+          "does": "Place on top"
+        },
+        {
+          "keys": "Shift+F12",
+          "does": "Append to end"
+        },
+        {
+          "keys": "Shift+Z",
+          "does": "Fit timeline"
+        },
+        {
+          "keys": "Ctrl+=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Shift+F",
+          "does": "Full screen viewer"
+        },
+        {
+          "keys": "Alt+F",
+          "does": "Enhanced viewer"
+        }
+      ]
+    },
+    {
+      "app": "VEGAS Pro",
+      "exes": [
+        "vegas*.exe",
+        "vegas190.exe",
+        "vegas200.exe",
+        "vegas210.exe",
+        "vegas220.exe",
+        "vegas230.exe"
+      ],
+      "sources": [
+        "https://cdn.borisfx.com/borisfx/Documentation/vegas/2026/en/content/topics/13-appendix/shortcutkeys.htm"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Enter",
+          "does": "Play/pause"
+        },
+        {
+          "keys": "Space",
+          "does": "Stop playback"
+        },
+        {
+          "keys": "Q",
+          "does": "Looped playback"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save project"
+        },
+        {
+          "keys": "Ctrl+Alt+S",
+          "does": "Save version"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "S",
+          "does": "Split at cursor"
+        },
+        {
+          "keys": "Alt+[",
+          "does": "Trim start"
+        },
+        {
+          "keys": "Alt+]",
+          "does": "Trim end"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Trim to selection"
+        },
+        {
+          "keys": "I",
+          "does": "Set in"
+        },
+        {
+          "keys": "O",
+          "does": "Set out"
+        },
+        {
+          "keys": "M",
+          "does": "Insert marker"
+        },
+        {
+          "keys": "R",
+          "does": "Insert region"
+        },
+        {
+          "keys": "G",
+          "does": "Group events"
+        },
+        {
+          "keys": "U",
+          "does": "Ungroup events"
+        },
+        {
+          "keys": "F8",
+          "does": "Snapping"
+        },
+        {
+          "keys": "Z",
+          "does": "Mute track"
+        },
+        {
+          "keys": "X",
+          "does": "Solo track"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Render to track"
+        },
+        {
+          "keys": "Alt+G",
+          "does": "Color grading"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Normal edit tool"
+        },
+        {
+          "keys": "Delete",
+          "does": "Delete selection",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+F4",
+          "does": "Close project",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Shotcut",
+      "exes": [
+        "shotcut.exe"
+      ],
+      "sources": [
+        "https://shotcut.org/howtos/keyboard-shortcuts/"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/pause"
+        },
+        {
+          "keys": "J",
+          "does": "Rewind"
+        },
+        {
+          "keys": "K",
+          "does": "Pause"
+        },
+        {
+          "keys": "L",
+          "does": "Fast forward"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Export video"
+        },
+        {
+          "keys": "S",
+          "does": "Split"
+        },
+        {
+          "keys": "Shift+S",
+          "does": "Split all tracks"
+        },
+        {
+          "keys": "I",
+          "does": "Set in"
+        },
+        {
+          "keys": "O",
+          "does": "Set out"
+        },
+        {
+          "keys": "M",
+          "does": "Add marker"
+        },
+        {
+          "keys": "A",
+          "does": "Append"
+        },
+        {
+          "keys": "B",
+          "does": "Overwrite"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Snapping"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Ripple mode"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Mute track"
+        },
+        {
+          "keys": "=",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "-",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "0",
+          "does": "Zoom fit"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "X",
+          "does": "Ripple delete",
+          "destructive": true
+        },
+        {
+          "keys": "Z",
+          "does": "Lift clip",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Blender",
+      "exes": [
+        "blender.exe"
+      ],
+      "sources": [
+        "https://docs.blender.org/manual/en/latest/interface/keymap/blender_default.html",
+        "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/transform/move.html",
+        "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/transform/rotate.html",
+        "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/transform/scale.html",
+        "https://docs.blender.org/manual/en/latest/scene_layout/object/editing/duplicate.html",
+        "https://docs.blender.org/manual/en/latest/editors/3dview/navigate/camera_view.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save file"
+        },
+        {
+          "keys": "F12",
+          "does": "Render frame"
+        },
+        {
+          "keys": "F11",
+          "does": "Render window"
+        },
+        {
+          "keys": "F3",
+          "does": "Menu search"
+        },
+        {
+          "keys": "F2",
+          "does": "Rename active"
+        },
+        {
+          "keys": "F9",
+          "does": "Adjust last operation"
+        },
+        {
+          "keys": "Tab",
+          "does": "Edit mode"
+        },
+        {
+          "keys": "G",
+          "does": "Move"
+        },
+        {
+          "keys": "R",
+          "does": "Rotate"
+        },
+        {
+          "keys": "S",
+          "does": "Scale"
+        },
+        {
+          "keys": "Shift+D",
+          "does": "Duplicate"
+        },
+        {
+          "keys": "A",
+          "does": "Select all"
+        },
+        {
+          "keys": "Alt+A",
+          "does": "Select none"
+        },
+        {
+          "keys": "H",
+          "does": "Hide selected"
+        },
+        {
+          "keys": "Alt+H",
+          "does": "Reveal hidden"
+        },
+        {
+          "keys": "N",
+          "does": "Sidebar"
+        },
+        {
+          "keys": "T",
+          "does": "Toolbar"
+        },
+        {
+          "keys": "I",
+          "does": "Insert keyframe"
+        },
+        {
+          "keys": "Ctrl+Space",
+          "does": "Maximize area"
+        },
+        {
+          "keys": "Ctrl+`",
+          "does": "Toggle gizmos"
+        },
+        {
+          "keys": "X",
+          "does": "Delete",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Quit",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Unity Editor",
+      "exes": [
+        "Unity.exe"
+      ],
+      "sources": [
+        "https://docs.unity3d.com/Manual/PositioningGameObjects.html",
+        "https://docs.unity3d.com/Manual/SceneViewNavigation.html",
+        "https://docs.unity3d.com/Manual/GridShortcuts.html",
+        "https://docs.unity3d.com/Manual/overlays.html"
+      ],
+      "note": "The Unity 6 manual no longer publishes a full default list (Edit > Shortcuts shows it); only shortcuts named on current manual pages are here.",
+      "shortcuts": [
+        {
+          "keys": "Q",
+          "does": "View tool"
+        },
+        {
+          "keys": "W",
+          "does": "Move tool"
+        },
+        {
+          "keys": "E",
+          "does": "Rotate tool"
+        },
+        {
+          "keys": "R",
+          "does": "Scale tool"
+        },
+        {
+          "keys": "T",
+          "does": "Rect tool"
+        },
+        {
+          "keys": "Y",
+          "does": "Transform tool"
+        },
+        {
+          "keys": "F",
+          "does": "Frame selected"
+        },
+        {
+          "keys": "Shift+F",
+          "does": "Lock view to selected"
+        },
+        {
+          "keys": "`",
+          "does": "Overlay menu"
+        },
+        {
+          "keys": "Shift+V",
+          "does": "Vertex snapping"
+        },
+        {
+          "keys": "\\",
+          "does": "Grid snapping"
+        },
+        {
+          "keys": "Ctrl+\\",
+          "does": "Push to grid"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Grow grid"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Shrink grid"
+        }
+      ]
+    },
+    {
+      "app": "JetBrains Rider",
+      "exes": [
+        "rider64.exe"
+      ],
+      "sources": [
+        "https://www.jetbrains.com/help/rider/Keymaps_Comparison_Windows.html"
+      ],
+      "note": "IntelliJ keymap (the IntelliJ-family default). Rider lets the user pick a keymap at first start (Visual Studio 2022, Visual Studio, VS Code, ReSharper are the others); check Settings > Keymap.",
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "Find action"
+        },
+        {
+          "keys": "Ctrl+F9",
+          "does": "Build solution"
+        },
+        {
+          "keys": "Shift+F10",
+          "does": "Run"
+        },
+        {
+          "keys": "Shift+F9",
+          "does": "Debug"
+        },
+        {
+          "keys": "Ctrl+F2",
+          "does": "Stop"
+        },
+        {
+          "keys": "F9",
+          "does": "Resume program"
+        },
+        {
+          "keys": "F8",
+          "does": "Step over"
+        },
+        {
+          "keys": "F7",
+          "does": "Step into"
+        },
+        {
+          "keys": "Shift+F8",
+          "does": "Step out"
+        },
+        {
+          "keys": "Ctrl+F8",
+          "does": "Toggle breakpoint"
+        },
+        {
+          "keys": "Alt+Enter",
+          "does": "Intention actions"
+        },
+        {
+          "keys": "Ctrl+Alt+L",
+          "does": "Reformat code"
+        },
+        {
+          "keys": "Shift+F6",
+          "does": "Rename"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+T",
+          "does": "Refactor this"
+        },
+        {
+          "keys": "Ctrl+Alt+M",
+          "does": "Extract method"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Line comment"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Recent files"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "Go to file"
+        },
+        {
+          "keys": "Ctrl+Shift+F",
+          "does": "Find in files"
+        },
+        {
+          "keys": "Alt+F7",
+          "does": "Find usages"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Go to declaration"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save all"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+Shift+F12",
+          "does": "Hide tool windows"
+        }
+      ]
+    },
+    {
+      "app": "Visual Studio Code",
+      "exes": [
+        "Code.exe"
+      ],
+      "sources": [
+        "https://code.visualstudio.com/shortcuts/keyboard-shortcuts-windows.pdf"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+P",
+          "does": "Command palette"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Quick open"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Shift+F",
+          "does": "Search files"
+        },
+        {
+          "keys": "Ctrl+Shift+H",
+          "does": "Replace in files"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Toggle sidebar"
+        },
+        {
+          "keys": "Ctrl+`",
+          "does": "Terminal"
+        },
+        {
+          "keys": "Ctrl+Shift+`",
+          "does": "New terminal"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Explorer"
+        },
+        {
+          "keys": "Ctrl+Shift+G",
+          "does": "Source control"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Run and debug"
+        },
+        {
+          "keys": "Ctrl+Shift+X",
+          "does": "Extensions"
+        },
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "Problems panel"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Toggle comment"
+        },
+        {
+          "keys": "Shift+Alt+F",
+          "does": "Format document"
+        },
+        {
+          "keys": "F2",
+          "does": "Rename symbol"
+        },
+        {
+          "keys": "F12",
+          "does": "Go to definition"
+        },
+        {
+          "keys": "Ctrl+.",
+          "does": "Quick fix"
+        },
+        {
+          "keys": "F5",
+          "does": "Start debugging"
+        },
+        {
+          "keys": "Shift+F5",
+          "does": "Stop debugging"
+        },
+        {
+          "keys": "F9",
+          "does": "Toggle breakpoint"
+        },
+        {
+          "keys": "F10",
+          "does": "Step over"
+        },
+        {
+          "keys": "Ctrl+\\",
+          "does": "Split editor"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed editor"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close editor",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Visual Studio 2022",
+      "exes": [
+        "devenv.exe"
+      ],
+      "sources": [
+        "https://learn.microsoft.com/en-us/visualstudio/ide/default-keyboard-shortcuts-in-visual-studio?view=vs-2022"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Build solution"
+        },
+        {
+          "keys": "F5",
+          "does": "Start debugging"
+        },
+        {
+          "keys": "Ctrl+F5",
+          "does": "Start without debugging"
+        },
+        {
+          "keys": "Shift+F5",
+          "does": "Stop debugging"
+        },
+        {
+          "keys": "Ctrl+Shift+F5",
+          "does": "Restart"
+        },
+        {
+          "keys": "F9",
+          "does": "Toggle breakpoint"
+        },
+        {
+          "keys": "F10",
+          "does": "Step over"
+        },
+        {
+          "keys": "F11",
+          "does": "Step into"
+        },
+        {
+          "keys": "Shift+F11",
+          "does": "Step out"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Save all"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+Shift+F",
+          "does": "Find in files"
+        },
+        {
+          "keys": "F12",
+          "does": "Go to definition"
+        },
+        {
+          "keys": "Shift+F12",
+          "does": "Find all references"
+        },
+        {
+          "keys": "Ctrl+.",
+          "does": "Quick actions"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Toggle comment"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Go to all"
+        },
+        {
+          "keys": "Ctrl+Alt+L",
+          "does": "Solution Explorer"
+        },
+        {
+          "keys": "Ctrl+Alt+O",
+          "does": "Output window"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Navigate back"
+        },
+        {
+          "keys": "Ctrl+Shift+F9",
+          "does": "Delete all breakpoints",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+F4",
+          "does": "Close document",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Figma",
+      "exes": [
+        "Figma.exe"
+      ],
+      "sources": [
+        "https://help.figma.com/hc/en-us/articles/360041539473-Frames-in-Figma-Design",
+        "https://help.figma.com/hc/en-us/articles/360040450133-Shape-tools",
+        "https://help.figma.com/hc/en-us/articles/360040451373-Guide-to-auto-layout",
+        "https://help.figma.com/hc/en-us/articles/360038663154-Create-components-to-reuse-in-designs",
+        "https://help.figma.com/hc/en-us/articles/4409078832791-Copy-and-paste-objects-in-the-canvas",
+        "https://help.figma.com/hc/en-us/articles/360039956914-Adjust-alignment-rotation-position-and-dimensions",
+        "https://help.figma.com/hc/en-us/articles/360040449873-Select-layers-and-objects",
+        "https://help.figma.com/hc/en-us/articles/360040328653-Use-Figma-products-with-a-keyboard"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "F",
+          "does": "Frame tool"
+        },
+        {
+          "keys": "R",
+          "does": "Rectangle tool"
+        },
+        {
+          "keys": "O",
+          "does": "Ellipse tool"
+        },
+        {
+          "keys": "L",
+          "does": "Line tool"
+        },
+        {
+          "keys": "Ctrl+Alt+G",
+          "does": "Frame selection"
+        },
+        {
+          "keys": "Shift+A",
+          "does": "Add auto layout"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+A",
+          "does": "Suggest auto layout"
+        },
+        {
+          "keys": "Ctrl+Alt+K",
+          "does": "Create component"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Duplicate"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Paste to replace"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste over selection"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Bring forward"
+        },
+        {
+          "keys": "Ctrl+Shift+]",
+          "does": "Bring to front"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Send backward"
+        },
+        {
+          "keys": "Ctrl+Shift+[",
+          "does": "Send to back"
+        },
+        {
+          "keys": "Ctrl+A",
+          "does": "Select all"
+        },
+        {
+          "keys": "Ctrl+Shift+/",
+          "does": "Shortcuts panel"
+        }
+      ]
+    },
+    {
+      "app": "Discord",
+      "exes": [
+        "Discord.exe"
+      ],
+      "sources": [
+        "https://support.discord.com/hc/en-us/articles/225977308-Discord-Keyboard-Shortcuts"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "Toggle mute"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Toggle deafen"
+        },
+        {
+          "keys": "Ctrl+Enter",
+          "does": "Answer call"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Start call"
+        },
+        {
+          "keys": "Ctrl+Alt+A",
+          "does": "Active voice channel"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Quick switcher"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Previous text channel"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Emoji picker"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Pinned messages"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Mentions"
+        },
+        {
+          "keys": "Ctrl+U",
+          "does": "Member list"
+        },
+        {
+          "keys": "Ctrl+Shift+U",
+          "does": "Upload file"
+        },
+        {
+          "keys": "Alt+Up",
+          "does": "Previous channel"
+        },
+        {
+          "keys": "Alt+Down",
+          "does": "Next channel"
+        },
+        {
+          "keys": "Ctrl+Alt+Up",
+          "does": "Previous server"
+        },
+        {
+          "keys": "Ctrl+Alt+Down",
+          "does": "Next server"
+        },
+        {
+          "keys": "Alt+Shift+Down",
+          "does": "Next unread channel"
+        },
+        {
+          "keys": "Shift+PageUp",
+          "does": "Oldest unread"
+        },
+        {
+          "keys": "Escape",
+          "does": "Mark read / decline"
+        },
+        {
+          "keys": "Shift+Escape",
+          "does": "Mark server read"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "Create/join server"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Show hotkeys"
+        }
+      ]
+    },
+    {
+      "app": "Spotify",
+      "exes": [
+        "Spotify.exe"
+      ],
+      "sources": [
+        "https://support.spotify.com/us/article/keyboard-shortcuts/"
+      ],
+      "note": "Most of these work while the Spotify window is in front; Play/Pause from anywhere is core.media.",
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/pause"
+        },
+        {
+          "keys": "Alt+Shift+B",
+          "does": "Like song"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Shuffle"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Repeat"
+        },
+        {
+          "keys": "M",
+          "does": "Mute/unmute"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Search"
+        },
+        {
+          "keys": "Alt+Shift+J",
+          "does": "Now playing"
+        },
+        {
+          "keys": "Alt+Shift+Q",
+          "does": "Queue"
+        },
+        {
+          "keys": "Alt+Shift+S",
+          "does": "Liked songs"
+        },
+        {
+          "keys": "Alt+Shift+H",
+          "does": "Home"
+        },
+        {
+          "keys": "Alt+Shift+0",
+          "does": "Library"
+        },
+        {
+          "keys": "Alt+Shift+1",
+          "does": "Playlists"
+        },
+        {
+          "keys": "Alt+Shift+M",
+          "does": "Made for you"
+        },
+        {
+          "keys": "Alt+Shift+N",
+          "does": "New releases"
+        },
+        {
+          "keys": "Alt+Shift+R",
+          "does": "Now playing sidebar"
+        },
+        {
+          "keys": "Alt+Shift+L",
+          "does": "Library sidebar"
+        },
+        {
+          "keys": "Ctrl+,",
+          "does": "Preferences"
+        },
+        {
+          "keys": "Ctrl+/",
+          "does": "Shortcuts help"
+        },
+        {
+          "keys": "Alt+Shift+F6",
+          "does": "Log out",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Teams",
+      "exes": [
+        "ms-teams.exe",
+        "Teams.exe"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/accessibility/teams/keyboard-shortcuts-for-microsoft-teams"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "Toggle mute"
+        },
+        {
+          "keys": "Ctrl+Shift+O",
+          "does": "Toggle video"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Raise/lower hand"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Share content"
+        },
+        {
+          "keys": "Ctrl+Shift+U",
+          "does": "Toggle speaker"
+        },
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "Accept video call"
+        },
+        {
+          "keys": "Ctrl+Shift+S",
+          "does": "Accept audio call"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Decline call"
+        },
+        {
+          "keys": "Ctrl+Shift+Y",
+          "does": "Admit from lobby"
+        },
+        {
+          "keys": "Alt+Shift+A",
+          "does": "Start audio call"
+        },
+        {
+          "keys": "Alt+Shift+V",
+          "does": "Start video call"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Search"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New chat"
+        },
+        {
+          "keys": "Ctrl+G",
+          "does": "Go to chat"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Compose box"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Pin window on top"
+        },
+        {
+          "keys": "Shift+Escape",
+          "does": "Mark all read"
+        },
+        {
+          "keys": "Ctrl+.",
+          "does": "Show shortcuts"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+Shift+H",
+          "does": "End call",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Zoom",
+      "exes": [
+        "Zoom.exe"
+      ],
+      "sources": [
+        "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0067050"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Alt+A",
+          "does": "Mute/unmute"
+        },
+        {
+          "keys": "Alt+V",
+          "does": "Start/stop video"
+        },
+        {
+          "keys": "Alt+S",
+          "does": "Share screen"
+        },
+        {
+          "keys": "Alt+T",
+          "does": "Pause share"
+        },
+        {
+          "keys": "Alt+Y",
+          "does": "Raise/lower hand"
+        },
+        {
+          "keys": "Alt+R",
+          "does": "Local recording"
+        },
+        {
+          "keys": "Alt+C",
+          "does": "Cloud recording"
+        },
+        {
+          "keys": "Alt+P",
+          "does": "Pause recording"
+        },
+        {
+          "keys": "Alt+N",
+          "does": "Switch camera"
+        },
+        {
+          "keys": "Alt+F",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Alt+H",
+          "does": "Chat panel"
+        },
+        {
+          "keys": "Alt+U",
+          "does": "Participants panel"
+        },
+        {
+          "keys": "Alt+I",
+          "does": "Invite"
+        },
+        {
+          "keys": "Alt+Shift+I",
+          "does": "Copy invite link"
+        },
+        {
+          "keys": "Alt+F1",
+          "does": "Speaker view"
+        },
+        {
+          "keys": "Alt+F2",
+          "does": "Gallery view"
+        },
+        {
+          "keys": "Alt+M",
+          "does": "Mute everyone"
+        },
+        {
+          "keys": "Ctrl+Shift+Y",
+          "does": "Reactions"
+        },
+        {
+          "keys": "Alt+Shift+5",
+          "does": "Thumbs up"
+        },
+        {
+          "keys": "Alt+Shift+4",
+          "does": "Clap"
+        },
+        {
+          "keys": "Ctrl+Alt+Shift+H",
+          "does": "Floating controls"
+        },
+        {
+          "keys": "Alt+Q",
+          "does": "End/leave meeting",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Slack",
+      "exes": [
+        "slack.exe"
+      ],
+      "sources": [
+        "https://slack.com/help/articles/201374536-Slack-keyboard-shortcuts-and-commands"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+K",
+          "does": "Jump to conversation"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New message"
+        },
+        {
+          "keys": "Ctrl+G",
+          "does": "Search"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Search conversation"
+        },
+        {
+          "keys": "Ctrl+Shift+Space",
+          "does": "Mute huddle"
+        },
+        {
+          "keys": "Ctrl+Shift+Y",
+          "does": "Set status"
+        },
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "All unreads"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Threads"
+        },
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "Activity"
+        },
+        {
+          "keys": "Ctrl+Shift+1",
+          "does": "Home"
+        },
+        {
+          "keys": "Ctrl+Shift+2",
+          "does": "Browse DMs"
+        },
+        {
+          "keys": "Ctrl+Shift+L",
+          "does": "Browse channels"
+        },
+        {
+          "keys": "Ctrl+J",
+          "does": "Latest unread"
+        },
+        {
+          "keys": "Alt+Shift+Down",
+          "does": "Next unread"
+        },
+        {
+          "keys": "Alt+Shift+Up",
+          "does": "Previous unread"
+        },
+        {
+          "keys": "Escape",
+          "does": "Mark read"
+        },
+        {
+          "keys": "Shift+Escape",
+          "does": "Mark all read"
+        },
+        {
+          "keys": "Ctrl+O",
+          "does": "Upload file"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New canvas"
+        },
+        {
+          "keys": "Ctrl+.",
+          "does": "Hide right sidebar"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Ctrl+Shift+H",
+          "does": "Huddle start/leave",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Quit Slack",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Notion",
+      "exes": [
+        "Notion.exe"
+      ],
+      "sources": [
+        "https://www.notion.com/help/keyboard-shortcuts"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+N",
+          "does": "New page"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New window"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Search / jump"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find in page"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Copy page link"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Back"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Forward"
+        },
+        {
+          "keys": "Ctrl+Shift+U",
+          "does": "Up one level"
+        },
+        {
+          "keys": "Ctrl+Shift+L",
+          "does": "Dark/light mode"
+        },
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "Comment"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Duplicate blocks"
+        },
+        {
+          "keys": "Ctrl+Shift+1",
+          "does": "Heading 1"
+        },
+        {
+          "keys": "Ctrl+Shift+4",
+          "does": "To-do"
+        },
+        {
+          "keys": "Ctrl+Shift+5",
+          "does": "Bulleted list"
+        },
+        {
+          "keys": "Ctrl+Shift+8",
+          "does": "Code block"
+        },
+        {
+          "keys": "Ctrl+Shift+9",
+          "does": "Turn into page"
+        },
+        {
+          "keys": "Ctrl+Alt+T",
+          "does": "Toggle all toggles"
+        },
+        {
+          "keys": "Ctrl+Shift+H",
+          "does": "Last color"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Add link"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Inline code"
+        }
+      ]
+    },
+    {
+      "app": "Obsidian",
+      "exes": [
+        "Obsidian.exe"
+      ],
+      "sources": [
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Plugins/Command%20palette.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Plugins/Quick%20switcher.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Files%20and%20folders/Manage%20notes.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Editing%20and%20formatting/Views%20and%20editing%20mode.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/User%20interface/Tabs.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Plugins/Search.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Editing%20and%20formatting/Find%20and%20replace.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Editing%20and%20formatting/Editing%20shortcuts.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Getting%20started/Create%20your%20first%20note.md",
+        "https://github.com/obsidianmd/obsidian-help/blob/master/en/Help%20and%20support.md"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+P",
+          "does": "Command palette"
+        },
+        {
+          "keys": "Ctrl+O",
+          "does": "Quick switcher"
+        },
+        {
+          "keys": "Ctrl+N",
+          "does": "New note"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Edit/reading view"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "New tab"
+        },
+        {
+          "keys": "Ctrl+Tab",
+          "does": "Next tab"
+        },
+        {
+          "keys": "Ctrl+Shift+Tab",
+          "does": "Previous tab"
+        },
+        {
+          "keys": "Ctrl+Shift+T",
+          "does": "Reopen closed tab"
+        },
+        {
+          "keys": "Ctrl+Shift+F",
+          "does": "Search vault"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Find in note"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "Find and replace"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Bold"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste plain text"
+        },
+        {
+          "keys": "Ctrl+Shift+I",
+          "does": "Developer console"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "Delete line",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Word",
+      "exes": [
+        "WINWORD.EXE"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Bold"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Italic"
+        },
+        {
+          "keys": "Ctrl+U",
+          "does": "Underline"
+        },
+        {
+          "keys": "Ctrl+[",
+          "does": "Smaller font"
+        },
+        {
+          "keys": "Ctrl+]",
+          "does": "Larger font"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Center"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Align left"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste text only"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Insert link"
+        },
+        {
+          "keys": "Ctrl+Enter",
+          "does": "Page break"
+        },
+        {
+          "keys": "Ctrl+Alt+M",
+          "does": "Insert comment"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Track changes"
+        },
+        {
+          "keys": "Ctrl+Alt+F",
+          "does": "Insert footnote"
+        },
+        {
+          "keys": "Ctrl+Alt+1",
+          "does": "Heading 1"
+        },
+        {
+          "keys": "Ctrl+Alt+2",
+          "does": "Heading 2"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "Normal style"
+        },
+        {
+          "keys": "Ctrl+Shift+L",
+          "does": "Bulleted list"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "Find and replace"
+        },
+        {
+          "keys": "F7",
+          "does": "Spelling and grammar"
+        },
+        {
+          "keys": "Shift+F3",
+          "does": "Change case"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Print"
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close document",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Excel",
+      "exes": [
+        "EXCEL.EXE"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-excel-1798d9d5-842a-42b8-9c99-9b7213f0040f"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Alt+=",
+          "does": "AutoSum"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Create table"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Format cells"
+        },
+        {
+          "keys": "Ctrl+Alt+V",
+          "does": "Paste special"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Fill down"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Flash fill"
+        },
+        {
+          "keys": "Ctrl+;",
+          "does": "Insert date"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Insert link"
+        },
+        {
+          "keys": "Ctrl+Shift+=",
+          "does": "Insert cells"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Bold"
+        },
+        {
+          "keys": "Ctrl+5",
+          "does": "Strikethrough"
+        },
+        {
+          "keys": "Ctrl+9",
+          "does": "Hide rows"
+        },
+        {
+          "keys": "Ctrl+0",
+          "does": "Hide columns"
+        },
+        {
+          "keys": "F2",
+          "does": "Edit cell"
+        },
+        {
+          "keys": "F4",
+          "does": "Absolute reference"
+        },
+        {
+          "keys": "F9",
+          "does": "Calculate all"
+        },
+        {
+          "keys": "Shift+F3",
+          "does": "Insert function"
+        },
+        {
+          "keys": "Alt+F1",
+          "does": "Insert chart"
+        },
+        {
+          "keys": "Shift+F11",
+          "does": "New sheet"
+        },
+        {
+          "keys": "Alt+Down",
+          "does": "Filter menu"
+        },
+        {
+          "keys": "Ctrl+-",
+          "does": "Delete cells",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close workbook",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft PowerPoint",
+      "exes": [
+        "POWERPNT.EXE"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/office/use-keyboard-shortcuts-to-create-powerpoint-presentations-ebb3d20e-dcd4-444f-a38e-bb5c5ed180f4",
+        "https://support.microsoft.com/en-us/office/use-keyboard-shortcuts-to-deliver-powerpoint-presentations-1524ffce-bd2a-45f4-9a7f-f18b992b93a0"
+      ],
+      "shortcuts": [
+        {
+          "keys": "F5",
+          "does": "Start slide show"
+        },
+        {
+          "keys": "Shift+F5",
+          "does": "Show from current"
+        },
+        {
+          "keys": "Alt+F5",
+          "does": "Presenter view"
+        },
+        {
+          "keys": "N",
+          "does": "Next slide"
+        },
+        {
+          "keys": "P",
+          "does": "Previous slide"
+        },
+        {
+          "keys": "B",
+          "does": "Black screen"
+        },
+        {
+          "keys": "W",
+          "does": "White screen"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Laser pointer"
+        },
+        {
+          "keys": "Ctrl+P",
+          "does": "Pen / print"
+        },
+        {
+          "keys": "E",
+          "does": "Erase ink"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "New slide"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Duplicate slide"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Insert link"
+        },
+        {
+          "keys": "Ctrl+Alt+M",
+          "does": "Insert comment"
+        },
+        {
+          "keys": "Ctrl+G",
+          "does": "Group"
+        },
+        {
+          "keys": "Ctrl+Shift+G",
+          "does": "Ungroup"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Copy formatting"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Paste formatting"
+        },
+        {
+          "keys": "Ctrl+Alt+O",
+          "does": "Zoom to fit"
+        },
+        {
+          "keys": "Ctrl+Space",
+          "does": "Play/pause media"
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Close PowerPoint",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Outlook (classic)",
+      "exes": [
+        "OUTLOOK.EXE"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/office/keyboard-shortcuts-for-outlook-3cdeb221-7ae5-4c1d-8c1d-9e63216c1efd"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Shift+M",
+          "does": "New message"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Reply"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Reply all"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Forward"
+        },
+        {
+          "keys": "Alt+S",
+          "does": "Send"
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Mark read"
+        },
+        {
+          "keys": "Ctrl+U",
+          "does": "Mark unread"
+        },
+        {
+          "keys": "Insert",
+          "does": "Quick flag"
+        },
+        {
+          "keys": "Ctrl+Shift+G",
+          "does": "Flag for follow up"
+        },
+        {
+          "keys": "Ctrl+Shift+V",
+          "does": "Move to folder"
+        },
+        {
+          "keys": "Ctrl+Alt+J",
+          "does": "Not junk"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Search"
+        },
+        {
+          "keys": "F9",
+          "does": "Send/receive"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Mail"
+        },
+        {
+          "keys": "Ctrl+2",
+          "does": "Calendar"
+        },
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "New appointment"
+        },
+        {
+          "keys": "Ctrl+Shift+Q",
+          "does": "New meeting"
+        },
+        {
+          "keys": "Ctrl+Shift+K",
+          "does": "New task"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "New contact"
+        },
+        {
+          "keys": "Ctrl+Shift+B",
+          "does": "Address book"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Go to folder"
+        },
+        {
+          "keys": "Delete",
+          "does": "Delete item",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Outlook (new)",
+      "exes": [
+        "olk.exe"
+      ],
+      "sources": [
+        "https://support.microsoft.com/en-us/office/keyboard-shortcuts-for-outlook-3cdeb221-7ae5-4c1d-8c1d-9e63216c1efd"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+N",
+          "does": "New message/event"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Reply"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Reply all"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Forward"
+        },
+        {
+          "keys": "Ctrl+Enter",
+          "does": "Send"
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Mark read"
+        },
+        {
+          "keys": "Ctrl+U",
+          "does": "Mark unread"
+        },
+        {
+          "keys": "Insert",
+          "does": "Flag / complete"
+        },
+        {
+          "keys": "Shift+Enter",
+          "does": "Open in window"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Mail"
+        },
+        {
+          "keys": "Ctrl+2",
+          "does": "Calendar"
+        },
+        {
+          "keys": "Ctrl+4",
+          "does": "People"
+        },
+        {
+          "keys": "Delete",
+          "does": "Delete message",
+          "destructive": true
+        },
+        {
+          "keys": "Shift+Delete",
+          "does": "Delete permanently",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Audacity",
+      "exes": [
+        "Audacity.exe"
+      ],
+      "sources": [
+        "https://manual.audacityteam.org/man/keyboard_shortcut_reference.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Space",
+          "does": "Play/stop"
+        },
+        {
+          "keys": "P",
+          "does": "Pause"
+        },
+        {
+          "keys": "R",
+          "does": "Record"
+        },
+        {
+          "keys": "Shift+R",
+          "does": "Record new track"
+        },
+        {
+          "keys": "Shift+D",
+          "does": "Punch and roll"
+        },
+        {
+          "keys": "L",
+          "does": "Loop on/off"
+        },
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save project"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Export audio"
+        },
+        {
+          "keys": "Ctrl+Shift+I",
+          "does": "Import audio"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Split"
+        },
+        {
+          "keys": "Ctrl+D",
+          "does": "Duplicate"
+        },
+        {
+          "keys": "Ctrl+T",
+          "does": "Trim audio"
+        },
+        {
+          "keys": "Ctrl+L",
+          "does": "Silence audio"
+        },
+        {
+          "keys": "Ctrl+B",
+          "does": "Add label"
+        },
+        {
+          "keys": "Ctrl+R",
+          "does": "Repeat last effect"
+        },
+        {
+          "keys": "Ctrl+1",
+          "does": "Zoom in"
+        },
+        {
+          "keys": "Ctrl+3",
+          "does": "Zoom out"
+        },
+        {
+          "keys": "Ctrl+E",
+          "does": "Zoom to selection"
+        },
+        {
+          "keys": "Ctrl+F",
+          "does": "Fit to width"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Collapse all tracks"
+        },
+        {
+          "keys": "Ctrl+K",
+          "does": "Delete",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close project",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+Q",
+          "does": "Exit",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "GIMP",
+      "exes": [
+        "gimp-2.10.exe",
+        "gimp-3.0.exe",
+        "gimp-3.exe",
+        "gimp.exe"
+      ],
+      "sources": [
+        "https://docs.gimp.org/3.0/en/gimp-edit-undo.html",
+        "https://docs.gimp.org/3.0/en/gimp-edit-redo.html",
+        "https://docs.gimp.org/3.0/en/gimp-selection-all.html",
+        "https://docs.gimp.org/3.0/en/gimp-selection-none.html",
+        "https://docs.gimp.org/3.0/en/gimp-selection-invert.html",
+        "https://docs.gimp.org/3.0/en/gimp-layer-new.html",
+        "https://docs.gimp.org/3.0/en/gimp-layer-duplicate.html",
+        "https://docs.gimp.org/3.0/en/gimp-layer-anchor.html",
+        "https://docs.gimp.org/3.0/en/gimp-image-merge-layers.html",
+        "https://docs.gimp.org/3.0/en/gimp-file-export-as.html",
+        "https://docs.gimp.org/3.0/en/gimp-file-close.html",
+        "https://docs.gimp.org/3.0/en/gimp-edit-clear.html",
+        "https://docs.gimp.org/3.0/en/gimp-view-zoom.html",
+        "https://docs.gimp.org/3.0/en/gimp-view-show-rulers.html",
+        "https://docs.gimp.org/3.0/en/gimp-view-fullscreen.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-paintbrush.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-move.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-eraser.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-crop.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-text.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-rect-select.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-clone.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-gradient.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-bucket-fill.html",
+        "https://docs.gimp.org/3.0/en/gimp-tool-unified-transform.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Y",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+A",
+          "does": "Select all"
+        },
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "Select none"
+        },
+        {
+          "keys": "Ctrl+I",
+          "does": "Invert selection"
+        },
+        {
+          "keys": "Ctrl+Shift+N",
+          "does": "New layer"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Duplicate layer"
+        },
+        {
+          "keys": "Ctrl+H",
+          "does": "Anchor layer"
+        },
+        {
+          "keys": "Ctrl+M",
+          "does": "Merge visible layers"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Export as"
+        },
+        {
+          "keys": "Ctrl+Shift+J",
+          "does": "Fit image in window"
+        },
+        {
+          "keys": "Ctrl+Shift+R",
+          "does": "Rulers"
+        },
+        {
+          "keys": "F11",
+          "does": "Full screen"
+        },
+        {
+          "keys": "P",
+          "does": "Paintbrush"
+        },
+        {
+          "keys": "M",
+          "does": "Move tool"
+        },
+        {
+          "keys": "Shift+E",
+          "does": "Eraser"
+        },
+        {
+          "keys": "Shift+C",
+          "does": "Crop tool"
+        },
+        {
+          "keys": "T",
+          "does": "Text tool"
+        },
+        {
+          "keys": "R",
+          "does": "Rectangle select"
+        },
+        {
+          "keys": "C",
+          "does": "Clone tool"
+        },
+        {
+          "keys": "G",
+          "does": "Gradient tool"
+        },
+        {
+          "keys": "Shift+B",
+          "does": "Bucket fill"
+        },
+        {
+          "keys": "Shift+T",
+          "does": "Unified transform"
+        },
+        {
+          "keys": "Delete",
+          "does": "Clear",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close image",
+          "destructive": true
+        }
+      ]
+    },
+    {
+      "app": "Krita",
+      "exes": [
+        "krita.exe"
+      ],
+      "sources": [
+        "https://docs.krita.org/en/reference_manual/main_menu/edit_menu.html",
+        "https://docs.krita.org/en/reference_manual/main_menu/file_menu.html",
+        "https://docs.krita.org/en/reference_manual/main_menu/select_menu.html",
+        "https://docs.krita.org/en/reference_manual/main_menu/view_menu.html",
+        "https://docs.krita.org/en/reference_manual/main_menu/layers_menu.html",
+        "https://docs.krita.org/en/reference_manual/main_menu/image_menu.html",
+        "https://docs.krita.org/en/user_manual/introduction_from_other_software/introduction_from_photoshop.html",
+        "https://docs.krita.org/en/user_manual/introduction_from_other_software/introduction_from_sai.html",
+        "https://docs.krita.org/en/user_manual/getting_started/navigation.html"
+      ],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Z",
+          "does": "Undo"
+        },
+        {
+          "keys": "Ctrl+Shift+Z",
+          "does": "Redo"
+        },
+        {
+          "keys": "Ctrl+S",
+          "does": "Save"
+        },
+        {
+          "keys": "Ctrl+Alt+S",
+          "does": "Incremental version"
+        },
+        {
+          "keys": "F4",
+          "does": "Incremental backup"
+        },
+        {
+          "keys": "B",
+          "does": "Brush tool"
+        },
+        {
+          "keys": "T",
+          "does": "Move tool"
+        },
+        {
+          "keys": "E",
+          "does": "Eraser mode"
+        },
+        {
+          "keys": "M",
+          "does": "Mirror view"
+        },
+        {
+          "keys": "4",
+          "does": "Rotate canvas left"
+        },
+        {
+          "keys": "6",
+          "does": "Rotate canvas right"
+        },
+        {
+          "keys": "5",
+          "does": "Reset rotation"
+        },
+        {
+          "keys": "Ctrl+Shift+A",
+          "does": "Deselect"
+        },
+        {
+          "keys": "Ctrl+Shift+D",
+          "does": "Reselect"
+        },
+        {
+          "keys": "Ctrl+Shift+I",
+          "does": "Invert selection"
+        },
+        {
+          "keys": "Ctrl+Shift+C",
+          "does": "Copy merged"
+        },
+        {
+          "keys": "Shift+Backspace",
+          "does": "Fill foreground"
+        },
+        {
+          "keys": "Backspace",
+          "does": "Fill background"
+        },
+        {
+          "keys": "Ctrl+Shift+F",
+          "does": "Full screen"
+        },
+        {
+          "keys": "Shift+L",
+          "does": "Instant preview"
+        },
+        {
+          "keys": "Ctrl+Alt+I",
+          "does": "Scale image"
+        },
+        {
+          "keys": "Ctrl+Alt+C",
+          "does": "Resize canvas"
+        },
+        {
+          "keys": "Ctrl+Shift+E",
+          "does": "Flatten image"
+        },
+        {
+          "keys": "Delete",
+          "does": "Clear selection",
+          "destructive": true
+        },
+        {
+          "keys": "Ctrl+W",
+          "does": "Close",
+          "destructive": true
+        }
+      ]
+    }
+  ]
+}

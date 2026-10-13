@@ -1,0 +1,584 @@
+/* The live deck (DeckView). Colors of the hardware itself are fixed in the SVG; the UI around it
+   uses the app's tokens (look A): --acc, --acc2, --tx, --tx2, --tx3, --bg1, --bg2, --ln, --ln2,
+   --font, --mono. Fallbacks keep it working with the older token names. */
+
+.dk,
+.owned-kinds {
+  --dk-acc: var(--acc, var(--accent-strong, #8b7cf6));
+  --dk-acc2: var(--acc2, var(--accent, #b2a6ff));
+  --dk-tx: var(--tx, var(--text, #ededf2));
+  --dk-tx2: var(--tx2, var(--text-muted, #a3a2b1));
+  --dk-tx3: var(--tx3, #6c6b7b);
+  --dk-chip: var(--bg2, var(--raised, #1a1a21));
+  --dk-ln: var(--ln2, var(--line-strong, rgba(255, 255, 255, 0.1)));
+  --dk-font: var(--font, "IBM Plex Sans", system-ui, sans-serif);
+  --dk-mono: var(--mono, "IBM Plex Mono", ui-monospace, monospace);
+}
+/* the deck takes all the room the stage has: the drawing scales to fit it (the SVGs keep their
+   aspect), the chip strip and the shelf take only what they need */
+.dk {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 12px;
+}
+
+/* the drawing keeps its aspect and fits both the column width and the window height */
+.dk-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: var(--deck-max-w, 1100px);
+  min-height: 160px;
+}
+.dk-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dk-back {
+  pointer-events: none;
+}
+.dk-front text {
+  font-family: var(--dk-font);
+}
+/* the engine's key and dial pictures name "IBM Plex Sans"; inline they get the bundled font */
+.dk-front svg svg text {
+  font-family: "IBM Plex Sans", var(--dk-font);
+}
+
+/* the edge light: a thin colored line with a weak, steady glow (owner's pick B "subtle", 2026-10-11) */
+.dk.is-paused .dk-edge-glow,
+.dk.is-paused .dk-edge-inner {
+  opacity: 0.12;
+}
+
+/* controls */
+.dk-ctl {
+  cursor: pointer;
+  outline: none;
+}
+.dk-ctl.is-inert {
+  pointer-events: none;
+}
+.dk-hov,
+.dk-sel,
+.dk-sel-glow {
+  fill: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.dk-hov {
+  stroke: var(--dk-tx2);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+.dk-sel {
+  stroke: var(--dk-acc);
+  stroke-width: 2;
+}
+.dk-sel-glow {
+  stroke: var(--dk-acc);
+  stroke-width: 7;
+  stroke-opacity: 0.35;
+}
+.dk-ctl:hover .dk-hov,
+.dk-ctl:focus-visible .dk-hov {
+  opacity: 1;
+}
+.dk-ctl:focus-visible .dk-hov {
+  stroke: var(--dk-acc2);
+  stroke-dasharray: none;
+}
+.dk-ctl.is-selected .dk-hov {
+  opacity: 0;
+}
+.dk-ctl.is-selected .dk-sel {
+  opacity: 1;
+}
+.dk-ctl.is-selected .dk-sel-glow {
+  opacity: 0.75;
+}
+/* a library action dragged over a control */
+.dk-ctl.is-drop .dk-sel {
+  opacity: 1;
+  stroke: var(--dk-acc2);
+  stroke-dasharray: 5 4;
+}
+.dk-ctl.is-drop .dk-sel-glow {
+  opacity: 0.5;
+}
+
+.dk-pressed {
+  fill: #fff;
+  opacity: 0.16;
+  pointer-events: none;
+}
+.dk-flash {
+  fill: #fff;
+  opacity: 0;
+  pointer-events: none;
+  animation: dk-flash 0.35s ease-out;
+}
+@keyframes dk-flash {
+  from {
+    opacity: 0.22;
+  }
+}
+/* LED effects as the deck runs them (engine://leds): roughly the hardware's look and pace */
+.dk-fx-breathing {
+  animation: dk-breathe 3s ease-in-out infinite;
+}
+.dk-fx-strobe,
+.dk-fx-blink {
+  animation: dk-blink 0.5s steps(1) infinite;
+}
+.dk-fx-blink {
+  animation-duration: 0.25s;
+}
+.dk-fx-water {
+  animation: dk-shimmer 1.2s ease-in-out infinite;
+}
+.dk-fx-rainbow {
+  animation: dk-hue 12s linear infinite;
+}
+@keyframes dk-breathe {
+  50% {
+    opacity: 0.15;
+  }
+}
+@keyframes dk-blink {
+  50% {
+    opacity: 0.1;
+  }
+}
+@keyframes dk-shimmer {
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes dk-hue {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+.dk-face-text {
+  fill: #e4e3ec;
+  font-size: 10px;
+  font-weight: 500;
+}
+.dk-face-num {
+  fill: #8d8b9c;
+  font-size: 13px;
+  font-weight: 600;
+}
+.dk-face-num.is-big {
+  fill: #fff;
+  font-size: 24px;
+}
+
+/* a control that points at something this PC lacks (profile_check) */
+.dk-check circle {
+  fill: #f5c400;
+  stroke: #1a1400;
+  stroke-width: 1.2;
+}
+.dk-check path {
+  stroke: #1a1400;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.dk-check circle.dot {
+  fill: #1a1400;
+  stroke: none;
+}
+.dk-check {
+  cursor: help;
+}
+
+/* arranging */
+.dk-cell {
+  fill: none;
+  stroke: var(--dk-tx3);
+  stroke-opacity: 0.6;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+}
+.dk-slot.is-draggable {
+  cursor: grab;
+  touch-action: none;
+}
+.dk-slot.is-moving {
+  opacity: 0.75;
+  cursor: grabbing;
+}
+.dk-arrange-frame {
+  fill: none;
+  stroke: var(--dk-acc);
+  stroke-width: 2;
+  pointer-events: none;
+}
+.dk-arrange-name {
+  fill: #fff;
+  font-family: var(--dk-mono);
+  font-size: 13px;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.dk-rotate {
+  cursor: pointer;
+  outline: none;
+}
+.dk-rotate circle {
+  fill: var(--dk-acc);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+}
+.dk-rotate path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dk-rotate:hover circle,
+.dk-rotate:focus-visible circle {
+  fill: var(--dk-acc2);
+}
+.dk-unknown circle {
+  fill: #3d2a12;
+  stroke: #f5a524;
+}
+.dk-unknown text {
+  fill: #ffd8a8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* LED chips under the deck */
+.dk-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.dk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dk-chip);
+  box-shadow: inset 0 0 0 1px var(--dk-ln);
+  color: var(--dk-tx3);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dk-chip.is-static {
+  cursor: default;
+}
+.dk-chip:not(.is-static):hover {
+  color: var(--dk-tx2);
+}
+.dk-chip:focus-visible {
+  outline: 2px solid var(--dk-acc);
+  outline-offset: 2px;
+}
+.dk-chip.is-selected {
+  box-shadow: inset 0 0 0 1px var(--dk-acc);
+  color: var(--dk-tx2);
+}
+.dk-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px 1px currentColor, inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  flex: none;
+}
+.dk-chip.is-static i {
+  box-shadow: 0 0 8px 1px rgba(160, 120, 255, 0.6);
+}
+.dk-chip b {
+  color: var(--dk-tx);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* modules the user owns that are not attached */
+.dk-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 12px;
+  max-width: 100%;
+}
+.dk-shelf-item {
+  position: relative;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 30px 8px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--dk-chip) 60%, transparent);
+  box-shadow: inset 0 0 0 1px var(--dk-ln);
+  background-image: repeating-linear-gradient(135deg, transparent 0 9px, rgba(255, 255, 255, 0.015) 9px 18px);
+}
+.dk-shelf-art {
+  display: block;
+  height: auto;
+  overflow: visible;
+  width: 56px;
+}
+.dk-shelf-item.is-keys .dk-shelf-art,
+.dk-shelf-item.is-faders .dk-shelf-art,
+.dk-shelf-item.is-rollers .dk-shelf-art {
+  width: 112px;
+}
+.dk-shelf-item figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.35;
+  max-width: 13em;
+}
+.dk-shelf-item figcaption b {
+  color: var(--dk-tx2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.dk-shelf-item figcaption span {
+  color: var(--dk-tx3);
+  font-size: 11px;
+}
+.dk-shelf-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--dk-tx3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.dk-shelf-item:hover .dk-shelf-remove,
+.dk-shelf-remove:focus-visible {
+  opacity: 1;
+}
+.dk-shelf-remove:hover {
+  background: var(--dk-chip);
+  color: var(--dk-tx);
+}
+.dk-shelf-remove svg,
+.dk-shelf-plus svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.dk-shelf-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--dk-ln);
+  border: 1px dashed var(--dk-ln);
+  padding: 6px;
+  min-width: 120px;
+}
+.dk-shelf-add.is-open {
+  flex-direction: column;
+  gap: 8px;
+  border-style: solid;
+}
+.dk-shelf-plus,
+.dk-shelf-cancel,
+.dk-shelf-kinds button {
+  border: 0;
+  background: none;
+  color: var(--dk-tx2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.dk-shelf-plus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  text-align: left;
+}
+.dk-shelf-plus:hover,
+.dk-shelf-cancel:hover,
+.dk-shelf-kinds button:hover {
+  color: var(--dk-tx);
+  background: var(--dk-chip);
+}
+.dk-shelf-plus:focus-visible,
+.dk-shelf-cancel:focus-visible,
+.dk-shelf-kinds button:focus-visible {
+  outline: 2px solid var(--dk-acc);
+  outline-offset: 1px;
+}
+.dk-shelf-ask {
+  font-size: 12px;
+  color: var(--dk-tx2);
+  font-weight: 500;
+}
+.dk-shelf-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+.dk-shelf-kinds button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.dk-shelf-cancel {
+  font-size: 12px;
+  padding: 3px 8px;
+  color: var(--dk-tx3);
+}
+.dk-thumb {
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: 100%;
+  overflow: visible;
+}
+
+/* first run: "Do you have other modules?" */
+.owned-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  align-self: stretch;
+  gap: 8px;
+  margin-top: 8px;
+}
+.owned-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 8px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--dk-ln);
+  background: transparent;
+  border: 0;
+  color: var(--dk-tx2);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+}
+.owned-kind:hover:not(:disabled) {
+  background: var(--dk-chip);
+  color: var(--dk-tx);
+}
+.owned-kind:focus-visible {
+  outline: 2px solid var(--dk-acc);
+  outline-offset: 2px;
+}
+.owned-kind[aria-checked="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--dk-acc);
+  color: var(--dk-tx);
+  background: color-mix(in srgb, var(--dk-acc) 10%, transparent);
+}
+.owned-kind:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.owned-kind .owned-tick {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--dk-ln);
+  display: grid;
+  place-items: center;
+}
+.owned-kind[aria-checked="true"] .owned-tick {
+  background: var(--dk-acc);
+  box-shadow: none;
+}
+.owned-tick svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.owned-kind small {
+  color: var(--dk-tx3);
+  font-size: 10.5px;
+}
+
+/* a wide, short stage: the shelf goes beside the deck as a column */
+@container deck-area (min-aspect-ratio: 8 / 5) {
+  .dk.has-shelf {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .dk.has-shelf .dk-shelf {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dk-flash,
+  [class*="dk-fx-"] {
+    animation: none;
+  }
+}
+
+/* what a knob, roller or fader does, written next to it (owner's pick A) */
+.dk-ctl-label {
+  font: 600 14px var(--dk-font, "IBM Plex Sans", sans-serif);
+  fill: #d9d6e4;
+  stroke: #050507;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+  letter-spacing: 0.01em;
+}

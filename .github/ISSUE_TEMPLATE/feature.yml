@@ -1,0 +1,20 @@
+name: Something is missing
+description: An action, an app integration, a preset or anything that would make your setup better.
+labels: [idea]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like HubDeck to do?
+      placeholder: "A knob that scrubs the timeline in DaVinci Resolve."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: How would you use it?
+      description: Your setup, the app, the modules you have. It helps to build the right thing.
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you do today instead?

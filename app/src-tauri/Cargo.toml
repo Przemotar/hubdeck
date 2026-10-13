@@ -1,0 +1,67 @@
+[package]
+name = "hubdeck"
+description = "HubDeck: open-source desktop app for the Cooler Master MasterHUB modular controller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "hubdeck_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde.workspace = true
+serde_json.workspace = true
+mh-protocol.workspace = true
+mh-device.workspace = true
+log.workspace = true
+image.workspace = true
+crossbeam-channel.workspace = true
+resvg = "0.48"
+enigo = "0.6"
+active-win-pos-rs = "0.11"
+tauri-plugin-dialog = "2"
+uuid = { version = "1", features = ["v4"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-log = "2"
+base64 = "0.22"
+chrono = "0.4.40"
+sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
+nvml-wrapper = "0.13.0"
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+sha2 = "0.11.0"
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
+ureq = { version = "3.4.2", features = ["json"] }
+midir = "0.11.0"
+tiny_http = "0.12.0"
+rodio = "0.20"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+# the #[interface] macro (IPolicyConfig for the default audio device) refers to windows_core
+windows-core = "0.62"
+# vJoyInterface.dll, loaded at the first joystick action (engine/vjoy.rs)
+libloading = "0.8"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Media_Audio_Endpoints", "Win32_System_Com", "Win32_System_Threading", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem", "Win32_Devices_FunctionDiscovery", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_System_Power", "Win32_UI_Shell", "Media_Control", "Storage_Streams", "Foundation", "Win32_Devices_Display", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_System_RemoteDesktop", "Win32_System_Diagnostics_Debug", "Win32_System_Wmi", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_Console", "Win32_System_Shutdown"] }
+
+
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# app icons as Finder shows them (engine/appicon.rs)
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSDictionary", "NSGeometry", "NSValue"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics"] }

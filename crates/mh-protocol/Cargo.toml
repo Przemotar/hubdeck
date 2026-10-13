@@ -1,0 +1,10 @@
+[package]
+name = "mh-protocol"
+description = "HID protocol of the Cooler Master MasterHUB modules: report encoding and decoding, no I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true

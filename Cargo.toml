@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/mh-protocol", "crates/mh-device", "app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+
+[workspace.dependencies]
+mh-protocol = { path = "crates/mh-protocol" }
+mh-device = { path = "crates/mh-device" }
+hidapi = "2.6"
+log = "0.4"
+thiserror = "2"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Dependencies (resvg, image, tiny-skia...) are optimised even in dev builds: drawing a key panel
+# drops from ~100 ms to a few ms, and our own crates still compile fast.
+[profile.dev.package."*"]
+opt-level = 3
+
+# https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

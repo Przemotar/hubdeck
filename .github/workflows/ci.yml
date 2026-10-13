@@ -1,0 +1,39 @@
+# Tests on every push and pull request. Runs only in the public repository (the private
+# development repository skips every job, so it uses no Actions minutes).
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    if: github.repository == 'Przemotar/hubdeck'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: app
+      - run: cargo fmt --check
+      - run: cargo clippy -p hubdeck --all-targets -- -D warnings
+      - run: cargo test -p mh-protocol -p mh-device -p hubdeck
+      - run: node_modules/.bin/tsc --noEmit -p .
+        working-directory: app
+      - run: pnpm test
+        working-directory: app

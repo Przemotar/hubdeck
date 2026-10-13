@@ -1,0 +1,17 @@
+{
+  "id": "dev.hubdeck.example-counter",
+  "name": "Example: counter",
+  "version": "1.0.0",
+  "command": "node plugin.js",
+  "permissions": [],
+  "actions": [
+    {
+      "id": "count",
+      "name": "Count presses",
+      "description": "Shows how many times the key was pressed; on a knob or the dial, turning counts up and down.",
+      "icon": "zap",
+      "inputs": ["press", "turn"],
+      "params": [{ "key": "start", "label": "Start at", "type": "number", "default": 0, "min": 0, "max": 9999 }]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+<svg viewBox="0 0 64 64" width="1024" height="1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- HubDeck icon, variant B "Dial and keys" (owner's pick, 2026-10-09). Source for `pnpm tauri icon`. -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#8b7cf6"/>
+  <circle cx="25" cy="32" r="14" fill="none" stroke="#ffffff" stroke-width="5"/>
+  <line x1="25" y1="32" x2="25" y2="22" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+  <rect x="44" y="12" width="10" height="10" rx="2.5" fill="#ffffff"/>
+  <rect x="44" y="27" width="10" height="10" rx="2.5" fill="#ffffff"/>
+  <rect x="44" y="42" width="10" height="10" rx="2.5" fill="#ffffff"/>
+</svg>

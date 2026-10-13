@@ -1,0 +1,41 @@
+name: Where my modules sit
+description: Share how your modules sit in your base, so HubDeck places them right for everyone (Arrange modules > Share this arrangement fills it in).
+labels: [slots]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        HubDeck works out where a module sits from the USB port it uses. Some ports are not verified on real hardware yet.
+        If HubDeck drew a module in the wrong place and you fixed it in "Arrange modules", sharing it here makes it right for the next person.
+        Nothing but the slots, positions and turns below is sent; you see everything before you submit.
+  - type: textarea
+    id: modules
+    attributes:
+      label: Modules (kind, slot, column, row, turn)
+      description: One module per line. Filled in by HubDeck.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: base
+    attributes:
+      label: How the base lies
+      options:
+        - Flat, as it comes
+        - Turned 90° right
+        - Turned 90° left
+        - Upside down
+    validations:
+      required: true
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Checked
+      options:
+        - label: The drawing in HubDeck matches my desk after I arranged the modules.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: HubDeck version and system
+      placeholder: "HubDeck 0.1.0, Windows"
