@@ -3,9 +3,11 @@
   The background of the window the macOS .dmg opens (owner's pick B, 2026-10-13): drag to
   Applications, then the three steps of the first open of an app Apple has not notarised.
   Finder draws the real HubDeck and Applications icons (128 px, centred at the positions in
-  tauri.conf.json > bundle.macOS.dmg) and their labels on the grey shelf; the labels are black in
-  the light look and white in the dark one, so the shelf is a grey both read on.
-  Render: node scripts/ui/dmg-background.mjs  ->  background.png (1440x960 at 144 dpi)
+  tauri.conf.json > bundle.macOS.dmg) and their labels. Light like macOS's own installers (owner's
+  pick, round 2: "opcja nr 3"); in the dark look Finder's white labels read poorly on it, the icons,
+  the arrow and its words still say what to do. 610 tall: a Finder with the tab, path and status
+  bars shown takes ~120 pt of the window, so the steps sit in the top 480 and the rest is margin.
+  Render: node scripts/ui/dmg-background.mjs  ->  background.png (1440x1220 at 144 dpi)
 -->
 <html lang="en">
 <head>
@@ -16,34 +18,32 @@
 @font-face { font-family: Plex; font-weight: 600; src: url("../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2"); }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { width: 720px; height: 480px; background: #1b1b1e; color: #ececf0; font-family: Plex, sans-serif; position: relative; overflow: hidden; }
-.shelf { position: absolute; left: 40px; top: 20px; width: 640px; height: 200px; border-radius: 16px; background: #76767e; }
+body { width: 720px; height: 610px; background: #ececf0; color: #1d1d22; font-family: Plex, sans-serif; position: relative; overflow: hidden; }
 .arrow { position: absolute; left: 276px; top: 98px; width: 168px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.arrow span { font-size: 13px; font-weight: 600; color: #fff; }
-.steps { position: absolute; left: 32px; right: 32px; top: 238px; display: flex; flex-direction: column; gap: 12px; }
+.arrow span { font-size: 13px; font-weight: 600; color: #4b3fd1; }
+.steps { position: absolute; left: 32px; right: 32px; top: 244px; display: flex; flex-direction: column; gap: 12px; }
 h1 { margin: 0; font-size: 13px; font-weight: 600; }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .card { display: flex; flex-direction: column; gap: 8px; }
-.pic { height: 128px; border-radius: 10px; background: #121214; border: 1px solid #2e2e34; display: flex; align-items: center; justify-content: center; }
-.dlg { width: 150px; border-radius: 10px; background: #2c2c31; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+.pic { height: 128px; border-radius: 10px; background: #fff; border: 1px solid #d9d9e0; display: flex; align-items: center; justify-content: center; }
+.dlg { width: 150px; border-radius: 10px; background: #f6f6f8; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
 .dlg b { font-size: 9px; text-align: center; }
-.btn { width: 100%; height: 18px; border-radius: 5px; background: #48484f; font-size: 8px; color: #fff; display: flex; align-items: center; justify-content: center; }
-.blue { background: #2f7fe8; }
-.ring { outline: 2px solid #a99bff; outline-offset: 2px; }
-.cap { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.4; color: #d6d6dc; }
-.cap b { color: #fff; }
+.btn { width: 100%; height: 18px; border-radius: 5px; background: #e2e2e7; font-size: 8px; color: #1d1d22; display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.blue { background: #2f7fe8; color: #fff; }
+.ring { outline: 2px solid #8b7dff; outline-offset: 2px; }
+.cap { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.4; color: #3a3a44; }
+.cap b { color: #1d1d22; }
 .n { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #6d5df5; color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-.set { width: 176px; height: 100px; border-radius: 8px; background: #2c2c31; display: flex; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
-.side { width: 52px; background: #242428; padding: 8px 5px; display: flex; flex-direction: column; gap: 5px; }
-.side i { height: 5px; border-radius: 3px; background: #3c3c43; }
-.side em { height: 12px; border-radius: 3px; background: #2f7fe8; font-size: 5.5px; font-style: normal; color: #fff; display: flex; align-items: center; padding-left: 2px; }
+.set { width: 184px; height: 100px; border-radius: 8px; background: #f6f6f8; display: flex; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.side { width: 66px; background: #ebebef; padding: 8px 5px; display: flex; flex-direction: column; gap: 5px; }
+.side i { height: 5px; border-radius: 3px; background: #d6d6dc; }
+.side em { height: 12px; border-radius: 3px; background: #2f7fe8; font-size: 5.5px; font-style: normal; color: #fff; display: flex; align-items: center; padding: 0 3px; white-space: nowrap; overflow: hidden; }
 .main { flex-grow: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
 </style>
 </head>
 <body>
-<div class="shelf"></div>
 <div class="arrow">
-  <svg width="168" height="24" viewBox="0 0 168 24"><line x1="4" y1="12" x2="152" y2="12" stroke="#fff" stroke-width="3" stroke-dasharray="8 8" stroke-linecap="round"/><path d="M148 3 L164 12 L148 21" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <svg width="168" height="24" viewBox="0 0 168 24"><line x1="4" y1="12" x2="152" y2="12" stroke="#6d5df5" stroke-width="3" stroke-dasharray="8 8" stroke-linecap="round"/><path d="M148 3 L164 12 L148 21" fill="none" stroke="#6d5df5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <span>Drag to Applications</span>
 </div>
 <div class="steps">
@@ -51,7 +51,7 @@ h1 { margin: 0; font-size: 13px; font-weight: 600; }
   <div class="grid">
     <div class="card">
       <div class="pic"><div class="dlg">
-        <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#8a8a92"/><path d="M12 7 v6 M12 16.5 v.5" stroke="#2c2c31" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#8a8a92"/><path d="M12 7 v6 M12 16.5 v.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
         <b>“HubDeck.app” Not Opened</b>
         <span class="btn blue">Move to Trash</span>
         <span class="btn ring">Done</span>
@@ -60,10 +60,10 @@ h1 { margin: 0; font-size: 13px; font-weight: 600; }
     </div>
     <div class="card">
       <div class="pic"><div class="set">
-        <div class="side"><i></i><i></i><em>Privacy &amp; Sec.</em><i></i><i></i></div>
+        <div class="side"><i></i><i></i><em>Privacy &amp; Security</em><i></i><i></i></div>
         <div class="main">
           <b style="font-size:7px">Security</b>
-          <span style="font-size:6px;line-height:1.35;color:#b9b9c2">“HubDeck.app” was blocked to protect your Mac.</span>
+          <span style="font-size:6px;line-height:1.35;color:#555560">“HubDeck.app” was blocked to protect your Mac.</span>
           <span class="btn ring" style="align-self:flex-end;width:auto;height:16px;padding:0 8px;font-size:7px;margin-top:4px">Open Anyway</span>
         </div>
       </div></div>

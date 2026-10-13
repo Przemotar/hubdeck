@@ -51,7 +51,7 @@
       "signingIdentity": "-",
       "dmg": {
         "background": "dmg/background.png",
-        "windowSize": { "width": 720, "height": 480 },
+        "windowSize": { "width": 720, "height": 610 },
         "appPosition": { "x": 190, "y": 112 },
         "applicationFolderPosition": { "x": 530, "y": 112 }
       }

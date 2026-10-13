@@ -1,5 +1,5 @@
 // Renders the macOS .dmg window background (app/src-tauri/dmg/background.html) to background.png:
-// 1440x960 pixels marked 144 dpi, so Finder shows it 720x480 and sharp on Retina screens.
+// 1440x1220 pixels marked 144 dpi, so Finder shows it 720x610 and sharp on Retina screens.
 // Headless, no window, no focus taken. Needs app/node_modules (the fonts) and a Playwright Chromium.
 //
 //   node scripts/ui/dmg-background.mjs
@@ -30,7 +30,7 @@ function findChromium() {
 }
 
 const browser = await chromium.launch({ executablePath: findChromium(), headless: true });
-const page = await browser.newPage({ viewport: { width: 720, height: 480 }, deviceScaleFactor: 2 });
+const page = await browser.newPage({ viewport: { width: 720, height: 610 }, deviceScaleFactor: 2 });
 await page.goto(pathToFileURL(path.join(dir, 'background.html')).href);
 await page.evaluate(() => document.fonts.ready);
 await page.screenshot({ path: out });
