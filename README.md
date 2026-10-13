@@ -105,7 +105,7 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 
 | | |
 |---|---|
-| ![A game profile in the light look](docs/images/hubdeck-light-game.png) | ![Settings: language, look, lights, screens, connections](docs/images/hubdeck-settings.png) |
+| ![A game profile: skills on the keys, voice chat and music on the knobs, the game volume on the dial](docs/images/hubdeck-game.png) | ![Settings: language, look, lights, screens, connections](docs/images/hubdeck-settings.png) |
 | ![Profile settings: linked apps and switching](docs/images/hubdeck-profile.png) | ![Icon picker with game icons](docs/images/hubdeck-icons.png) |
 | ![Build the deck step by step: a gallery of options for the dial, each tried on the deck](docs/images/hubdeck-builder.png) | |
 
@@ -117,10 +117,17 @@ Download from [Releases](https://github.com/Przemotar/hubdeck/releases).
 know the app (it is not signed with a paid certificate): choose *More info > Run anyway*.
 
 **macOS 12 or later** (Apple silicon and Intel): open the `.dmg` and drag HubDeck to Applications.
-The app is not notarised by Apple yet, so the first time macOS will refuse to open it: right-click
-HubDeck in Applications, choose *Open*, then *Open* again (or System Settings > Privacy &
-Security > *Open Anyway*). To send shortcuts and type text from the deck, allow HubDeck in
-Privacy & Security > Accessibility; the app asks for it with a button.
+The app is not notarised by Apple yet, so the first time macOS says it "could not verify" HubDeck.
+Once only:
+
+1. Click *Done* (not *Move to Trash*).
+2. Open System Settings > Privacy & Security, scroll to Security and click *Open Anyway* next to
+   the line about HubDeck; confirm with your password or Touch ID.
+3. Click *Open* in the next message.
+
+On macOS 14 and older, right-click HubDeck in Applications and choose *Open* also works. To send
+shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
+app asks for it with a button.
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
 

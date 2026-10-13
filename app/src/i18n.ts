@@ -2415,10 +2415,15 @@ function pick(text: Text, vars?: Vars): string {
   return text[pluralForm(n, lang)] ?? text.other;
 }
 
+/** Hints that name the window's own shortcuts: on a Mac they read ⌘ (the keys accept both). */
+const MOD_HINTS = new Set<Key>(["app.hint", "edit.cleared", "suggest.replaced"]);
+const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
+
 /** The text for `key` in the current language, `{name}` filled from `vars`; `vars.count` picks the plural. */
 export function t(key: Key, vars?: Vars): string {
   const text = (lang === "pl" ? pl[key] : undefined) ?? en[key];
-  return fill(pick(text, vars), vars);
+  const out = fill(pick(text, vars), vars);
+  return IS_MAC && MOD_HINTS.has(key) ? out.replace(/Ctrl\+/g, "⌘") : out;
 }
 
 /** Like `t`, but `vars` may hold React nodes (e.g. a colored word inside a sentence). */

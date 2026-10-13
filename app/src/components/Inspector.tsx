@@ -57,7 +57,7 @@ function HotkeyField({ value, onChange, specialKeys, onNamed }: { value: string;
           e.preventDefault();
           const key = keyName(e);
           if (!key) return;
-          const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Win"].filter(Boolean);
+          const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && (/Mac/i.test(navigator.platform) ? "Cmd" : "Win")].filter(Boolean);
           onChange([...mods, key].join("+"));
           setRecording(false);
         }}
