@@ -4,7 +4,8 @@
 #
 # Before tagging, CHANGELOG.md needs a "## <version>" section: it becomes the release notes.
 # Secrets: TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (the updater key made
-# with `pnpm tauri signer generate`; its public half is in tauri.conf.json).
+# with `pnpm tauri signer generate`; its public half is in tauri.conf.json); MACOS_CERTIFICATE (base64
+# .p12) and MACOS_CERTIFICATE_PASSWORD (the self-signed "HubDeck Release" code-signing certificate).
 name: Release
 on:
   push:
@@ -40,6 +41,24 @@ jobs:
           cache-dependency-path: app/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: app
+      # macOS: sign with the project's own certificate (self-signed, the same for every version), so
+      # macOS keeps the user's Accessibility and Automation permissions across updates; an ad-hoc
+      # signature changes with every build and loses them. Not notarised: the first open still asks.
+      - if: matrix.os == 'macos-latest'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/build.keychain-db"; kp="$(openssl rand -hex 16)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -t 3600 -u "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kp" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -p codesigning "$kc" | grep -q '"HubDeck Release"'
       # the release notes (shown on the release page and as "What's new" in the app) are this
       # version's section of CHANGELOG.md
       - id: notes

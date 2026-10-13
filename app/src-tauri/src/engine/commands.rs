@@ -910,9 +910,21 @@ pub fn accessibility_ok() -> bool {
     cfg!(debug_assertions) || accessibility::trusted(false)
 }
 
-/// macOS: ask for Accessibility (the system's own dialog, which leads to System Settings).
+/// macOS: ask for Accessibility (the system's own dialog, which leads to System Settings). A switch
+/// left on for an earlier copy signed differently (another build, the local certificate) does not
+/// count for this one and stops the system from asking again, so HubDeck's own entry is cleared
+/// first (the owner had to run `tccutil` by hand after installing the release .dmg, 2026-10-13).
 #[tauri::command]
-pub fn accessibility_ask() -> bool {
+pub fn accessibility_ask(app: tauri::AppHandle) -> bool {
+    if accessibility::trusted(false) {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if let Err(e) = std::process::Command::new("/usr/bin/tccutil").args(["reset", "Accessibility", &app.config().identifier]).output() {
+        log::warn!("tccutil reset: {e}");
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
     accessibility::trusted(true)
 }
 
