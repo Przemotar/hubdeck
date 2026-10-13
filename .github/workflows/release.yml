@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version%%-*}"   # a test tag like v0.1.0-rc.1 uses the 0.1.0 section
           awk -v v="$version" '/^## /{f = index($0, "## " v " ") == 1 || $0 == "## " v; next} f' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "CHANGELOG.md has no section for $version" >&2; exit 1; fi
           { echo 'body<<NOTES_END'; cat notes.md; echo 'NOTES_END'; } >> "$GITHUB_OUTPUT"
@@ -60,6 +61,7 @@ jobs:
           releaseName: HubDeck ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           includeUpdaterJson: true
           # update files (.sig, latest.json) only here: local builds have no private key
           args: ${{ matrix.args }} --config ${{ github.workspace }}/app/src-tauri/tauri.release.conf.json
