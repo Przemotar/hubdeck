@@ -53,6 +53,10 @@ pub mod profile;
 pub mod recorder;
 pub mod render;
 mod saver;
+#[cfg(target_os = "macos")]
+pub mod machw;
+pub mod sdcatalog;
+pub mod tour;
 pub mod sdplugins;
 pub mod secrets;
 mod seek;
@@ -71,7 +75,7 @@ mod timer;
 pub mod twitch;
 pub mod usage;
 pub mod vjoy;
-mod volume;
+pub mod volume;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::Path;
@@ -255,6 +259,8 @@ pub struct EngineState {
     pub call_switch: bool,
     /// Profiles make themselves for apps with a preset and for games.
     pub auto_profiles: bool,
+    /// Less movement (Settings): None = not set yet (the window takes the system's setting).
+    pub reduced_motion: Option<bool>,
     /// The draft shown on the deck for a try (`Engine::try_profile`).
     pub trying: Option<String>,
     /// Comparing drafts on the deck: (which one, of how many).
@@ -316,6 +322,13 @@ pub(crate) struct Shared {
     pub trying: Option<Trying>,
     /// Drafts compared on the deck (the dial flips between them) and which one shows.
     pub draft_compare: Option<(Vec<String>, usize)>,
+    /// A screensaver shown on request for a moment (the tour's finale): its effect and until when.
+    pub saver_preview: Option<(String, Instant)>,
+    /// The tour is on (`tour.rs`): actions that would go live, record or leave a call only say so.
+    pub tour_dry_run: bool,
+    /// A control the tour points at on the hardware (`keys.5`, `knobs.2`, `dial`): it blinks (holds
+    /// still with reduced motion) from the first instant until the second, or until it is touched.
+    pub highlight: Option<(String, Instant, Instant)>,
 }
 
 /// A question on the deck: the options on the first keys, the question on the dial.
@@ -376,6 +389,7 @@ impl Shared {
             in_call: self.call_hold,
             call_switch: self.store.settings.call_switch,
             auto_profiles: self.store.settings.auto_profiles,
+            reduced_motion: self.store.settings.reduced_motion,
         }
     }
 }
@@ -456,6 +470,9 @@ impl Engine {
             call_hold: false,
             trying: None,
             draft_compare: None,
+            saver_preview: None,
+            tour_dry_run: false,
+            highlight: None,
         }));
         let (tx, rx) = unbounded();
         let engine = Self { data_dir: data_dir.to_path_buf(), tx: tx.clone(), shared: shared.clone(), app: app.clone() };
@@ -513,6 +530,7 @@ impl Engine {
             last_deck_input: Instant::now(),
             backlight_sent: None,
             last_blank_check: Instant::now(),
+            highlight_shown: None,
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run(rx)).expect("spawn engine thread");
         let media_tx = tx.clone();
@@ -921,6 +939,14 @@ struct LiveFace {
 const LIVE_EVERY: Duration = Duration::from_millis(250);
 
 /// Local time as the panel clock shows it.
+/// The color the tour points with on the hardware.
+const HIGHLIGHT: &str = "#ffffff";
+
+/// Is `input` (a control as the deck reports it, maybe on a page) the highlighted `control`?
+fn highlight_matches(control: &str, input: &str) -> bool {
+    input == control || input.rsplit('/').next() == Some(control)
+}
+
 fn clock_now() -> String {
     chrono::Local::now().format("%H:%M").to_string()
 }
@@ -1018,6 +1044,8 @@ struct Worker {
     /// The backlight last sent to keys and dial (None = send again, e.g. after a replug).
     backlight_sent: Option<u8>,
     last_blank_check: Instant,
+    /// The tour's highlight as last drawn: the control and whether it is lit now.
+    highlight_shown: Option<(String, bool)>,
 }
 
 impl Worker {
@@ -1197,7 +1225,8 @@ impl Worker {
             return;
         }
         if self.saver_on {
-            // the first touch only ends the screensaver
+            // the first touch only ends the screensaver (a preview too)
+            self.lock().saver_preview = None;
             self.saver_on = false;
             self.redraw_keys();
             return;
@@ -1209,6 +1238,13 @@ impl Worker {
         if self.arcade.is_some() {
             self.on_game_input(control, event);
             return;
+        }
+        // the control the tour points at was found: it stops blinking
+        {
+            let mut s = self.lock();
+            if s.highlight.as_ref().is_some_and(|(c, _, _)| highlight_matches(c, control)) {
+                s.highlight = None;
+            }
         }
         // what is touched while a draft is tried (for the assistant), and, if the user allowed
         // it, how often each control is used
@@ -1380,6 +1416,16 @@ impl Worker {
     }
 
     fn run_binding(&mut self, id: &str, binding: &Binding, event: InputEvent) {
+        // the tour: going live, recording or ending something only says so on the dial
+        let dry = {
+            let s = self.lock();
+            s.tour_dry_run.then(|| tour::dry_run_says(&binding.action, s.store.settings.language.starts_with("pl"))).flatten()
+        };
+        if let Some(says) = dry {
+            self.feedback = Some((Feedback { value: None, caption: says.to_string() }, Instant::now()));
+            self.dial_dirty = true;
+            return;
+        }
         if binding.action == actions::AGENT || binding.action == actions::AGENTS {
             self.agent_input(binding, event);
             return;
@@ -1686,13 +1732,18 @@ impl Worker {
                     })
                     .collect();
             }
+            // the tour points at a key: it turns white (the label and icon stay readable)
+            if let Some(look) = self.lit_highlight().and_then(|c| c.strip_prefix("keys.")?.parse::<usize>().ok()).and_then(|i| looks.get_mut(i)) {
+                *look = Look { bg: Some(HIGHLIGHT.into()), fg: Some("#111018".into()), icon_color: None, style: None, image: None, ..look.clone() };
+            }
             let game_screen = self.arcade.as_ref().map(|a| a.screen(Instant::now()));
             // the screensaver: one frame of its effect, in the deck's light color
             let game_panel = game_screen.as_ref().and_then(|g| g.panel.clone()).or_else(|| {
                 self.saver_on
                     .then(|| {
                         let s = self.lock();
-                        saver::body(&s.store.settings.saver, saver::clock(), &s.store.settings.lights.color)
+                        let effect = s.saver_preview.as_ref().filter(|(_, until)| *until > Instant::now()).map_or(s.store.settings.saver.as_str(), |(e, _)| e.as_str());
+                        saver::body(effect, saver::clock(), &s.store.settings.lights.color)
                     })
                     .flatten()
             });
@@ -2264,8 +2315,10 @@ impl Worker {
         let idle = idle::system_idle().map_or(deck_idle, |sys| sys.min(deck_idle));
         let blank = self.arcade.is_none() && idle::should_blank(self.locked, settings.blank_when_locked, idle, settings.blank_after_minutes);
         // the screensaver: after its idle minutes, unless the screens are off or a game runs
-        let saver =
-            !blank && !settings.saver.is_empty() && self.arcade.is_none() && self.lock().trying.is_none() && deck_idle >= Duration::from_secs(u64::from(settings.saver_after_minutes.max(1)) * 60);
+        let preview = self.lock().saver_preview.as_ref().is_some_and(|(_, until)| *until > Instant::now());
+        let saver = !blank
+            && self.arcade.is_none()
+            && (preview || (!settings.saver.is_empty() && self.lock().trying.is_none() && deck_idle >= Duration::from_secs(u64::from(settings.saver_after_minutes.max(1)) * 60)));
         if saver != self.saver_on {
             self.saver_on = saver;
             log::info!("screensaver {}", if saver { "on" } else { "off" });
@@ -2332,13 +2385,17 @@ impl Worker {
 
     /// Advance animated GIFs whose next frame is due, and the panel clock once a minute.
     fn animate(&mut self, now: Instant) {
+        self.update_highlight(now);
         // sessions waiting for a permission blink; silent ones are dropped after hours
         // sessions and app items waiting for the user pulse on their keys
         if (self.fleet.pulsing() || states::any_waiting(&self.values)) && now.duration_since(self.fleet_pulse) >= agents::PULSE {
             self.fleet_pulse = now;
             self.redraw_keys();
         }
-        if self.saver_on && now.duration_since(self.saver_frame) >= Duration::from_millis(saver::FRAME_MS) {
+        let still = self.lock().store.settings.reduced_motion == Some(true);
+        // with reduced motion the screensaver changes once a minute
+        let saver_every = if still { Duration::from_secs(60) } else { Duration::from_millis(saver::FRAME_MS) };
+        if self.saver_on && now.duration_since(self.saver_frame) >= saver_every {
             self.saver_frame = now;
             self.redraw_keys();
         }
@@ -2369,7 +2426,8 @@ impl Worker {
         names.extend(dial_image.clone());
         self.frames.retain(|n, _| names.contains(n));
         let (mut keys_due, mut dial_due) = (false, false);
-        for name in names {
+        // with reduced motion animated pictures stay on their first frame
+        for name in names.into_iter().filter(|_| !still) {
             let Some(delays) = images::animation(&name) else { continue };
             let entry = self.frames.entry(name.clone()).or_insert((0, now + delays[0]));
             if now >= entry.1 {
@@ -2510,6 +2568,17 @@ impl Worker {
             } else {
                 wanted
             };
+            // the tour points at a knob or fader: its LED blinks white
+            let wanted = match self.highlight_shown.as_ref().filter(|_| game.is_none() && !blanked).and_then(|(c, lit)| Some((c.strip_prefix(m.kind)?.strip_prefix('.')?.parse::<usize>().ok()?, *lit))) {
+                Some((i, lit)) if i < count => {
+                    let mut lights = wanted.unwrap_or_else(|| leds::Lights::solid(vec![[0, 0, 0]; count]));
+                    if let Some(led) = lights.leds.get_mut(i) {
+                        *led = leds::Led::solid(if lit { [255, 255, 255] } else { [0, 0, 0] });
+                    }
+                    Some(lights)
+                }
+                _ => wanted,
+            };
             // HubDeck's own rainbow: the color of this moment, the same the window works out
             let (wanted, replaced) =
                 if light_cfg.hub_rainbow && !blanked && game.is_none() && (wanted.is_none() || wanted.as_ref().is_some_and(|l| l.leds.iter().any(|led| led.mode == LedMode::Rainbow))) {
@@ -2596,6 +2665,37 @@ impl Worker {
     }
 
     /// Questions and statuses that ran out, and the end of a `notify` light.
+    /// The control the tour points at, if it is lit at this moment.
+    fn lit_highlight(&self) -> Option<&str> {
+        self.highlight_shown.as_ref().filter(|(_, lit)| *lit).map(|(c, _)| c.as_str())
+    }
+
+    /// The tour's highlight: blink it (or hold it still with reduced motion), redraw what changed.
+    fn update_highlight(&mut self, now: Instant) {
+        let want = {
+            let mut s = self.lock();
+            if s.highlight.as_ref().is_some_and(|(_, _, until)| now >= *until) {
+                s.highlight = None;
+            }
+            let still = s.store.settings.reduced_motion == Some(true);
+            s.highlight.as_ref().map(|(c, from, _)| (c.clone(), still || (now.duration_since(*from).as_millis() / agents::PULSE.as_millis()).is_multiple_of(2)))
+        };
+        if want == self.highlight_shown {
+            return;
+        }
+        let touched: Vec<String> = [&want, &self.highlight_shown].into_iter().flatten().map(|(c, _)| c.clone()).collect();
+        self.highlight_shown = want;
+        if touched.iter().any(|c| c.starts_with("keys.")) {
+            self.redraw_keys();
+        }
+        if touched.iter().any(|c| c.starts_with("knobs.") || c.starts_with("faders.")) {
+            self.update_leds();
+        }
+        if touched.iter().any(|c| c == "dial") {
+            self.dial_dirty = true;
+        }
+    }
+
     fn expire_deck_ui(&mut self, now: Instant) {
         if self.notify_until.is_some_and(|t| now >= t) {
             self.notify_until = None;
@@ -2741,6 +2841,8 @@ impl Worker {
                 }
                 None => svg,
             };
+            // the tour points at the dial: a white ring around its edge
+            let svg = if self.lit_highlight() == Some("dial") { render::with_ring(&svg, HIGHLIGHT) } else { svg };
             if self.sent.get(&m.id) == Some(&svg) {
                 continue;
             }
@@ -2757,6 +2859,16 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tour_highlight_is_found_on_any_page() {
+        assert!(highlight_matches("keys.9", "keys.9"));
+        assert!(highlight_matches("keys.9", "fun/keys.9"));
+        assert!(!highlight_matches("keys.9", "keys.1"));
+        assert!(highlight_matches("dial", "dial"));
+        let ring = render::with_ring(&render::dial_svg(&Look::default(), None, 0), HIGHLIGHT);
+        assert!(ring.contains(r##"stroke="#ffffff""##) && ring.ends_with("</svg>"));
+    }
 
     #[test]
     fn animations_keep_their_pace_by_skipping_frames() {

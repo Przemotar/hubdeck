@@ -477,6 +477,11 @@ pub struct Settings {
     /// The window's language (`en`, `pl`), for the words the deck itself shows.
     #[serde(default = "english")]
     pub language: String,
+    /// Less movement (the tour audit's photosensitivity point): the tour's highlights hold still,
+    /// pictures on the deck do not animate, the screensaver changes once a minute, the window's
+    /// animations stop. None = never set (the window takes the system's setting at its first start).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduced_motion: Option<bool>,
 }
 
 fn english() -> String {
@@ -558,6 +563,7 @@ impl Default for Settings {
             app_icons: icon_mode(),
             language: english(),
             call_switch: true,
+            reduced_motion: None,
         }
     }
 }

@@ -140,7 +140,30 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+/// macOS: the built-in screen (DisplayServices) first, then external monitors over DDC/CI
+/// (Apple silicon), through `machw`.
+#[cfg(target_os = "macos")]
+mod platform {
+    use super::Which;
+
+    pub fn get(which: Which) -> Result<u32, String> {
+        let index = match which {
+            Which::All => 0,
+            Which::One(n) => n - 1,
+        };
+        super::super::machw::get(index).ok_or_else(|| if super::super::machw::monitors() == 0 { "no monitor whose brightness can be set".to_string() } else { format!("monitor {} did not answer", index + 1) })
+    }
+
+    pub fn set(which: Which, value: u32) -> Result<(), String> {
+        let index = match which {
+            Which::All => None,
+            Which::One(n) => Some(n - 1),
+        };
+        if super::super::machw::set(index, value) { Ok(()) } else { Err("no monitor took the brightness".into()) }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use super::Which;
 

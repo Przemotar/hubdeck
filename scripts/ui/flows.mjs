@@ -138,6 +138,9 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
   await step(page, `${label}: Build my deck step by step opens its page, a card can be tried, Back returns`, async () => {
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Assistant' }).click();
     await page.waitForTimeout(200);
+    // the builder now sits in the Assistant tab's Details (the tour is the way in)
+    await page.locator('.as-details summary').click();
+    await page.waitForTimeout(150);
     await page.getByRole('button', { name: /Build my deck step by step/ }).click();
     await page.waitForTimeout(500);
     if (!(await visible(page, '.builder-page'))) return 'no builder page';
@@ -149,6 +152,31 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(300);
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
     return (await visible(page, '.deck-area')) && !(await visible(page, '.builder-page'));
+  });
+  await step(page, `${label}: the tour: one question, the parts with Keep, the finale, the end, Exit back to the deck`, async () => {
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Assistant' }).click();
+    await page.waitForTimeout(200);
+    await page.getByRole('button', { name: /Show me on my deck/ }).click();
+    await page.waitForTimeout(400);
+    if (!(await visible(page, '.tour-tiles'))) return 'no question';
+    await page.getByRole('button', { name: 'Make my deck' }).click();
+    await page.waitForTimeout(500);
+    if ((await page.locator('.tour-part').count()) < 4) return 'no parts';
+    if (!(await visible(page, '.tour-deck .dk-ctl'))) return 'no deck';
+    await page.locator('.tour-part input[type=checkbox]').nth(1).click();
+    await page.waitForTimeout(200);
+    for (let i = 0; i < 8 && (await page.getByRole('button', { name: 'Next', exact: true }).isVisible()); i++) {
+      await page.getByRole('button', { name: 'Next', exact: true }).click();
+      await page.waitForTimeout(200);
+    }
+    if (!(await visible(page, '.tour-super'))) return 'no finale';
+    await page.getByRole('button', { name: 'See my deck' }).click();
+    await page.waitForTimeout(300);
+    if (!(await visible(page, '.tour-end'))) return 'no end page';
+    await page.getByRole('button', { name: /^Exit/ }).click();
+    await page.waitForTimeout(300);
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    return (await visible(page, '.deck-area')) && !(await visible(page, '.tour-page'));
   });
   await step(page, `${label}: Settings toggles closed from the top bar too`, async () => {
     await page.getByRole('button', { name: /^Settings$/ }).first().click();

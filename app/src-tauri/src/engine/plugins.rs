@@ -513,6 +513,17 @@ pub fn install_sd(bytes: &[u8]) -> Result<String, String> {
     Ok(id)
 }
 
+/// Stop a plugin and take its actions out of the library (its folder stays; the caller removes it).
+pub fn uninstall(id: &str) {
+    let Some(host) = HOST.get() else { return };
+    if let Some(mut c) = host.children.lock().unwrap_or_else(|e| e.into_inner()).remove(id) {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    ACTIONS.write().unwrap_or_else(|e| e.into_inner()).retain(|a| !a.id.starts_with(&format!("{id}/")));
+    host.plugins.write().unwrap_or_else(|e| e.into_inner()).retain(|p| p.manifest.id != id);
+}
+
 /// Where plugin folders go (created if missing).
 pub fn folder() -> Option<PathBuf> {
     let dir = HOST.get()?.dir.clone();

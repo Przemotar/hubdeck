@@ -237,10 +237,14 @@ export type AssistantEvent =
 /** A suggestion HubDeck made on its own (an app without a deck, a new kind of module). */
 export interface Nudge {
   subject: string;
-  kind: "app" | "module";
+  kind: "app" | "module" | "unused";
+  /** The app's program, the module kind, or the control (`knobs.2`). */
   exe: string;
   name: string;
   hours: number;
+  /** `unused`: the deck's name and the day it was kept. */
+  deck?: string;
+  since?: string;
 }
 
 /** An app of the user's that HubDeck listens to. */
@@ -310,6 +314,8 @@ export interface EngineState {
   inCall?: boolean;
   /** During a call the deck shows the call app's profile. */
   callSwitch?: boolean;
+  /** Less movement on the deck and in the window; null = never set (the system's setting is taken). */
+  reducedMotion?: boolean | null;
   foreground: string;
   /** Key page shown on the deck; null = the main page. */
   page: string | null;
@@ -336,6 +342,51 @@ export interface Screens {
   /** The screensaver's effect ("" = none) and after how many idle minutes it starts. */
   saver?: string;
   saverAfterMinutes?: number;
+}
+
+export type TourFocus = "games" | "streaming" | "calls" | "music" | "mixed";
+
+/** One part of the deck the tour walks through. */
+export interface TourStop {
+  id: string;
+  keep: boolean;
+  look: number;
+  looks: number;
+  controls: string[];
+  tryControl: string | null;
+}
+
+export interface TourView {
+  draft: string;
+  focus: TourFocus;
+  kit: "faders" | "dialKnobs" | "keys" | "none";
+  mac: boolean;
+  stops: TourStop[];
+  call: "discord" | "teams" | "zoom" | null;
+  music: string | null;
+  games: number;
+  rollers: boolean;
+}
+
+export interface TourSuggestion {
+  focus: TourFocus;
+  games: number;
+  obs: boolean;
+  call: "discord" | "teams" | "zoom" | null;
+  music: string | null;
+  kit: TourView["kit"];
+  mac: boolean;
+}
+
+/** A plugin in the open-source catalog (Settings > Plugins > Catalog). */
+export interface CatalogPlugin {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  repository: string;
+  icon: string;
+  aiAssisted: boolean;
 }
 
 export interface PluginInfo {
@@ -517,6 +568,9 @@ export const api = {
   autoSeen: () => invoke("auto_seen"),
   appsSeen: () => invoke("apps_seen"),
   callSwitchSet: (on: boolean) => invoke("call_switch_set", { on }),
+  reducedMotionSet: (on: boolean) => invoke("reduced_motion_set", { on }),
+  pressesCounting: () => invoke<boolean>("presses_counting"),
+  pressesCountSet: (on: boolean) => invoke("presses_count_set", { on }),
   languageSet: (language: string) => invoke("language_set", { language }),
   dialGallery: () => invoke<DialFace[]>("dial_gallery"),
   aiPrompt: (name: string, exe: string, target: string, picture: string | null, language: string) => invoke<string>("ai_prompt", { name, exe, target, picture, language }),
@@ -566,6 +620,23 @@ export const api = {
   accessibilityAsk: () => invoke<boolean>("accessibility_ask"),
   /** Install a Stream Deck plugin file; returns its id. */
   sdInstall: (path: string) => invoke<string>("sd_install", { path }),
+  /** The catalog of open-source Stream Deck / OpenAction plugins (downloaded on request). */
+  sdCatalog: () => invoke<CatalogPlugin[]>("sd_catalog"),
+  /** Download a catalog plugin and install it; returns its id. */
+  sdCatalogInstall: (id: string) => invoke<string>("sd_catalog_install", { id }),
+  /** The tour: what HubDeck suggests the deck is mostly for, from what it sees. */
+  tourSuggest: (language: string) => invoke<TourSuggestion>("tour_suggest", { language }),
+  /** Make the deck for this focus and show it on the deck (a draft). */
+  tourStart: (focus: TourFocus, language: string) => invoke<TourView>("tour_start", { focus, language }),
+  /** Keep or leave out a part, or pick its look; the deck follows. */
+  tourSet: (stop: string, keep: boolean | null, look: number | null) => invoke<TourView>("tour_set", { stop, keep, look }),
+  tourSound: (on: boolean) => invoke("tour_sound", { on }),
+  tourSaver: (effect: string) => invoke("tour_saver", { effect }),
+  /** Point at a control on the hardware (`keys.5`, `knobs.2`, `dial`); null stops it. */
+  tourHighlight: (control: string | null) => invoke("tour_highlight", { control }),
+  /** Keep the deck (and make it home) or throw it away; returns the profile id when kept. */
+  tourFinish: (keep: boolean, home: boolean) => invoke<string | null>("tour_finish", { keep, home }),
+  tourExit: () => invoke("tour_exit"),
   /** A Stream Deck action's settings page for a control, or null. */
   sdInspector: (control: string, action: string, settings: unknown) => invoke<string | null>("sd_inspector", { control, action, settings }),
   assistantScan: () => invoke<AssistantScan>("assistant_scan"),

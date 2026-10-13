@@ -224,6 +224,7 @@ pub fn run() {
             app.manage(engine);
             // the assistant routes of the local HTTP API (`hubdeck --mcp` talks to them)
             engine::api::install(app.handle().clone());
+            engine::tour::recover(app.handle());
             engine::auto::at_start(app.handle());
             if testing.is_some() {
                 // a test copy: virtual modules, no tray, no update check, the window off-screen
@@ -288,6 +289,16 @@ pub fn run() {
             engine::commands::homeassistant_set,
             engine::commands::streamlabs_set,
             engine::share::gallery_list,
+            engine::sdcatalog::sd_catalog,
+            engine::sdcatalog::sd_catalog_install,
+            engine::tour::tour_suggest,
+            engine::tour::tour_start,
+            engine::tour::tour_set,
+            engine::tour::tour_sound,
+            engine::tour::tour_saver,
+            engine::tour::tour_highlight,
+            engine::tour::tour_finish,
+            engine::tour::tour_exit,
             engine::starter::profile_for_app,
             engine::auto::auto_seen,
             engine::states::apps_seen,
@@ -295,6 +306,7 @@ pub fn run() {
             engine::gallery::dial_gallery,
             engine::commands::language_set,
             engine::commands::call_switch_set,
+            engine::commands::reduced_motion_set,
             engine::mcp::ai_prompt,
             engine::mcp::ai_build,
             engine::suggest::profile_fill,
@@ -404,6 +416,9 @@ pub fn run() {
             engine::plugins::stop();
             engine::usage::flush();
             engine::presses::flush();
+            // macOS: apps whose volume HubDeck set play straight again
+            #[cfg(target_os = "macos")]
+            engine::volume::release();
             log::info!("HubDeck stopped");
         }
     });

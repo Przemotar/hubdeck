@@ -10,6 +10,7 @@ What leaves your computer, and only when you use the feature:
 |---|---|
 | Checking for updates (on by default, Settings > Updates) | a request for the newest release to GitHub |
 | Shared profiles gallery | a download of the gallery list from GitHub |
+| Plugin catalog (Settings > Plugins) | the catalog list from openactionapi.github.io and its icons; on Install, the plugin file from its author's GitHub |
 | Weather, calendar, live values | requests to the addresses you set (Open-Meteo for weather) |
 | OBS, Home Assistant, Streamlabs, Spotify, Twitch | requests to those apps or services, with the access you gave them |
 | Stream Deck plugins | whatever each plugin does; they are separate programs |

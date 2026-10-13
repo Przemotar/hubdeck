@@ -31,12 +31,39 @@ const UPDATE = {
 
 const profiles = new Map<string, Profile>((fixture.profiles as unknown as Profile[]).map((p) => [p.id, p]));
 
+// the tour in the browser demo: the parts of a deck for the demo's kit (screenshots, flows)
+const tour = { draft: "demo-everyday", focus: "games", kit: "dialKnobs", mac: false, call: "discord", music: "Spotify", games: 12, rollers: true, stops: [] as { id: string; keep: boolean; look: number; looks: number; controls: string[]; tryControl: string | null }[] };
+function tourView(focus: string) {
+  const faders = demoParam("kit") === "faders";
+  tour.focus = focus;
+  tour.kit = faders ? "faders" : "dialKnobs";
+  const part = (id: string, looks: number, tryControl: string | null) => ({ id, keep: true, look: 0, looks, controls: tryControl ? [tryControl] : [], tryControl });
+  tour.stops = [
+    part("volume", 2, faders ? "faders.4" : "knobs.2"),
+    part(focus === "games" ? "games" : focus === "streaming" ? "streaming" : focus === "calls" ? "work" : focus === "music" ? "player" : "extras", 1, "keys.14"),
+    part("mute", 1, "keys.5"),
+    part("music", faders ? 1 : 2, faders ? "keys.8" : "dial"),
+    part("apps", 1, "keys.0"),
+    part("superAnimations", 1, "keys.9"),
+    part("superSaver", 1, null),
+    part("superRainbow", 1, null),
+  ];
+  return tour;
+}
+
+// `&kit=faders`: the kit with faders instead of the dial and the knobs (screenshots of both kits)
+const FADERS_KIT = demoParam("kit") === "faders";
+
 const deck: DeckSnapshot = {
   modules: [
     { id: "keys:DEMO-KEYS", kind: "keys", serial: "MHKD15DEMO0001", firmware: "02.00.01.00", slot: "2-3" },
     { id: "rollers:DEMO-ROLLERS", kind: "rollers", serial: "MHRR02DEMO0001", firmware: "01.00.03.01", slot: "3-3" },
-    { id: "dial:DEMO-DIAL", kind: "dial", serial: "MHDD01DEMO0001", firmware: "01.00.04.00", slot: "1-3-4" },
-    { id: "knobs:DEMO-KNOBS", kind: "knobs", serial: "MHKB03DEMO0001", firmware: "01.00.05.00", slot: "1-4-3" },
+    ...(FADERS_KIT
+      ? [{ id: "faders:DEMO-FADERS", kind: "faders" as const, serial: "MHFD05DEMO0001", firmware: "01.00.05.00", slot: "1-1-3" }]
+      : [
+          { id: "dial:DEMO-DIAL", kind: "dial" as const, serial: "MHDD01DEMO0001", firmware: "01.00.04.00", slot: "1-3-4" },
+          { id: "knobs:DEMO-KNOBS", kind: "knobs" as const, serial: "MHKB03DEMO0001", firmware: "01.00.05.00", slot: "1-4-3" },
+        ]),
   ],
   orientation: "horizontal",
   turn: 270,
@@ -56,6 +83,7 @@ const placements: Record<string, { col: number; row: number; rotation: number }>
 };
 
 let active = demoParam("profile") ?? "demo-obs";
+let page: string | null = null;
 let onboarded = new URLSearchParams(location.search).get("demo") !== "welcome" && demoParam("panel") !== "welcome";
 
 const state = (): EngineState => ({
@@ -67,7 +95,7 @@ const state = (): EngineState => ({
   pinned: false,
   autoSwitch: true,
   foreground: "obs64.exe",
-  page: null,
+  page,
   onboarded,
   playing: false,
 });
@@ -253,6 +281,48 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     })),
   iconpack_use: () => "demo.png",
   claude_connect: ({ on }) => Boolean(on),
+  tour_suggest: () => ({ focus: "games", games: 12, obs: true, call: "discord", music: "Spotify", kit: FADERS_KIT ? "faders" : "dialKnobs", mac: false }),
+  tour_start: ({ focus }) => tourView(focus as string),
+  tour_set: ({ stop, keep, look }) => {
+    const s = tour.stops.find((x) => x.id === stop);
+    if (s && keep !== null && keep !== undefined) s.keep = keep as boolean;
+    if (s && look !== null && look !== undefined) s.look = look as number;
+    return tour;
+  },
+  tour_sound: () => null,
+  tour_saver: () => null,
+  tour_highlight: () => null,
+  // key pages: made, renamed and shown like the engine does
+  page_create: ({ profile, name }) => {
+    const p = profiles.get(profile as string);
+    if (!p) return null;
+    const made = { id: `page-${Date.now().toString(36)}`, name: name as string };
+    p.pages = [...(p.pages ?? []), made];
+    changed();
+    return made;
+  },
+  page_rename: ({ profile, page: id, name }) => {
+    const p = profiles.get(profile as string);
+    const found = p?.pages?.find((x) => x.id === id);
+    if (found) found.name = name as string;
+    changed();
+  },
+  page_set: ({ page: id }) => {
+    page = (id as string | null) ?? null;
+    changed();
+  },
+  // `&nudge=unused`: the next-day card about a control of the tour's deck nobody touched
+  nudge_get: () => (demoParam("nudge") === "unused" ? { subject: "unused:knobs.2", kind: "unused", exe: "knobs.2", name: "Music", hours: 0, deck: "My deck · dial and knobs", since: "2026-10-13" } : null),
+  presses_counting: () => false,
+  reduced_motion_set: () => null,
+  tour_finish: ({ keep }) => (keep ? tour.draft : null),
+  tour_exit: () => null,
+  sd_catalog: () => [
+    { id: "me.amankhanna.oadiscord", name: "Discord", author: "nekename", description: "Mute, deafen and voice channels in the Discord desktop app", repository: "https://github.com/OpenActionPlugins/discord", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },
+    { id: "com.example.hue", name: "Philips Hue", author: "someone", description: "Turn Hue lights and scenes on and off, set brightness with a dial", repository: "https://github.com/example/hue", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },
+    { id: "com.example.clock", name: "World clock", author: "someone else", description: "Time zones on the keys", repository: "https://github.com/example/clock", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: true },
+  ],
+  sd_catalog_install: ({ id }) => id,
   gallery_list: () => {
     if (demoParam("gallery") === "offline") throw new Error("offline");
     return GALLERY;

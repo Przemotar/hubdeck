@@ -223,7 +223,7 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into()
 }
 
-fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {
     let mut response = agent().get(url).call().map_err(|e| e.to_string())?;
     response.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| e.to_string())
 }

@@ -23,6 +23,13 @@ const IDLE_RESCAN: Duration = Duration::from_secs(15);
 const BUSY_FOR: Duration = Duration::from_secs(10);
 /// After a failed open or init, wait this long before trying the same module again.
 const RETRY_AFTER: Duration = Duration::from_secs(2);
+/// macOS: after this many failed starts in a row, re-enumerate the module (as reseating it does),
+/// at most once a minute per kind of module.
+const RESET_AFTER_FAILURES: u32 = 3;
+const RESET_AT_MOST_EVERY: Duration = Duration::from_secs(60);
+
+/// Retry state per OS path: when to try again and how many starts failed in a row.
+type Backoff = HashMap<CString, (Instant, u32)>;
 
 struct Shared {
     modules: Mutex<BTreeMap<ModuleId, Arc<Module>>>,
@@ -119,8 +126,9 @@ fn scan_loop(shared: Arc<Shared>, ready: Sender<Result<()>>) {
         api.set_open_exclusive(false);
         info!("HID devices opened shared");
     }
-    let mut backoff: HashMap<CString, Instant> = HashMap::new();
-    scan_once(&shared, &mut api, &mut backoff);
+    let mut backoff: Backoff = HashMap::new();
+    let mut last_reset: HashMap<ModuleKind, Instant> = HashMap::new();
+    scan_once(&shared, &mut api, &mut backoff, &mut last_reset);
     let _ = ready.send(Ok(()));
     let notified = crate::notify::watch();
     let mut busy_until = Instant::now() + BUSY_FOR;
@@ -134,14 +142,14 @@ fn scan_loop(shared: Arc<Shared>, ready: Sender<Result<()>>) {
         let every = if busy { RESCAN } else { IDLE_RESCAN };
         if last_scan.elapsed() >= every && !shared.stop.load(Ordering::SeqCst) {
             last_scan = Instant::now();
-            scan_once(&shared, &mut api, &mut backoff);
+            scan_once(&shared, &mut api, &mut backoff, &mut last_reset);
             // a module that answered is done retrying
-            backoff.retain(|_, t| Instant::now() < *t + RETRY_AFTER * 5);
+            backoff.retain(|_, (t, _)| Instant::now() < *t + RETRY_AFTER * 5);
         }
     }
 }
 
-fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut HashMap<CString, Instant>) {
+fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last_reset: &mut HashMap<ModuleKind, Instant>) {
     if let Err(e) = api.reset_devices().and_then(|_| api.add_devices(VENDOR_ID, 0)) {
         warn!("enumerate: {e}");
         return;
@@ -156,23 +164,34 @@ fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut HashMap<CStri
         })
         .collect();
     for (kind, descriptor_serial, path) in found {
-        if lock(&shared.paths).contains_key(&path) || backoff.get(&path).is_some_and(|t| Instant::now() < *t) {
+        if lock(&shared.paths).contains_key(&path) || backoff.get(&path).is_some_and(|(t, _)| Instant::now() < *t) {
             continue;
         }
         let mut module = match api.open_path(&path) {
             Ok(device) => Module::new(kind, descriptor_serial, device),
             Err(e) => {
                 debug!("open {}: {e} (module still attaching?)", kind.name());
-                backoff.insert(path, Instant::now() + RETRY_AFTER);
+                let failures = backoff.get(&path).map_or(0, |b| b.1);
+                backoff.insert(path, (Instant::now() + RETRY_AFTER, failures));
                 continue;
             }
         };
         if let Err(e) = module.initialize() {
             warn!("init {}: {e}", kind.name());
-            let first_failure = !backoff.contains_key(&path);
-            backoff.insert(path, Instant::now() + RETRY_AFTER);
-            if first_failure && matches!(e, crate::Error::NoAnswer { .. }) {
+            let failures = backoff.get(&path).map_or(0, |b| b.1) + 1;
+            backoff.insert(path.clone(), (Instant::now() + RETRY_AFTER, failures));
+            if failures == 1 && matches!(e, crate::Error::NoAnswer { .. }) {
                 let _ = shared.tx.send(Event::Unresponsive(module.id.clone()));
+            }
+            // a module that keeps refusing its start is stuck in its firmware; on macOS bring it
+            // back the way reseating it does (the owner had to pull keys and dial off, 2026-10-13)
+            if cfg!(target_os = "macos") && failures >= RESET_AFTER_FAILURES && last_reset.get(&kind).is_none_or(|t| t.elapsed() >= RESET_AT_MOST_EVERY) {
+                last_reset.insert(kind, Instant::now());
+                drop(module);
+                match crate::recover::reenumerate(&path) {
+                    Ok(()) => info!("re-enumerated {} after {failures} failed starts", kind.name()),
+                    Err(e) => warn!("re-enumerate {}: {e}", kind.name()),
+                }
             }
             continue;
         }

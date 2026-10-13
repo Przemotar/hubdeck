@@ -532,10 +532,16 @@ pub enum Launch {
     Html(String),
 }
 
-pub fn launch(sd: &SdManifest, dir: &Path, port: u16, uuid: &str) -> Result<Launch, String> {
+/// Whether the plugin is made for this system (a plugin without a list of systems is tried).
+pub fn runs_here(sd: &SdManifest) -> Result<(), String> {
     if !sd.platforms.is_empty() && !sd.platforms.iter().any(|p| p == platform()) {
         return Err(format!("made for {} only", sd.platforms.join(" and ")));
     }
+    Ok(())
+}
+
+pub fn launch(sd: &SdManifest, dir: &Path, port: u16, uuid: &str) -> Result<Launch, String> {
+    runs_here(sd)?;
     let info = info(sd).to_string();
     let args = ["-port".to_string(), port.to_string(), "-pluginUUID".into(), uuid.to_string(), "-registerEvent".into(), "registerPlugin".into(), "-info".into(), info.clone()];
     let entry = inside(dir, &sd.code_path).ok_or("entry outside the plugin folder")?;

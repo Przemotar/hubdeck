@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS asks the user with these words (Tauri merges this file into the app's Info.plist) -->
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>HubDeck sets the volume of each app from your knobs and faders: it plays each app's sound at the level you turn to. Nothing is recorded or sent anywhere.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>HubDeck shows what Spotify or Music plays (cover, title) and controls playback from your deck.</string>
+</dict>
+</plist>

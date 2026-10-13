@@ -66,7 +66,9 @@ async function run(p) {
       await page.reload();
     }
     await page.locator(".lib-tabs .tab").nth(2).click();
-    await page.locator(".as-intro .tool.primary").click();
+    // the talk starts from "I know what I want" (the big button is the tour, which needs no AI)
+    await page.fill("#as-know", p.message);
+    await page.locator(".as-intro .row .tool").click();
     await page.locator(".as-consent").waitFor();
     await page.fill("#as-first", p.message);
     const t0 = Date.now();

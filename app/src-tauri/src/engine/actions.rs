@@ -168,7 +168,7 @@ pub fn catalog() -> Vec<ActionDef> {
                     json!("system"),
                 ),
                 ParamDef {
-                    help: Some("Executable name as in Task Manager, e.g. spotify.exe, chrome.exe, Discord.exe. Windows only."),
+                    help: Some("The program, e.g. spotify.exe, chrome.exe, Discord.exe (on a Mac the app's name works too: Spotify, Google Chrome). macOS: 14.2 or later, asks once for System Audio Recording."),
                     when: Some(("target", vec!["app"])),
                     ..p("app", "App", ParamKind::App, json!(""))
                 },

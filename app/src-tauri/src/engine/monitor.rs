@@ -165,6 +165,13 @@ pub fn watch(tx: Sender<Msg>) {
             sample.gpu_temp = device.temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu).ok().map(|t| t as f32);
             sample.vram = device.memory_info().ok().filter(|m| m.total > 0).map(|m| m.used as f32 / m.total as f32 * 100.0);
         }
+        // macOS: the CPU and GPU temperatures and the GPU load from the system's own sensors
+        #[cfg(target_os = "macos")]
+        {
+            sample.cpu_temp = super::machw::cpu_temp();
+            sample.gpu_temp = super::machw::gpu_temp();
+            sample.gpu = sample.gpu.or_else(super::machw::gpu_load);
+        }
         if WANT_LHM.load(Ordering::Relaxed) {
             #[cfg(windows)]
             {
@@ -193,6 +200,9 @@ pub fn watch(tx: Sender<Msg>) {
         }
         if std::mem::take(&mut first) {
             log::info!("system monitor running: {sample:?}");
+            // the sensor names differ by chip: the log says what this Mac has
+            #[cfg(target_os = "macos")]
+            log::info!("temperature sensors: {}", super::machw::sensor_names().join(", "));
         }
         if tx.send(Msg::Metrics(sample)).is_err() {
             return;

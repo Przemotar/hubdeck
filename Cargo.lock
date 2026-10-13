@@ -2345,6 +2345,7 @@ version = "0.1.0"
 dependencies = [
  "active-win-pos-rs",
  "base64 0.22.1",
+ "cc",
  "chrono",
  "crossbeam-channel",
  "enigo",
@@ -3194,6 +3195,7 @@ dependencies = [
 name = "mh-device"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "core-foundation-sys",
  "crossbeam-channel",
  "env_logger",

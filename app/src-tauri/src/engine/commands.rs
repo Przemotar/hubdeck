@@ -863,6 +863,18 @@ pub fn call_switch_set(engine: State<'_, Engine>, on: bool) -> Res<()> {
     Ok(())
 }
 
+/// Settings: less movement on the deck and in the window.
+#[tauri::command]
+pub fn reduced_motion_set(engine: State<'_, Engine>, on: bool) -> Res<()> {
+    {
+        let mut s = engine.lock();
+        s.store.settings.reduced_motion = Some(on);
+        s.store.save_settings().map_err(io)?;
+    }
+    engine.changed();
+    Ok(())
+}
+
 /// The window's language, for the words the deck shows (`en` or `pl`).
 #[tauri::command]
 pub fn language_set(engine: State<'_, Engine>, language: String) -> Res<()> {

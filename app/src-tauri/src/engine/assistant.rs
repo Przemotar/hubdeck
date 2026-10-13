@@ -248,7 +248,7 @@ pub fn sketch_profile(idea: &Idea) -> (Option<Profile>, Vec<String>) {
 /// covers and showed only text; keys named "Visual Studio Code" could not open): a name becomes
 /// the installed app's or game's target, and a key without a picture gets the app's icon or the
 /// game's cover at once.
-fn with_real_apps(p: &mut Profile) {
+pub(crate) fn with_real_apps(p: &mut Profile) {
     let is_target = |t: &str| t.contains("://") || t.contains('\\') || t.contains('/') || t.starts_with("shell:");
     for b in p.controls.values_mut() {
         // a key with only a label looks unfinished (owner: "same teksty"): its action's icon
@@ -413,7 +413,7 @@ pub fn app_name(exe: &str) -> String {
         })
 }
 
-fn top_apps(have_profile: &[String], n: usize) -> Vec<(String, String, Option<String>)> {
+pub(crate) fn top_apps(have_profile: &[String], n: usize) -> Vec<(String, String, Option<String>)> {
     let mut list: Vec<(String, String, Option<String>, bool)> = super::usage::top(30)
         .into_iter()
         .filter(|(exe, h, _)| *h >= 0.05 && !not_for_a_deck(exe))

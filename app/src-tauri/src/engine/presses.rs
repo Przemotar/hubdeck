@@ -106,6 +106,15 @@ pub fn counts(profile: &str) -> Vec<(String, Count)> {
     list
 }
 
+/// Forget one profile's counts (the tour's deck starts counting when it is kept, not while tried).
+pub fn forget_profile(profile: &str) {
+    with(|s| {
+        if s.counts.remove(profile).is_some() {
+            save(s);
+        }
+    });
+}
+
 /// Forget every count (the switch turned off asks for it).
 pub fn forget() {
     with(|s| {

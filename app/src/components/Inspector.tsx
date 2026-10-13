@@ -1151,7 +1151,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
               def={p}
               value={draft.params[p.key]}
               view={view}
-              onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v } })}
+              onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: namedLabel(draft, p.key, v, view) ?? draft.look.label } })}
               onPicked={(v, look) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: look.label, ...(look.image ? { image: look.image } : {}), ...(look.icon ? { icon: look.icon, image: undefined } : {}) } })}
             />
           ))}
@@ -1215,4 +1215,19 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
       </details>
     </aside>
   );
+}
+
+/**
+ * A key that goes to a page or a profile takes its name, while the label is still the action's own
+ * word or an earlier such name ("Go" became "Games"; found by scripts/ui/tasks.mjs). None = keep.
+ */
+function namedLabel(draft: Binding, key: string, value: unknown, view: EngineView): string | undefined {
+  const pages = view.profile?.pages ?? [];
+  const profiles = view.state?.profiles ?? [];
+  const nameOf = draft.action === "core.page" && key === "page" ? (id: unknown) => (id ? pages.find((x) => x.id === id)?.name : t("pages.main")) : draft.action === "core.profile" && key === "profile" ? (id: unknown) => profiles.find((x) => x.id === id)?.name : null;
+  if (!nameOf) return undefined;
+  const label = draft.look.label ?? "";
+  const def = view.catalog?.actions.find((x) => x.id === draft.action);
+  const auto = !label || (!!def && [newBinding(def), newBinding(localizeAction(def))].some((b) => b.look.label === label)) || label === nameOf(draft.params[key]);
+  return auto ? nameOf(value) : undefined;
 }

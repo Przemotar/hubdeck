@@ -13,6 +13,8 @@ import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
 import { ArrangePanel, Banner, BaseTurnPicker, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, TopBar, Welcome } from "./components/Panels";
 import { Builder } from "./components/Builder";
+import { Tour } from "./components/Tour";
+import { askAssistant } from "./components/Assistant";
 import { Icon } from "./components/Icon";
 import { CalibrationPanel } from "./components/Calibration";
 import { detachedKinds, placeModules, placementKey, usePlacements } from "./layout";
@@ -34,6 +36,14 @@ export default function App() {
   }, [lang]);
   const live = useDeck();
   const view = useEngine();
+  // less movement: the setting, taken from the system the first time
+  const reducedMotion = view.state?.reducedMotion;
+  useEffect(() => {
+    if (!view.state || !("__TAURI_INTERNALS__" in window)) return;
+    if (reducedMotion == null && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) api.reducedMotionSet(true).catch(() => {});
+    document.documentElement.classList.toggle("reduce-motion", reducedMotion === true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedMotion, !!view.state]);
   const [selected, setSelected] = useState<ControlRef | null>(null);
   const [arranging, setArranging] = useState(false);
   const [profileOpen, setProfileOpen] = useState(DEMO_PANEL === "profile");
@@ -78,6 +88,8 @@ export default function App() {
   const [setupAway, setSetupAway] = useState(false);
   // "Build my deck step by step" (layout A): a page of its own
   const [builderOpen, setBuilderOpen] = useState(DEMO_PANEL === "builder");
+  // the tour (show, then ask, then build): a page of its own
+  const [tourOpen, setTourOpen] = useState(DEMO_PANEL === "tour");
   const setupPending = !!view.state && !view.state.onboarded;
   const setupShown = setupPending && !setupAway && !arranging && !calibrating && !settingsOpen;
   const awayFromSetup = (then: () => void) => (setSetupAway(true), then());
@@ -135,7 +147,19 @@ export default function App() {
         onOpenProfiles={() => setLeftTab("profiles")}
         onOpenConnections={() => (setSettingsSection("connections"), setSettingsOpen(true))}
       />
-      {builderOpen ? (
+      {tourOpen ? (
+        <main className="workspace">
+          <Tour
+            live={live}
+            view={view}
+            saved={saved}
+            onPlace={save}
+            onClose={() => setTourOpen(false)}
+            onBuild={() => (setTourOpen(false), setBuilderOpen(true))}
+            onAsk={(message) => (setTourOpen(false), setLeftTab("assistant"), askAssistant(message))}
+          />
+        </main>
+      ) : builderOpen ? (
         <main className="workspace">
           <Builder live={live} view={view} saved={saved} onPlace={save} onClose={() => setBuilderOpen(false)} />
         </main>
@@ -150,6 +174,7 @@ export default function App() {
             kinds={kinds}
             onForApp={() => awayFromSetup(() => setForAppOpen(true))}
             onBrowse={() => awayFromSetup(() => setNewRequest((n) => n + 1))}
+            onTour={() => awayFromSetup(() => setTourOpen(true))}
           />
         </main>
       ) : settingsOpen && !calibrating ? (
@@ -158,7 +183,7 @@ export default function App() {
         </main>
       ) : (
       <main className={`workspace${arranging ? " is-arranging" : ""}`}>
-        <LeftPanel view={view} selected={selected} tab={leftTab} onTab={setLeftTab} onBuild={() => setBuilderOpen(true)} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
+        <LeftPanel view={view} selected={selected} tab={leftTab} onTab={setLeftTab} onBuild={() => setBuilderOpen(true)} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
         <section className="center">
           <div className="stage-bar">
             {!arranging && live.deck.modules.some((m) => m.kind === "keys") && <PageBar view={view} />}

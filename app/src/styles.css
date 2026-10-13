@@ -2640,11 +2640,18 @@ button.chip.is-active {
 .more-looks[open] > summary {
   margin-bottom: 10px;
 }
-/* opens toward the deck: the inspector is the window's right edge */
+/* as wide as the look's head, under it: the inspector scrolls, so anything sticking out of it is cut
+   (a 300px popover anchored to the button lost its left side, found by scripts/ui/tasks.mjs) */
+.look-head {
+  position: relative;
+}
+.look-head .pop-anchor {
+  position: static;
+}
 .popover.icon-popover {
-  left: auto;
+  left: 0;
   right: 0;
-  width: 300px;
+  width: auto;
   max-height: 420px;
   padding: 12px;
 }
@@ -3749,4 +3756,452 @@ button.chip.is-active {
   .builder-side {
     width: 240px;
   }
+}
+
+/* Settings > Plugins > Plugin catalog */
+.card.catalog-item {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+.catalog-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--bg3, var(--bg2));
+}
+.catalog-err {
+  color: var(--err);
+}
+.catalog-item .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- the tour (show, then ask, then build; owner's layout 2A) ---------- */
+.tour-page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg1);
+}
+.tour-head .tour-made-for {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--tx2);
+}
+.tour-focus {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 32px;
+}
+.tour-focus-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  max-width: 720px;
+}
+.tour-focus-head h3 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.tour-focus-head p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.tour-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  width: min(1120px, 100%);
+}
+.tour-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid var(--ln2);
+  background: var(--bg2);
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tour-tile:hover {
+  background: var(--bg3);
+}
+.tour-tile.is-on {
+  border-color: var(--acc);
+  background: var(--accbg);
+  box-shadow: 0 0 0 3px var(--accring);
+}
+.tour-tile b {
+  font-size: 16px;
+}
+.tour-tile span {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--tx2);
+}
+.tour-tile .i {
+  width: 22px;
+  height: 22px;
+  color: var(--acc2);
+}
+.tour-suggested {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--acc);
+  color: var(--acctx);
+}
+.tour-focus-foot {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tour-go {
+  height: 44px;
+  padding: 0 26px;
+  font-size: 14px;
+}
+.tour-warn {
+  color: var(--warntx);
+}
+.tour-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.tour-parts {
+  width: 270px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--ln);
+  overflow-y: auto;
+}
+.tour-parts-title {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+  padding: 0 8px 8px;
+}
+.tour-part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 4px;
+  border-radius: 8px;
+}
+.tour-part.is-current {
+  background: var(--accbg);
+}
+.tour-part-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 6px;
+  border: 0;
+  background: none;
+  color: var(--tx2);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.tour-part.is-current .tour-part-name {
+  color: var(--tx);
+  font-weight: 500;
+}
+.tour-part-name .i {
+  color: var(--ok);
+  width: 14px;
+  height: 14px;
+}
+.tour-toggle {
+  margin: 0;
+}
+.tour-parts-help {
+  margin-top: auto;
+  padding: 10px 8px 0;
+}
+.tour-stop {
+  width: 470px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px 32px 24px;
+  overflow-y: auto;
+}
+.tour-stop h3 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.tour-count {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--acc2);
+}
+.tour-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.tour-try {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+}
+.tour-label {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+}
+.tour-try-text {
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.tour-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.tour-wait {
+  font-size: 13px;
+  color: var(--tx3);
+}
+.tour-looks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tour-look {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid var(--ln2);
+  background: var(--bg2);
+  color: var(--tx);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tour-look.is-on {
+  border-color: var(--acc);
+  background: var(--accbg);
+}
+.tour-nav {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tour-nav .tool.primary {
+  margin-left: auto;
+  height: 40px;
+  padding: 0 22px;
+}
+.tour-keep {
+  margin: 0;
+}
+.tour-deck {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  background: var(--stagebg);
+}
+.tour-deck .builder-deck,
+.tour-end-deck {
+  width: 100%;
+  height: auto;
+  flex: 1;
+  max-height: 560px;
+}
+.tour-deck .dk-shelf,
+.tour-end-deck .dk-shelf {
+  display: none;
+}
+.tour-live {
+  font-size: 12.5px;
+  color: var(--ok);
+}
+.tour-super {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tour-super-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+}
+.tour-super-item > .i {
+  color: var(--acc2);
+  margin-top: 2px;
+}
+.tour-super-item .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tour-end {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.tour-end-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px;
+  overflow-y: auto;
+  background: var(--stagebg);
+}
+.tour-end-main h3 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+}
+.tour-end-actions {
+  justify-content: center;
+}
+.tour-count-use {
+  max-width: 520px;
+}
+.tour-end-ask {
+  width: 340px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px 20px;
+  border-left: 1px solid var(--ln);
+}
+
+/* the Assistant tab's start: one way in */
+.as-lets {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.as-show {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: auto;
+  padding: 14px 16px;
+  text-align: left;
+}
+.as-show-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.as-show-words small {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.as-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--tx3);
+}
+.as-or::before,
+.as-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--ln2);
+}
+.as-details summary {
+  font-size: 12.5px;
+  color: var(--tx3);
+  cursor: pointer;
+}
+.as-details[open] summary {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 1100px) {
+  .tour-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tour-parts {
+    width: 220px;
+  }
+  .tour-stop {
+    width: 380px;
+  }
+}
+
+/* Settings > Reduce motion: nothing in the window moves (the system's setting is taken the first time) */
+:root.reduce-motion *,
+:root.reduce-motion *::before,
+:root.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

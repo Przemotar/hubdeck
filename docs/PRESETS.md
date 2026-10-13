@@ -24,6 +24,35 @@ A preset is a ready-made profile for one app or workflow that adapts to the modu
   the app in front, with a universal fallback; profiles are shared as files or through a marketplace.
   Paid profiles sell well for DaVinci Resolve and for flight-sim autopilot panels.
 
+## What Stream Deck owners install (Elgato Marketplace, 2026-10-13)
+
+Measured, not guessed: the marketplace's public product list sorted by downloads
+(`mp-gateway.elgato.com/products?extension=plugins&ordering=-download_count`; 1530 plugins, 995
+profiles). By theme, in the order the downloads put them:
+
+1. **Volume per app and audio** (the most downloaded plugin of all): Volume Controller (1), Audio
+   Switcher (10), Audio Mute (15), Discord Volume Mixer (22), Audio Mixer (35), VoiceMeeter (47), Wave
+   Link, GoXLR. The MasterHUB's knobs and faders do this natively: our strongest first impression.
+2. **Streaming**: OBS Studio (2), Twitch (7), YouTube (8), OBS Tools, Twitch Tools, Streamlabs (18,
+   30), TikTok LIVE Studio, stream counters and timers, VTube Studio, Camera Hub.
+3. **Voice and calls**: Discord (3), Voicemod (4), Zoom; profiles: Discord (2), Zoom (4), Teams (6).
+4. **Music**: Spotify Integration (5), Spotify (9), Essentials for Spotify, YouTube Music, VLC.
+5. **Windows tools and app shortcuts**: Control Center (6), Win Tools, SuperMacro, window movers,
+   Advanced Launcher; profiles: Windows 11 Essentials (3), Excel, Word, Chrome, Mac shortcuts,
+   PowerPoint, VS Code.
+6. **Live information**: Clocks (13), Weather (17), Speed Test, System Vitals, GPU Metrics, Battery,
+   World Time.
+7. **Games**: the most downloaded profile is Helldivers 2 stratagems; ShadowPlay and Xbox Game Bar
+   (clips), Star Citizen, World of Warcraft, Cyberpunk 2077, Arc Raiders profiles.
+8. **Smart home and lights**: Home Assistant (28), Philips Hue (36), Govee, iCUE.
+9. **Fun**: soundboards (Sound Deck, Soundpad, random sounds), an emoji keyboard, Tamagotchi
+   profiles. AI prompt profiles exist but are niche (rank ~30 among profiles).
+
+What this means for the assistant's tour (owner, 2026-10-13: build for what users usually do, not
+for the owner's own setup): the stops follow this order, each one shown only when it fits the
+person (a streaming stop only with OBS, Streamlabs or a streaming app installed; games only with
+games found; Claude Code agents only with Claude Code), filled with their own apps.
+
 ## How presets work in masterhub
 
 1. **Built in, free, editable**: every preset is an ordinary profile the user can change.

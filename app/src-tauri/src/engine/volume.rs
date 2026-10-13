@@ -1,5 +1,5 @@
 //! System and per-app volume. Windows: WASAPI (endpoint volume and audio sessions).
-//! macOS: system volume through AppleScript; macOS has no per-app volume API.
+//! macOS: system volume through Core Audio; per-app volume through process taps (macOS 14.2+).
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Target {
@@ -19,6 +19,12 @@ pub fn mic_users() -> Vec<String> {
 }
 
 /// Call once on the thread that will use this module (COM on Windows).
+/// HubDeck quits: macOS apps whose volume it set (process taps) play straight again.
+#[cfg(target_os = "macos")]
+pub fn release() {
+    platform::release();
+}
+
 pub fn init_thread() {
     platform::init_thread();
 }
@@ -337,8 +343,24 @@ mod platform {
 
     pub fn init_thread() {}
 
+    /// macOS does not say which program records the microphone, only whether one does: then the
+    /// call apps that run (their usual names, `zoom`, `ms-teams`, `discord`, browsers last) stand in
+    /// for "who records it", which is what call detection needs.
     pub fn mic_users() -> Vec<String> {
-        Vec::new()
+        if !coreaudio::input_in_use() {
+            return Vec::new();
+        }
+        let mut names: Vec<String> = running_apps().into_iter().map(|n| crate::engine::profile::app_stem(&n)).collect();
+        let browser = |n: &String| ["chrome", "msedge", "firefox", "brave", "opera", "safari", "arc"].contains(&n.as_str());
+        names.sort_by_key(|n| browser(n));
+        names
+    }
+
+    /// The names of the apps running now (NSWorkspace).
+    fn running_apps() -> Vec<String> {
+        use objc2_app_kit::NSWorkspace;
+        let workspace = NSWorkspace::sharedWorkspace();
+        workspace.runningApplications().iter().filter_map(|a| a.localizedName().map(|n| n.to_string())).collect()
     }
 
     pub fn with_popup(level: f32, _up: bool) {
@@ -356,12 +378,100 @@ mod platform {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
-    fn system_only(target: &Target) -> Result<(), String> {
-        match target {
-            Target::System => Ok(()),
-            Target::Mic => Err("microphone level is not available on macOS yet".into()),
-            Target::App(_) | Target::Others(_) => Err("per-app volume is not available on macOS".into()),
+    /// Per-app volume through Core Audio process taps (`src/macos/appvolume.m`, macOS 14.2+).
+    mod appvol {
+        use std::collections::HashMap;
+        use std::ffi::{CString, c_char};
+        use std::sync::Mutex;
+
+        use super::Target;
+
+        unsafe extern "C" {
+            fn mh_appvol_set(key: *const c_char, needles: *const c_char, others: i32, gain: f32) -> i32;
+            fn mh_appvol_get(key: *const c_char) -> f32;
+            fn mh_appvol_reset();
         }
+
+        /// What to look for in an app's bundle id or name: its usual name ("spotify") and how the
+        /// Mac version is called where that differs ("chrome" plays from com.google.Chrome.helper).
+        pub fn needles(app: &str) -> Vec<String> {
+            let stem = crate::engine::profile::app_stem(app);
+            let mut out = vec![stem.clone()];
+            let extra: &[&str] = match stem.as_str() {
+                "msedge" => &["edgemac", "microsoft edge"],
+                "ms-teams" | "teams" => &["teams"],
+                "obs64" => &["obs"],
+                "zoom" => &["zoom.us"],
+                "code" => &["vscode"],
+                "windowsterminal" => &["terminal", "iterm"],
+                _ => &[],
+            };
+            out.extend(extra.iter().map(|e| e.to_string()));
+            out
+        }
+
+        fn key_and_needles(target: &Target) -> (String, Vec<String>, bool) {
+            match target {
+                Target::App(app) => (format!("app:{}", crate::engine::profile::app_stem(app)), needles(app), false),
+                Target::Others(apps) => ("others".to_string(), apps.iter().flat_map(|a| needles(a)).collect(), true),
+                _ => (String::new(), Vec::new(), false),
+            }
+        }
+
+        pub fn set(target: &Target, level: f32) -> Result<(), String> {
+            let (key, needles, others) = key_and_needles(target);
+            let key = CString::new(key).map_err(|e| e.to_string())?;
+            let needles = CString::new(needles.join("\n")).map_err(|e| e.to_string())?;
+            // SAFETY: NUL-terminated strings we own, alive for the call.
+            match unsafe { mh_appvol_set(key.as_ptr(), needles.as_ptr(), i32::from(others), level.clamp(0.0, 1.0)) } {
+                0 => Ok(()),
+                1 => Err("that app is not playing sound now".into()),
+                2 => Err("per-app volume needs macOS 14.2 or later".into()),
+                3 => Err("allow HubDeck in System Settings > Privacy & Security > Screen & System Audio Recording (System Audio Recording only)".into()),
+                _ => Err("the sound output would not start for per-app volume".into()),
+            }
+        }
+
+        pub fn get(target: &Target) -> f32 {
+            let (key, _, _) = key_and_needles(target);
+            let Ok(key) = CString::new(key) else { return 1.0 };
+            // SAFETY: as above.
+            unsafe { mh_appvol_get(key.as_ptr()) }
+        }
+
+        /// The level before a mute, to go back to.
+        static BEFORE: Mutex<Option<HashMap<String, f32>>> = Mutex::new(None);
+
+        pub fn toggle_mute(target: &Target) -> Result<bool, String> {
+            let (key, _, _) = key_and_needles(target);
+            let now = get(target);
+            let mut before = BEFORE.lock().unwrap_or_else(|e| e.into_inner());
+            let map = before.get_or_insert_with(HashMap::new);
+            if now > 0.001 {
+                map.insert(key, now);
+                set(target, 0.0)?;
+                Ok(true)
+            } else {
+                set(target, map.remove(&key).unwrap_or(1.0))?;
+                Ok(false)
+            }
+        }
+
+        /// Every app back to playing straight (HubDeck quits).
+        pub fn reset() {
+            // SAFETY: no arguments; it stops and removes what it made.
+            unsafe { mh_appvol_reset() }
+        }
+    }
+
+    /// HubDeck quits: apps whose volume it set play straight again.
+    pub fn release() {
+        appvol::reset();
+    }
+
+    fn mic_level() -> Result<f32, String> {
+        let v: f32 = osascript("input volume of (get volume settings)")?.parse().map_err(|_| "unexpected input volume".to_string())?;
+        Ok(v / 100.0)
     }
 
     /// Microphone input volume before we muted it, to restore on unmute.
@@ -370,15 +480,17 @@ mod platform {
     pub fn is_muted(target: &Target) -> Result<bool, String> {
         match target {
             Target::Mic => Ok(osascript("input volume of (get volume settings)")? == "0"),
-            _ => {
-                system_only(target)?;
-                Ok(osascript("output muted of (get volume settings)")? == "true")
-            }
+            Target::App(_) | Target::Others(_) => Ok(appvol::get(target) <= 0.001),
+            Target::System => Ok(osascript("output muted of (get volume settings)")? == "true"),
         }
     }
 
     pub fn get(target: &Target) -> Result<f32, String> {
-        system_only(target)?;
+        match target {
+            Target::App(_) | Target::Others(_) => return Ok(appvol::get(target)),
+            Target::Mic => return mic_level(),
+            Target::System => {}
+        }
         if let Some(v) = coreaudio::volume() {
             return Ok(v);
         }
@@ -387,7 +499,11 @@ mod platform {
     }
 
     pub fn set(target: &Target, level: f32) -> Result<(), String> {
-        system_only(target)?;
+        match target {
+            Target::App(_) | Target::Others(_) => return appvol::set(target, level),
+            Target::Mic => return osascript(&format!("set volume input volume {}", (level.clamp(0.0, 1.0) * 100.0).round() as i32)).map(|_| ()),
+            Target::System => {}
+        }
         if coreaudio::set_volume(level.clamp(0.0, 1.0)) {
             return Ok(());
         }
@@ -412,6 +528,8 @@ mod platform {
         }
         const SYSTEM_OBJECT: u32 = 1;
         const DEFAULT_OUTPUT: u32 = code(b"dOut");
+        const DEFAULT_INPUT: u32 = code(b"dIn ");
+        const RUNNING_SOMEWHERE: u32 = code(b"gone");
         const SCOPE_GLOBAL: u32 = code(b"glob");
         const SCOPE_OUTPUT: u32 = code(b"outp");
         const VIRTUAL_MAIN_VOLUME: u32 = code(b"vmvc");
@@ -433,6 +551,23 @@ mod platform {
             // SAFETY: a plain property read into a u32 we own, with its size.
             let status = unsafe { AudioObjectGetPropertyData(SYSTEM_OBJECT, &address, 0, std::ptr::null(), &mut size, (&mut device as *mut u32).cast()) };
             (status == 0 && device != 0).then_some(device)
+        }
+
+        /// Some program records the default microphone now.
+        pub fn input_in_use() -> bool {
+            let address = Address { selector: DEFAULT_INPUT, scope: SCOPE_GLOBAL, element: 0 };
+            let mut device = 0u32;
+            let mut size = std::mem::size_of::<u32>() as u32;
+            // SAFETY: plain property reads into u32s we own, with their sizes.
+            let status = unsafe { AudioObjectGetPropertyData(SYSTEM_OBJECT, &address, 0, std::ptr::null(), &mut size, (&mut device as *mut u32).cast()) };
+            if status != 0 || device == 0 {
+                return false;
+            }
+            let address = Address { selector: RUNNING_SOMEWHERE, scope: SCOPE_GLOBAL, element: 0 };
+            let mut running = 0u32;
+            let mut size = std::mem::size_of::<u32>() as u32;
+            let status = unsafe { AudioObjectGetPropertyData(device, &address, 0, std::ptr::null(), &mut size, (&mut running as *mut u32).cast()) };
+            status == 0 && running != 0
         }
 
         pub fn volume() -> Option<f32> {
@@ -479,7 +614,9 @@ mod platform {
             osascript(&format!("set volume input volume {}", before.take().unwrap_or_else(|| "75".into())))?;
             return Ok(false);
         }
-        system_only(target)?;
+        if matches!(target, Target::App(_) | Target::Others(_)) {
+            return appvol::toggle_mute(target);
+        }
         let muted = osascript("output muted of (get volume settings)")? != "true";
         osascript(&format!("set volume output muted {muted}"))?;
         Ok(muted)

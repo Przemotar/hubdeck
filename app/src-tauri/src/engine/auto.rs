@@ -157,7 +157,8 @@ pub fn at_start(app: &AppHandle) {
         }
         let mut made = 0;
         for item in installed::list(false).apps {
-            let Some(exe) = item.exe.rsplit(['\\', '/']).next().filter(|e| e.to_lowercase().ends_with(".exe")).map(str::to_string) else { continue };
+            // the program: `Discord.exe` on Windows, `Discord.app` on a Mac (the preset matches both)
+            let Some(exe) = item.exe.rsplit(['\\', '/']).find(|e| !e.is_empty()).filter(|e| e.to_lowercase().ends_with(".exe") || e.to_lowercase().ends_with(".app")).map(str::to_string) else { continue };
             if let Some(mut found) = consider(&engine, &exe, "", false) {
                 found.target = item.target.clone();
                 found.picture = Some(item.clone());

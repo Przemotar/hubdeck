@@ -20,6 +20,7 @@ mod hub;
 pub mod location;
 mod module;
 mod notify;
+pub mod recover;
 
 pub use events::{Event, ModuleId};
 pub use hub::Hub;

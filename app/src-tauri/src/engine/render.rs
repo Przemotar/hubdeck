@@ -129,6 +129,16 @@ pub fn with_caption(svg: &str, caption: &str, rotation: i32) -> String {
     }
 }
 
+/// A ring around the dial's edge on top of what it shows (the tour points at the dial with it).
+pub fn with_ring(svg: &str, color: &str) -> String {
+    let c = DIAL_PX as f32 / 2.0;
+    let ring = format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="{color}" stroke-width="12"/>"##, r = c - 6.0);
+    match svg.rfind("</svg>") {
+        Some(end) => format!("{}{ring}</svg>", &svg[..end]),
+        None => svg.to_string(),
+    }
+}
+
 /// Settings > Screens: how app icons on Auto show (`icon`, `fill`, `fillLabel`).
 static APP_ICONS: std::sync::Mutex<&'static str> = std::sync::Mutex::new("icon");
 

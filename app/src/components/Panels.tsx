@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { actionFits, api, controlId, GAMES_ENABLED, POPULAR_ACTIONS, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Metric, type Moved, type PluginInfo, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { actionFits, api, controlId, GAMES_ENABLED, POPULAR_ACTIONS, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -70,7 +70,7 @@ export const Logo = () => (
 export type LeftTab = "actions" | "profiles" | "assistant";
 
 /** The left column: the action library and the profiles list as two tabs, so neither covers the inspector. */
-export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProfile, onBuild }: { view: EngineView; selected: ControlRef | null; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void }) {
+export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProfile, onBuild, onTour }: { view: EngineView; selected: ControlRef | null; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void; onTour?: () => void }) {
   useLanguage();
   // HubDeck's own suggestion (an app without a deck): a dot on the Assistant tab, looked at now and then
   const nudge = useNudge();
@@ -99,15 +99,7 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
       ) : tab === "profiles" ? (
         <ProfilesList view={view} onOpenProfile={onOpenProfile} onNewProfile={onNewProfile} />
       ) : (
-        <>
-          {onBuild && (
-            <button className="tool primary builder-entry" onClick={onBuild}>
-              <Icon name="sparkles" />
-              {t("builder.open")}
-            </button>
-          )}
-          <AssistantPanel view={view} />
-        </>
+        <AssistantPanel view={view} onTour={onTour} onBuild={onBuild} />
       )}
     </aside>
   );
@@ -1304,7 +1296,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
                   <option value="pl">Polski</option>
                 </select>
               </section>
-              <Appearance />
+              <Appearance view={view} />
               <SwitchingSettings view={view} />
               <ProfilesFolder />
             </>
@@ -1450,7 +1442,7 @@ function LightsSettings() {
   );
 }
 
-function Appearance() {
+function Appearance({ view }: { view: EngineView }) {
   useLanguage();
   const theme = useTheme();
   const options: [Theme, Key][] = [
@@ -1469,6 +1461,15 @@ function Appearance() {
         ))}
       </div>
       <p className="help">{t("theme.help")}</p>
+      {view.state && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={view.state.reducedMotion === true} onChange={(e) => api.reducedMotionSet(e.target.checked)} />
+            {t("settings.reducedMotion")}
+          </label>
+          <p className="help">{t("settings.reducedMotionHelp")}</p>
+        </>
+      )}
     </section>
   );
 }
@@ -2665,6 +2666,7 @@ function PluginsList() {
         <p className="help">{t("plugins.sdHelp")}</p>
         {message && <p className="help">{message}</p>}
       </section>
+      <SdCatalog installed={new Set(plugins.map((p) => p.id))} onInstalled={() => api.plugins().then(setPlugins, () => {})} />
       <section className="sec">
         <h3 className="sec-title">
           {t("plugins.installed")} <span className="n">{plugins.length}</span>
@@ -2710,6 +2712,93 @@ function PluginsList() {
         )}
       </section>
     </>
+  );
+}
+
+/** How many catalog plugins show before the user searches. */
+const CATALOG_SHOWN = 30;
+
+/** The open-source plugin catalog (Settings > Plugins): fetched only when asked, search, Install. */
+function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInstalled: () => void }) {
+  useLanguage();
+  const [list, setList] = useState<CatalogPlugin[] | "loading" | "offline" | null>(null);
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState<Record<string, "installing" | string>>({});
+  const load = () => {
+    setList("loading");
+    api.sdCatalog().then(setList, () => setList("offline"));
+  };
+  const install = (p: CatalogPlugin) => {
+    setState((s) => ({ ...s, [p.id]: "installing" }));
+    api.sdCatalogInstall(p.id).then(
+      () => (setState((s) => ({ ...s, [p.id]: "" })), onInstalled()),
+      (e) => setState((s) => ({ ...s, [p.id]: localizeError(String(e)) })),
+    );
+  };
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const found = Array.isArray(list) ? list.filter((p) => words.every((w) => `${p.name} ${p.author} ${p.description}`.toLowerCase().includes(w))) : [];
+  return (
+    <section className="sec">
+      <h3 className="sec-title">{t("plugins.catalog")}</h3>
+      <p className="help">{t("plugins.catalogHelp")}</p>
+      {list === null ? (
+        <button className="tool align-start" onClick={load}>
+          <Icon name="search" />
+          {t("plugins.catalogOpen")}
+        </button>
+      ) : list === "loading" ? (
+        <p className="help">{t("plugins.catalogLoading")}</p>
+      ) : list === "offline" ? (
+        <div className="row wrap">
+          <p className="help grow">{t("plugins.catalogOffline")}</p>
+          <button className="tool small" onClick={load}>
+            <Icon name="refresh-cw" />
+            {t("gallery.retry")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <input className="input" type="search" placeholder={t("plugins.catalogSearch")} aria-label={t("plugins.catalogSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
+          {found.length === 0 ? (
+            <p className="help">{t("plugins.catalogNone")}</p>
+          ) : (
+            <ul className="cards">
+              {found.slice(0, CATALOG_SHOWN).map((p) => {
+                const s = state[p.id];
+                return (
+                  <li key={p.id} className="card catalog-item">
+                    <img className="catalog-icon" src={p.icon} alt="" loading="lazy" onError={(e) => (e.currentTarget.style.visibility = "hidden")} />
+                    <div className="grow">
+                      <div className="row">
+                        <strong className="grow">{p.name}</strong>
+                        {installed.has(p.id) ? (
+                          <span className="pill is-ok">{t("plugins.isInstalled")}</span>
+                        ) : (
+                          <button className="tool small" disabled={s === "installing"} onClick={() => install(p)}>
+                            <Icon name="download" />
+                            {s === "installing" ? t("plugins.installing") : t("plugins.install")}
+                          </button>
+                        )}
+                      </div>
+                      <div className="help">{p.description}</div>
+                      <div className="meta">
+                        <span>{t("plugins.byAuthor", { author: p.author })}</span>
+                        {p.aiAssisted && <span>{t("plugins.aiAssisted")}</span>}
+                        <button className="link" onClick={() => api.openLink(p.repository).catch(() => {})}>
+                          {t("plugins.source")}
+                        </button>
+                      </div>
+                      {s && s !== "installing" && <div className="help catalog-err">{s}</div>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {found.length > CATALOG_SHOWN && <p className="help">{t("plugins.catalogMore", { shown: CATALOG_SHOWN, count: found.length })}</p>}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -2828,7 +2917,7 @@ export function GalleryPanel({ live, saved, onClose }: { live: LiveState; saved:
 }
 
 /** First start: what was found and the things worth doing first. */
-export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, kinds, onForApp, onBrowse }: { live: LiveState; onArrange: () => void; onCalibrate: () => void; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void; kinds?: string[]; onForApp: () => void; onBrowse: () => void }) {
+export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, onForApp, onBrowse, onTour }: { live: LiveState; onArrange: () => void; onCalibrate: () => void; saved: Record<string, Placement>; onPlace: (key: string, placement: Placement | null) => void; kinds?: string[]; onForApp: () => void; onBrowse: () => void; onTour?: () => void }) {
   useLanguage();
   const found = live.deck.modules.filter((m) => m.kind !== "base");
   const hasKeys = found.some((m) => m.kind === "keys");
@@ -2854,7 +2943,7 @@ export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, kinds, o
           ],
         ] as [string, string, React.ReactNode][])
       : []),
-    [t("welcome.profilesTitle"), t("welcome.profiles"), <WelcomeStart kinds={kinds} onForApp={onForApp} onBrowse={onBrowse} />],
+    [t("welcome.profilesTitle"), t("welcome.profiles"), <WelcomeStart onForApp={onForApp} onBrowse={onBrowse} onTour={onTour} />],
   ];
   // the first start's own page over the whole window (owner's pick A, 2026-10-13): it no longer
   // holds the right column, where it covered the editor of a picked key
@@ -2896,18 +2985,13 @@ export function Welcome({ live, onArrange, onCalibrate, saved, onPlace, kinds, o
 }
 
 /** Welcome step 4: three ways in instead of the whole list (owner's pick, common to 1A-1C). */
-function WelcomeStart({ kinds, onForApp, onBrowse }: { kinds?: string[]; onForApp: () => void; onBrowse: () => void }) {
+function WelcomeStart({ onForApp, onBrowse, onTour }: { onForApp: () => void; onBrowse: () => void; onTour?: () => void }) {
   const [presets, setPresets] = useState<PresetSummary[]>([]);
   useEffect(() => {
     api.presets().then(setPresets, () => {});
   }, []);
   const ready = presets.filter((p) => !p.test);
   const groups = new Set(ready.map((p) => p.group)).size;
-  const tour = () =>
-    api
-      .addPreset("demo", kinds)
-      .then((p) => api.activate(p.id))
-      .catch(() => {});
   const tile = (icon: string, title: string, help: string, onClick: () => void, primary = false) => (
     <button className={`menu-row${primary ? " is-primary" : ""}`} onClick={onClick}>
       <span className={`menu-ic${primary ? "" : " is-plain"}`}>
@@ -2921,8 +3005,9 @@ function WelcomeStart({ kinds, onForApp, onBrowse }: { kinds?: string[]; onForAp
   );
   return (
     <div className="menu-list">
-      {tile("app-window", t("forApp.menu"), t("welcome.forApp"), onForApp, true)}
-      {tile("compass", t("welcome.tour"), t("welcome.tourHelp"), tour)}
+      {/* the tour first (owner, 2026-10-13: show what the deck can do before asking) */}
+      {onTour && tile("play", t("assistant.showMe"), t("assistant.letsSetHelp"), onTour, true)}
+      {tile("app-window", t("forApp.menu"), t("welcome.forApp"), onForApp, !onTour)}
       {tile("layers", t("welcome.browse"), t("welcome.browseHelp", { count: ready.length, groups }), onBrowse)}
     </div>
   );
