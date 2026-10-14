@@ -22,11 +22,41 @@ pub struct Face {
     pub caption: &'static str,
     pub caption_pl: &'static str,
     pub binding: Binding,
+    /// What turning, a press, a double press and a hold do on this look (owner, 2026-10-14: every
+    /// look in the tour should have something on each, to try them all). The tour lists them and
+    /// ticks each off as it happens.
+    pub gestures: Vec<Gesture>,
+    /// The double press and hold that go with the look: (`"dial:double"`, binding).
+    #[serde(skip)]
+    pub extra: Vec<(&'static str, Binding)>,
+}
+
+/// One gesture of a look and what it does, in English and Polish.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Gesture {
+    /// `turn`, `press`, `double` or `hold`.
+    pub kind: &'static str,
+    pub what: &'static str,
+    pub what_pl: &'static str,
 }
 
 impl Face {
     pub fn caption_in(&self, language: &str) -> &'static str {
         if language == "pl" { self.caption_pl } else { self.caption }
+    }
+
+    /// What `kind` does (turn and press come from the look's own binding).
+    fn does(mut self, kind: &'static str, what: &'static str, what_pl: &'static str) -> Self {
+        self.gestures.push(Gesture { kind, what, what_pl });
+        self
+    }
+
+    /// A double press or hold of its own: `kind` is `double` or `hold`.
+    fn with(mut self, kind: &'static str, what: &'static str, what_pl: &'static str, action: &str, params: serde_json::Value) -> Self {
+        let binding = Binding { action: action.into(), params, look: Look::default(), accel: false, look_on: None, swap_turns: false };
+        self.extra.push((if kind == "hold" { "dial:hold" } else { "dial:double" }, binding));
+        self.does(kind, what, what_pl)
     }
 }
 
@@ -35,18 +65,66 @@ fn look(label: &str, icon: &str, hue: f32) -> Look {
 }
 
 fn face(id: &'static str, caption: &'static str, caption_pl: &'static str, action: &str, params: serde_json::Value, look: Look) -> Face {
-    Face { id, caption, caption_pl, binding: Binding { action: action.into(), params, look, accel: false, look_on: None, swap_turns: false } }
+    Face { id, caption, caption_pl, binding: Binding { action: action.into(), params, look, accel: false, look_on: None, swap_turns: false }, gestures: Vec::new(), extra: Vec::new() }
 }
 
 /// The looks, in the order the gallery shows them.
 pub fn faces() -> Vec<Face> {
     vec![
-        face("volume", "Volume", "Głośność", "core.volume", json!({"target": "system", "step": 2}), look("Volume", "volume-2", house::hue::SOUND)),
-        face("clock", "Clock", "Zegar", super::actions::CLOCK, json!({"show": "timeDate", "hours": "24"}), look("", "clock", house::hue::LIVE)),
-        face("nowPlaying", "Now playing", "Teraz grane", super::actions::NOW_PLAYING, json!({}), look("Now playing", "music", house::hue::MEDIA)),
-        face("cpu", "Computer load", "Obciążenie komputera", super::actions::MONITOR, json!({"metric": "cpu"}), look("CPU", "zap", house::hue::LIVE)),
+        face("volume", "Volume", "Głośność", "core.volume", json!({"target": "system", "step": 2}), look("Volume", "volume-2", house::hue::SOUND))
+            .does("turn", "Louder, quieter", "Głośniej, ciszej")
+            .does("press", "Mute", "Wycisz")
+            .with("double", "Speakers ↔ headphones", "Głośniki ↔ słuchawki", "core.audioDevice", json!({"kind": "output"}))
+            .with("hold", "Mute the microphone", "Wycisz mikrofon", "core.mic", json!({})),
+        face("clock", "Clock", "Zegar", super::actions::CLOCK, json!({"show": "timeDate", "hours": "24", "press": "stopwatch"}), look("", "clock", house::hue::LIVE))
+            .does("turn", "Time, seconds, date, week", "Godzina, sekundy, data, tydzień")
+            .does("press", "Stopwatch: start / stop", "Stoper: start / stop")
+            .with("double", "12 ↔ 24 hours", "12 ↔ 24 godziny", super::actions::CLOCK, json!({"show": "timeDate", "hours": "24", "press": "hours"}))
+            .with("hold", "Reset the stopwatch", "Zeruj stoper", super::actions::CLOCK, json!({"show": "timeDate", "hours": "24", "press": "stopwatchReset"})),
+        face("nowPlaying", "Now playing", "Teraz grane", super::actions::NOW_PLAYING, json!({}), look("Now playing", "music", house::hue::MEDIA))
+            .does("turn", "Louder, quieter", "Głośniej, ciszej")
+            .does("press", "Play / pause", "Graj / pauza")
+            .with("double", "Next song", "Następny utwór", super::actions::NOW_PLAYING, json!({"press": "next"}))
+            .with("hold", "Previous song", "Poprzedni utwór", super::actions::NOW_PLAYING, json!({"press": "previous"})),
+        face("cpu", "Computer load", "Obciążenie komputera", super::actions::MONITOR, json!({"metric": "cpu", "press": "next"}), look("CPU", "zap", house::hue::LIVE))
+            .does("turn", "CPU, memory, GPU, temperatures", "CPU, pamięć, GPU, temperatury")
+            .does("press", "The next value", "Następna wartość")
+            .with("hold", "Open Activity Monitor / Task Manager", "Otwórz Monitor aktywności / Menedżera zadań", super::actions::MONITOR, json!({"metric": "cpu", "press": "open"})),
         face("gpuTemp", "GPU temperature", "Temperatura GPU", super::actions::MONITOR, json!({"metric": "gpuTemp"}), look("GPU", "monitor", house::hue::LIVE)),
-        face("timer", "Timer", "Minutnik", super::actions::TIMER, json!({"minutes": 5, "seconds": 0, "press": "startPause", "sound": "on"}), look("Timer", "timer", house::hue::LIVE)),
+        face("timer", "Timer", "Minutnik", super::actions::TIMER, json!({"minutes": 5, "seconds": 0, "press": "startPause", "sound": "on"}), look("Timer", "timer", house::hue::LIVE))
+            .does("turn", "Set the minutes", "Ustaw minuty")
+            .does("press", "Start / pause", "Start / pauza")
+            .with("double", "One more minute", "Jeszcze minuta", super::actions::TIMER, json!({"minutes": 5, "seconds": 0, "press": "addMinute", "sound": "on"}))
+            .with("hold", "Start over", "Od nowa", super::actions::TIMER, json!({"minutes": 5, "seconds": 0, "press": "reset", "sound": "on"})),
+        face(
+            "pomodoro",
+            "Pomodoro",
+            "Pomodoro",
+            super::actions::POMODORO,
+            json!({"focus": 25, "short": 5, "long": 15, "rounds": 4, "press": "startPause", "sound": "on"}),
+            look("Pomodoro", "timer", house::hue::LIVE),
+        )
+        .does("turn", "Focus length", "Długość skupienia")
+        .does("press", "Start / pause", "Start / pauza")
+        .with("double", "Break now", "Przerwa od razu", super::actions::POMODORO, json!({"focus": 25, "short": 5, "long": 15, "rounds": 4, "press": "skip", "sound": "on"}))
+        .with("hold", "Start over", "Od nowa", super::actions::POMODORO, json!({"focus": 25, "short": 5, "long": 15, "rounds": 4, "press": "reset", "sound": "on"})),
+        face(
+            "weather",
+            "Weather",
+            "Pogoda",
+            super::live::ACTION,
+            json!({"source": "weather", "place": "auto", "units": "metric", "dial": "scene", "press": "view"}),
+            look("Weather", "sun", house::hue::LIVE),
+        )
+        .does("turn", "The next hours", "Kolejne godziny")
+        .does("press", "Today, tomorrow, three days", "Dziś, jutro, trzy dni")
+        .with("double", "Refresh", "Odśwież", super::live::ACTION, json!({"source": "weather", "place": "auto", "units": "metric", "dial": "scene", "press": "refresh"}))
+        .with("hold", "Open the forecast", "Otwórz prognozę", super::live::ACTION, json!({"source": "weather", "place": "auto", "units": "metric", "dial": "scene", "press": "forecast"})),
+        face("pet", "Mochi", "Mochi", super::pet::ACTION, json!({"name": "Mochi", "press": "pet"}), look("Mochi", "heart", house::hue::SHOW))
+            .does("turn", "Play", "Zabawa")
+            .does("press", "Pet it", "Pogłaszcz")
+            .with("double", "Feed it", "Nakarm", super::pet::ACTION, json!({"name": "Mochi", "press": "feed"}))
+            .with("hold", "Bed / wake up", "Spać / wstawać", super::pet::ACTION, json!({"name": "Mochi", "press": "sleep"})),
         face("mic", "Mic level", "Poziom mikrofonu", "core.volume", json!({"target": "mic", "step": 2}), look("Mic", "mic", house::hue::MIC)),
         face("scroll", "Scroll and zoom", "Przewijanie i zoom", "core.scroll", json!({"axis": "vertical", "amount": 3}), look("Scroll", "arrow-up-down", house::hue::TOOL)),
         face("brightness", "Monitor brightness", "Jasność monitora", "core.brightness", json!({"monitor": "all", "step": 5}), look("Brightness", "sun", house::hue::SHOW)),
@@ -96,6 +174,26 @@ pub fn previews() -> Vec<Preview> {
                 "cpu" => render::dial_svg(l, Some((Some(0.37), "CPU")), 0),
                 "gpuTemp" => render::dial_svg(l, Some((Some(0.54), "GPU temp")), 0),
                 "timer" => render::time_dial_svg(l, "4:32", Some("Timer"), Some(0.9), 0),
+                "weather" => {
+                    let fc = super::live::Forecast {
+                        place: "Kraków".into(),
+                        code: 61,
+                        day: true,
+                        hours: vec![("15:00".into(), 13.0, 61)],
+                        days: vec![("2026-10-14".into(), 9.0, 15.0, 61)],
+                        ..Default::default()
+                    };
+                    render::weather_dial_svg(l, Some(&fc), Some(12.0), render::WeatherView::default(), 0.4, false, 0)
+                }
+                "pet" => {
+                    let p = super::pet::Pet::load(std::path::Path::new("/nonexistent-hubdeck-preview"));
+                    super::pet::dial_svg(&p, super::pet::Mood::Happy, "Mochi", false, 0.5, std::time::Instant::now(), 0)
+                }
+                "pomodoro" => {
+                    let mut p = super::timer::pomodoro_of(&f.binding.params);
+                    p.done = 2;
+                    render::pomodoro_dial_svg(l, &p, std::time::Instant::now(), "Focus", 0)
+                }
                 "mic" => render::dial_svg(l, Some((Some(0.8), "Mic")), 0),
                 "aurora" | "orbit" | "sweep" => render::dial_svg(&Look { image: l.image.as_ref().map(|i| format!("{i}#0")), ..l.clone() }, None, 0),
                 _ => render::dial_svg(l, None, 0),

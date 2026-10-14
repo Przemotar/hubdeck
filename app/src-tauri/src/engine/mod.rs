@@ -48,6 +48,7 @@ pub mod midi;
 pub mod monitor;
 pub mod nudge;
 pub mod obs;
+mod pet;
 pub mod plugins;
 pub(crate) mod presets;
 pub mod presses;
@@ -77,7 +78,7 @@ pub mod usage;
 pub mod vjoy;
 pub mod volume;
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -108,7 +109,8 @@ const FEEDBACK_FOR: Duration = Duration::from_millis(1500);
 /// How often stateful keys check their state (mute can change outside the deck).
 const STATE_POLL: Duration = Duration::from_millis(1000);
 /// Minimum time between two dial images.
-const DIAL_FRAME: Duration = Duration::from_millis(60);
+/// The dial takes ~32 pictures a second (`examples/framerate.rs`); a frame draws in ~4 ms (release).
+const DIAL_FRAME: Duration = Duration::from_millis(36);
 
 /// Merge consecutive turns of the same control (`+1 +1 +1` -> `+3`), keeping order otherwise.
 fn coalesce_turns(batch: &mut Vec<Msg>) {
@@ -517,6 +519,12 @@ impl Engine {
             frames: HashMap::new(),
             clock_shown: String::new(),
             timers: HashMap::new(),
+            clocks: HashMap::new(),
+            pomodoros: HashMap::new(),
+            weather_view: HashMap::new(),
+            pet: pet::Pet::load(data_dir),
+            pet_frame: Instant::now(),
+            monitor_pick: HashMap::new(),
             live_sig: String::new(),
             live_next: Instant::now(),
             live_dirty: false,
@@ -546,7 +554,7 @@ impl Engine {
             blanked: false,
             locked: false,
             last_deck_input: Instant::now(),
-            backlight_sent: None,
+            backlight_sent: HashMap::new(),
             last_blank_check: Instant::now(),
             highlight_shown: None,
         };
@@ -664,11 +672,13 @@ impl Engine {
             if s.active.as_deref() != Some(id) {
                 s.page = None;
             }
-            // picked by hand: this is home now, app profiles give back to it
+            // picked by hand: this is home now, app profiles give back to it, and HubDeck starts on it
+            // (owner, 2026-10-14: every restart went back to the first profile, the start profile)
             s.active = Some(id.to_string());
             s.home = Some(id.to_string());
             s.auto_app = None;
             s.store.settings.active = Some(id.to_string());
+            s.store.settings.fallback = Some(id.to_string());
             s.store.save_settings().map_err(|e| e.to_string())?;
         }
         self.changed();
@@ -888,6 +898,10 @@ impl Engine {
                 // what shows now stays; it is the home profile from here on
                 s.home = s.active.clone();
                 s.auto_app = None;
+                s.store.settings.active = s.active.clone();
+                if s.active.is_some() {
+                    s.store.settings.fallback = s.active.clone();
+                }
             }
             s.store.save_settings().map_err(|e| e.to_string())?;
         }
@@ -1105,6 +1119,18 @@ struct Worker {
     clock_shown: String,
     /// Countdown timers per control (`keys.3`, `dial`; gestures of a key share its timer).
     timers: HashMap<String, timer::Timer>,
+    /// A clock's view, hours and stopwatch on a control (its gestures), by control.
+    clocks: HashMap<String, timer::ClockState>,
+    /// A pomodoro's phase and rounds, by control.
+    pomodoros: HashMap<String, timer::Pomodoro>,
+    /// What a weather scene shows (the hours ahead, the days), by control.
+    weather_view: HashMap<String, render::WeatherView>,
+    /// Mochi, the dial pet (one per computer, remembered in pet.json).
+    pet: pet::Pet,
+    /// When Mochi was last drawn while resting.
+    pet_frame: Instant,
+    /// The metric a system monitor was turned to, by control.
+    monitor_pick: HashMap<String, monitor::Metric>,
     /// The texts of the clocks and timers on screen, so they redraw only when one changes.
     live_sig: String,
     /// When to look at the clocks and timers again; `live_dirty` = now (a timer was pressed).
@@ -1155,8 +1181,9 @@ struct Worker {
     /// The session is locked (from the system, not from the app in front).
     locked: bool,
     last_deck_input: Instant,
-    /// The backlight last sent to keys and dial (None = send again, e.g. after a replug).
-    backlight_sent: Option<u8>,
+    /// The backlight last sent to each keys and dial module, by module id (a module that left is
+    /// forgotten, so it gets it again when it comes back).
+    backlight_sent: HashMap<String, u8>,
     last_blank_check: Instant,
     /// The tour's highlight as last drawn: the control and whether it is lit now.
     highlight_shown: Option<(String, bool)>,
@@ -1194,7 +1221,11 @@ impl Worker {
                         }
                         self.sent.clear(); // modules may have been re-attached with blank screens
                         self.leds_sent.clear();
-                        self.backlight_sent = None;
+                        // only modules that came back get their backlight again: each set is a feature
+                        // report the keys and dial sometimes never answer on macOS (2026-10-14: a turn of
+                        // the base resent it and the keys timed out)
+                        let present: HashSet<String> = self.deck.snapshot().modules.iter().map(|m| m.id.clone()).collect();
+                        self.backlight_sent.retain(|id, _| present.contains(id));
                         self.redraw_keys();
                         self.update_leds();
                         self.dial_dirty = true;
@@ -1341,8 +1372,9 @@ impl Worker {
         if self.blanked {
             // the first touch only wakes the deck; it does not run an action
             self.blanked = false;
-            self.backlight_sent = None;
+            log::info!("screens on (a touch on the deck)");
             self.apply_screens();
+            self.redraw_keys();
             return;
         }
         if self.saver_on {
@@ -1466,9 +1498,24 @@ impl Worker {
 
     /// Run the binding stored under `id` (a control id, maybe with a gesture suffix).
     fn fire(&mut self, id: &str, event: InputEvent) {
-        // the tour's "One control, many jobs" ticks a hold or a double press off as it happens
-        if (id.ends_with(":hold") || id.ends_with(":double")) && self.lock().tour_dry_run {
-            let _ = self.app.emit("tour://gesture", id.rsplit('/').next().unwrap_or(id));
+        // the tour ticks gestures off as they happen: a hold or a double press anywhere ("One control,
+        // many jobs"), and the dial's turn and press too ("Your dial, many faces")
+        if self.lock().tour_dry_run {
+            let name = id.rsplit('/').next().unwrap_or(id);
+            let tick = if name.ends_with(":hold") || name.ends_with(":double") {
+                Some(name.to_string())
+            } else if name == "dial" {
+                match event {
+                    InputEvent::Press(true) => Some("dial:press".to_string()),
+                    InputEvent::Turn(_) => Some("dial:turn".to_string()),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(tick) = tick {
+                let _ = self.app.emit("tour://gesture", tick);
+            }
         }
         let Some(binding) = self.lock().active_profile().and_then(|p| p.controls.get(id).cloned()) else { return };
         if binding.action == actions::GAMES {
@@ -1624,6 +1671,59 @@ impl Worker {
                     self.live_dirty = true;
                     self.update_leds();
                 }
+                if let Some(cmd) = out.clock {
+                    let control = id.split(':').next().unwrap_or(id).to_string();
+                    // the base control's own setting (a gesture's binding may carry other params)
+                    let own = self.lock().active_profile().and_then(|p| p.controls.get(&control).cloned()).unwrap_or_else(|| binding.clone());
+                    let (view, h12) = (actions::param_str(&own.params, "show").to_string(), actions::param_str(&own.params, "hours") == "12");
+                    self.clocks.entry(control).or_default().apply(cmd, Instant::now(), &view, h12);
+                    self.live_sig.clear();
+                    self.live_dirty = true;
+                }
+                if let Some(cmd) = out.pomodoro {
+                    let control = id.split(':').next().unwrap_or(id).to_string();
+                    let own = self.lock().active_profile().and_then(|p| p.controls.get(&control).cloned()).unwrap_or_else(|| binding.clone());
+                    self.pomodoros.entry(control).or_insert_with(|| timer::pomodoro_of(&own.params)).apply(cmd, Instant::now());
+                    self.live_sig.clear();
+                    self.live_dirty = true;
+                }
+                if let Some(cmd) = out.pet {
+                    self.pet.apply(cmd, Instant::now());
+                    self.dial_dirty = true;
+                }
+                if let Some(cmd) = out.weather {
+                    let control = id.split(':').next().unwrap_or(id).to_string();
+                    let v = self.weather_view.entry(control).or_default();
+                    match cmd {
+                        exec::WeatherCmd::Hours(d) => {
+                            v.mode = 0;
+                            v.hour = (v.hour as i32 + d).clamp(0, 23) as usize;
+                        }
+                        exec::WeatherCmd::View => {
+                            v.mode = (v.mode + 1) % 4;
+                            v.hour = 0;
+                        }
+                        exec::WeatherCmd::Forecast => {
+                            let fc = live::value_key(&binding.params).and_then(|k| self.values.get(&k)).and_then(|r| serde_json::from_str::<live::Reading>(r).ok()).and_then(|r| r.forecast);
+                            let url = fc.map_or_else(|| "https://www.meteoblue.com/".to_string(), |f| format!("https://www.meteoblue.com/en/weather/week/{:.3}N{:.3}E", f.lat, f.lon));
+                            if let Err(e) = crate::system::shell_open(&url) {
+                                log::warn!("weather forecast: {e}");
+                            }
+                        }
+                    }
+                    self.dial_dirty = true;
+                }
+                if let Some(step) = out.monitor_step {
+                    let control = id.split(':').next().unwrap_or(id).to_string();
+                    let own = self.lock().active_profile().and_then(|p| p.controls.get(&control).cloned()).unwrap_or_else(|| binding.clone());
+                    let now = self.monitor_value(&control, &own).map(|(m, _)| m).unwrap_or(monitor::Metric::Cpu);
+                    let at = monitor::Metric::CYCLE.iter().position(|m| *m == now).unwrap_or(0) as i32;
+                    let next = monitor::Metric::CYCLE[(at + step).rem_euclid(monitor::Metric::CYCLE.len() as i32) as usize];
+                    self.monitor_pick.insert(control, next);
+                    self.feedback = Some((Feedback { value: None, caption: next.name().to_string() }, Instant::now()));
+                    self.redraw_keys();
+                    self.dial_dirty = true;
+                }
                 if let Some(change) = out.deck_brightness {
                     let level = {
                         let mut s = self.lock();
@@ -1746,7 +1846,8 @@ impl Worker {
         }
     }
 
-    /// The user picked a profile (on the deck, by a plugin): it becomes home, then shows.
+    /// The user picked a profile (on the deck, by a plugin): it becomes home, then shows. Home is
+    /// saved as the start profile, so the deck starts on it again after HubDeck restarts.
     fn choose(&mut self, id: &str) {
         {
             let mut s = self.lock();
@@ -1755,7 +1856,16 @@ impl Worker {
             }
             s.home = Some(id.to_string());
             s.auto_app = None;
+            if s.store.settings.active.as_deref() != Some(id) || s.store.settings.fallback.as_deref() != Some(id) {
+                s.store.settings.active = Some(id.to_string());
+                s.store.settings.fallback = Some(id.to_string());
+                if let Err(e) = s.store.save_settings() {
+                    log::warn!("cannot save the home profile: {e}");
+                }
+            }
         }
+        let name = self.lock().store.profiles.get(id).map(|p| p.name.clone()).unwrap_or_default();
+        log::info!("picked on the deck: profile \"{name}\" (home)");
         self.activate(id);
     }
 
@@ -1842,7 +1952,7 @@ impl Worker {
                                 let blink = (Instant::now().duration_since(self.fleet_sweep).as_millis() / agents::PULSE.as_millis()) % 2 == 1;
                                 return states::key_look(&b.params, look, &self.values, blink);
                             }
-                            match (self.monitor_value(b), self.live_face(&id, b, Instant::now())) {
+                            match (self.monitor_value(&id, b), self.live_face(&id, b, Instant::now())) {
                                 // a monitor key: the metric and its value instead of the label
                                 (Some((metric, value)), _) => {
                                     // the value big, the metric's name under it, like a clock face (the dial draws it the same way)
@@ -1893,9 +2003,12 @@ impl Worker {
                 Some(g) => g.keys,
                 None => looks,
             };
+            // screens off: black keys (the backlight is never set to 0, see apply_screens)
+            let looks = if self.blanked { vec![Look { bg: Some("#000000".into()), ..Look::default() }; 15] } else { looks };
+            let game_panel = game_panel.filter(|_| !self.blanked);
             // a plugin's panel picture wins over the profile's
             let plugin_panel = self.plugin_panel.clone().filter(|_| self.arcade.is_none()).map(|image| profile::PanelContent::Picture { image });
-            let panel_content = plugin_panel.or_else(|| profile.as_ref().filter(|_| self.arcade.is_none()).and_then(|p| p.panel.clone())).map(|c| match c {
+            let panel_content = plugin_panel.or_else(|| profile.as_ref().filter(|_| self.arcade.is_none()).and_then(|p| p.panel.clone())).filter(|_| !self.blanked).map(|c| match c {
                 profile::PanelContent::Picture { image } => {
                     let mut look = Look { image: Some(image), ..Look::default() };
                     self.current_frame(&mut look);
@@ -2049,9 +2162,9 @@ impl Worker {
     }
 
     /// The metric a "System monitor" binding shows, with its latest value.
-    fn monitor_value(&self, binding: &Binding) -> Option<(monitor::Metric, Option<f32>)> {
+    fn monitor_value(&self, control: &str, binding: &Binding) -> Option<(monitor::Metric, Option<f32>)> {
         (binding.action == actions::MONITOR).then(|| {
-            let metric = monitor::Metric::from_param(actions::param_str(&binding.params, "metric"));
+            let metric = self.monitor_pick.get(control).copied().unwrap_or_else(|| monitor::Metric::from_param(actions::param_str(&binding.params, "metric")));
             (metric, self.samples.back().and_then(|s| s.get(metric)))
         })
     }
@@ -2061,8 +2174,32 @@ impl Worker {
         let p = &binding.params;
         match binding.action.as_str() {
             actions::CLOCK => {
-                let (main, second) = timer::clock_text(chrono::Local::now().naive_local(), actions::param_str(p, "show"), actions::param_str(p, "hours"));
+                let state = self.clocks.get(control.split(':').next().unwrap_or(control));
+                // a stopwatch that runs or was stopped shows instead of the time
+                if let Some(d) = state.and_then(|c| c.stopwatch(now)) {
+                    let polish = self.lock().store.settings.language.starts_with("pl");
+                    let caption = match (state.is_some_and(timer::ClockState::running), polish) {
+                        (true, false) => "Stopwatch",
+                        (true, true) => "Stoper",
+                        (false, false) => "Stopwatch · stopped",
+                        (false, true) => "Stoper · zatrzymany",
+                    };
+                    return Some(LiveFace { main: timer::stopwatch_text(d), second: Some(caption.to_string()), ring: None, done: false });
+                }
+                let show = state.and_then(|c| c.view).map_or(actions::param_str(p, "show"), |v| timer::CLOCK_VIEWS[v]);
+                let hours = match state.and_then(|c| c.h12) {
+                    Some(true) => "12",
+                    Some(false) => "24",
+                    None => actions::param_str(p, "hours"),
+                };
+                let (main, second) = timer::clock_text(chrono::Local::now().naive_local(), show, hours);
                 Some(LiveFace { main, second, ring: None, done: false })
+            }
+            actions::POMODORO => {
+                let fresh = timer::pomodoro_of(p);
+                let pomo = self.pomodoros.get(control.split(':').next().unwrap_or(control)).unwrap_or(&fresh);
+                let polish = self.lock().store.settings.language.starts_with("pl");
+                Some(LiveFace { main: pomo.timer.label(now), second: Some(pomo.phase(polish).to_string()), ring: Some(pomo.timer.fraction(now)), done: false })
             }
             actions::TIMER => {
                 let fresh = timer::Timer::new(timer::total_of(p));
@@ -2508,32 +2645,37 @@ impl Worker {
             log::info!("screens {}", if blank { "off" } else { "on" });
             self.leds_sent.clear();
             self.update_leds();
+            self.redraw_keys();
+            self.dial_dirty = true;
         }
         self.apply_screens();
     }
 
-    /// Send the backlight the settings ask for (0 while blanked), only when it changed.
+    /// Send the backlight the settings ask for to each keys and dial module that does not have it
+    /// yet (a new module, a changed setting).
     fn apply_screens(&mut self) {
-        let level = if self.blanked { 0 } else { self.lock().store.settings.screen_brightness.min(100) };
-        if self.backlight_sent == Some(level) {
-            return;
-        }
-        let mut ok = true;
+        // screens off draw black images: brightness 0 wedged the dial, then the keys, at screen locks
+        // on the owner's Mac (2026-10-14; they took no command after it until reseated)
+        let level = self.lock().store.settings.screen_brightness.clamp(1, 100);
+        let mut sent_any = false;
         for m in self.deck.snapshot().modules.iter().filter(|m| m.kind == "keys" || m.kind == "dial") {
+            if self.backlight_sent.get(&m.id) == Some(&level) {
+                continue;
+            }
             let Some(module) = self.deck.module(&m.id) else { continue };
             if let Some(r) = mh_protocol::report::backlight(module.kind(), level)
                 && let Err(e) = module.send(&r)
             {
+                // tried once: a module that does not answer must not hold up every tick for its
+                // timeout (5 s each); it gets the level again when it comes back
                 log::warn!("backlight {}: {e}", m.id);
-                ok = false;
             }
+            self.backlight_sent.insert(m.id.clone(), level);
+            sent_any = true;
         }
-        if ok {
-            self.backlight_sent = Some(level);
-            if !self.blanked {
-                self.leds_sent.clear();
-                self.update_leds();
-            }
+        if sent_any && !self.blanked {
+            self.leds_sent.clear();
+            self.update_leds();
         }
     }
 
@@ -2582,13 +2724,22 @@ impl Worker {
             self.redraw_keys();
             self.dial_dirty = true;
         }
-        let running_timer = self.timers.values().any(|t| t.running());
+        let running_timer = self.timers.values().any(|t| t.running()) || self.pomodoros.values().any(|p| p.timer.running());
         let (profile, page) = {
             let s = self.lock();
             // nothing that moves (pictures, clocks, timers): no copy of the profile every tick
-            let moving = s
-                .active_profile()
-                .is_some_and(|p| p.panel.is_some() || p.controls.values().any(|b| b.look.image.is_some() || b.action == actions::CLOCK || b.action == actions::TIMER || b.action == gallery::ACTION));
+            let moving = s.active_profile().is_some_and(|p| {
+                p.panel.is_some()
+                    || p.controls.values().any(|b| {
+                        b.look.image.is_some()
+                            || b.action == actions::CLOCK
+                            || b.action == actions::TIMER
+                            || b.action == actions::POMODORO
+                            || b.action == gallery::ACTION
+                            || b.action == pet::ACTION
+                            || (b.action == live::ACTION && actions::param_str(&b.params, "dial") == "scene")
+                    })
+            });
             if !moving && !running_timer {
                 return;
             }
@@ -2620,6 +2771,15 @@ impl Worker {
         if matches!(profile.panel, Some(profile::PanelContent::Clock)) && self.clock_shown != clock_now() {
             keys_due = true;
         }
+        // Mochi: every dial frame while it moves (a hop, hearts, a bite), ~12 a second while it only
+        // breathes (owner, 2026-10-14: four a second looked slow; keep 12, make the frame cheaper)
+        if profile.controls.get("dial").is_some_and(|b| b.action == pet::ACTION) {
+            let moving = self.pet.moment.is_some_and(|(_, at)| now.duration_since(at) < Duration::from_millis(2400));
+            if moving || now.duration_since(self.pet_frame) >= Duration::from_millis(80) {
+                self.pet_frame = now;
+                dial_due = true;
+            }
+        }
         // clocks and timers on keys and the dial: redraw when a shown text changes; looked at four
         // times a second (their texts change once a second), not on every engine tick
         if !self.live_dirty && now < self.live_next {
@@ -2634,7 +2794,8 @@ impl Worker {
         self.live_dirty = false;
         self.live_next = now + LIVE_EVERY;
         // the dial gallery may be on a live look (time, load, track): look again
-        if profile.controls.get("dial").is_some_and(|b| b.action == gallery::ACTION) {
+        // so may a weather scene (its sky moves)
+        if profile.controls.get("dial").is_some_and(|b| b.action == gallery::ACTION || b.action == pet::ACTION || (b.action == live::ACTION && actions::param_str(&b.params, "dial") == "scene")) {
             dial_due = true;
         }
         let mut sig = String::new();
@@ -2657,6 +2818,17 @@ impl Worker {
         for (control, t) in &self.timers {
             if t.running() && t.finished(now) && !t.rang && !finished.contains(control) && profile.controls.get(control).is_some_and(|b| b.action == actions::TIMER) {
                 finished.push(control.clone());
+            }
+        }
+        // a pomodoro whose phase ran out rings and waits on the next phase
+        let ended: Vec<String> = self.pomodoros.iter().filter(|(_, p)| p.timer.running() && p.timer.finished(now)).map(|(c, _)| c.clone()).collect();
+        for control in ended {
+            if let Some(p) = self.pomodoros.get_mut(&control) {
+                p.advance();
+            }
+            self.live_sig.clear();
+            if profile.controls.get(&control).is_none_or(|b| actions::param_str(&b.params, "sound") != "off") {
+                timer::ring();
             }
         }
         for control in finished {
@@ -2971,15 +3143,37 @@ impl Worker {
                     }
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::MONITOR) => {
-                    let (metric, v) = binding.and_then(|b| self.monitor_value(b)).expect("monitor binding");
+                    let (metric, v) = binding.and_then(|b| self.monitor_value("dial", b)).expect("monitor binding");
                     // temperatures fill the ring up to 100 °C
                     render::dial_svg(&look, Some((v.map(|v| v / 100.0), metric.name())), rotation)
+                }
+                (None, None) if value.is_none() && binding.is_some_and(|b| b.action == pet::ACTION) => {
+                    let b = binding.expect("checked");
+                    let polish = self.lock().store.settings.language.starts_with("pl");
+                    let name = actions::param_str(&b.params, "name").trim();
+                    let name = if name.is_empty() { "Mochi" } else { name };
+                    let mood = self.pet.mood(self.locked, chrono::Timelike::hour(&chrono::Local::now()));
+                    pet::dial_svg(&self.pet, mood, name, polish, saver::clock(), Instant::now(), rotation)
+                }
+                (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::POMODORO) => {
+                    let b = binding.expect("checked");
+                    let fresh = timer::pomodoro_of(&b.params);
+                    let pomo = self.pomodoros.get("dial").unwrap_or(&fresh);
+                    let polish = self.lock().store.settings.language.starts_with("pl");
+                    render::pomodoro_dial_svg(&look, pomo, Instant::now(), pomo.phase(polish), rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::CLOCK || b.action == actions::TIMER) => {
                     let b = binding.expect("checked");
                     let face = self.live_face("dial", b, Instant::now()).unwrap_or_default();
                     let look = if face.done { b.look_for(Some(true)) } else { look };
                     render::time_dial_svg(&look, &face.main, face.second.as_deref(), face.ring, rotation)
+                }
+                (None, None) if value.is_none() && binding.is_some_and(|b| b.action == live::ACTION && actions::param_str(&b.params, "dial") == "scene") => {
+                    let b = binding.expect("checked");
+                    let reading = live::value_key(&b.params).and_then(|k| self.values.get(&k)).and_then(|r| serde_json::from_str::<live::Reading>(r).ok());
+                    let polish = self.lock().store.settings.language.starts_with("pl");
+                    let view = self.weather_view.get("dial").copied().unwrap_or_default();
+                    render::weather_dial_svg(&look, reading.as_ref().and_then(|r| r.forecast.as_ref()), reading.as_ref().and_then(|r| r.num), view, saver::clock(), polish, rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == live::ACTION) => {
                     let b = binding.expect("checked");
@@ -3025,6 +3219,8 @@ impl Worker {
             };
             // the tour points at the dial: a white ring around its edge
             let svg = if self.lit_highlight() == Some("dial") { render::with_ring(&svg, HIGHLIGHT) } else { svg };
+            // screens off: the dial shows black (its backlight is never set to 0, see apply_screens)
+            let svg = if self.blanked { render::dial_body_svg(r##"<rect width="240" height="240" fill="#000"/>"##, 0) } else { svg };
             if self.sent.get(&m.id) == Some(&svg) {
                 continue;
             }

@@ -76,7 +76,7 @@ pub fn hue_for_action(action: &str, params: &serde_json::Value) -> Option<f32> {
         "core.page" | "core.profile" => hue::NAV,
         "core.launch" => hue::APP,
         "core.game" | "core.games" => hue::GAME,
-        "core.clock" | "core.timer" | "core.monitor" | "core.live" => hue::LIVE,
+        "core.clock" | "core.timer" | "core.pomodoro" | "core.monitor" | "core.live" => hue::LIVE,
         "core.hotkey" | "core.text" | "core.multi" | "core.run" => hue::TOOL,
         "core.lighting" | "core.deckBrightness" | "core.brightness" => hue::SHOW,
         _ => return None,

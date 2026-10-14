@@ -112,6 +112,23 @@ pub struct Reading {
     /// Decimals when the binding leaves them automatic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub places: Option<u8>,
+    /// The weather's sky and the hours and days ahead (the dial's weather scene).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forecast: Option<Forecast>,
+}
+
+/// The weather for the dial's scene: now, the next hours and the next days (Open-Meteo).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Forecast {
+    pub place: String,
+    pub code: i64,
+    pub day: bool,
+    pub lat: f64,
+    pub lon: f64,
+    /// The next hours from now: ("14:00", temperature, code).
+    pub hours: Vec<(String, f64, i64)>,
+    /// Today and the next days: (date `2026-10-14`, low, high, code).
+    pub days: Vec<(String, f64, f64, i64)>,
 }
 
 impl Reading {
@@ -557,21 +574,83 @@ pub fn condition(code: i64) -> &'static str {
     }
 }
 
-/// A reading from Open-Meteo's `current` answer.
+/// The same in Polish (the dial's weather scene).
+pub fn condition_pl(code: i64) -> &'static str {
+    match code {
+        0 => "Bezchmurnie",
+        1 => "Pogodnie",
+        2 => "Trochę słońca",
+        3 => "Pochmurno",
+        45 | 48 => "Mgła",
+        51..=57 => "Mżawka",
+        61..=65 | 80..=82 => "Deszcz",
+        66 | 67 => "Marznący deszcz",
+        71..=77 | 85 | 86 => "Śnieg",
+        95..=99 => "Burza",
+        _ => "",
+    }
+}
+
+/// A reading from Open-Meteo's answer: `current`, and `hourly` / `daily` when asked for.
 pub fn weather_reading(v: &Value, place: &str) -> Reading {
     let Some(t) = v["current"]["temperature_2m"].as_f64() else {
         return Reading::error(v["reason"].as_str().unwrap_or("no weather in the answer").to_string());
     };
-    let word = condition(v["current"]["weather_code"].as_i64().unwrap_or(-1));
+    let code = v["current"]["weather_code"].as_i64().unwrap_or(-1);
+    let word = condition(code);
     let sub = if word.is_empty() { place.to_string() } else { word.to_string() };
-    Reading { num: Some(t), text: format!("{t}"), sub, unit: "°".into(), places: Some(0), ..Reading::default() }
+    // the hours from the current one on (the answer starts at midnight)
+    let now = v["current"]["time"].as_str().unwrap_or("");
+    let times = v["hourly"]["time"].as_array().cloned().unwrap_or_default();
+    let start = times.iter().position(|x| x.as_str().is_some_and(|x| x.get(..13) >= now.get(..13))).unwrap_or(0);
+    let hours = times
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(24)
+        .filter_map(|(i, x)| Some((x.as_str()?.get(11..16)?.to_string(), v["hourly"]["temperature_2m"][i].as_f64()?, v["hourly"]["weather_code"][i].as_i64().unwrap_or(-1))))
+        .collect();
+    let days = v["daily"]["time"]
+        .as_array()
+        .map(|d| {
+            d.iter()
+                .enumerate()
+                .filter_map(|(i, x)| {
+                    Some((x.as_str()?.to_string(), v["daily"]["temperature_2m_min"][i].as_f64()?, v["daily"]["temperature_2m_max"][i].as_f64()?, v["daily"]["weather_code"][i].as_i64().unwrap_or(-1)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let forecast = Forecast {
+        place: place.to_string(),
+        code,
+        day: v["current"]["is_day"].as_i64().is_none_or(|d| d == 1),
+        lat: v["latitude"].as_f64().unwrap_or_default(),
+        lon: v["longitude"].as_f64().unwrap_or_default(),
+        hours,
+        days,
+    };
+    Reading { num: Some(t), text: format!("{t}"), sub, unit: "°".into(), places: Some(0), forecast: Some(forecast), ..Reading::default() }
+}
+
+/// The city of this computer's time zone (`Europe/Warsaw` -> `Warsaw`), for a weather place
+/// set to `auto` (the dial gallery and the tour have no city to ask for).
+fn local_city() -> Option<String> {
+    let zone = iana_time_zone::get_timezone().ok()?;
+    let city = zone.rsplit('/').next()?.replace('_', " ");
+    (zone.contains('/') && !city.is_empty()).then_some(city)
 }
 
 /// Coordinates of places named without them, looked up once per run.
 static PLACES: std::sync::Mutex<Vec<(String, (f64, f64))>> = std::sync::Mutex::new(Vec::new());
 
 fn weather(agent: &ureq::Agent, place: &str, fahrenheit: bool) -> Reading {
-    let (name, coords) = parse_place(place);
+    let auto = place.trim().eq_ignore_ascii_case("auto");
+    let local = if auto { local_city() } else { None };
+    if auto && local.is_none() {
+        return Reading::error("set the city (this computer's time zone names none)");
+    }
+    let (name, coords) = parse_place(local.as_deref().unwrap_or(place));
     let coords = match coords {
         Some(c) => c,
         None => {
@@ -591,7 +670,10 @@ fn weather(agent: &ureq::Agent, place: &str, fahrenheit: bool) -> Reading {
         }
     };
     let unit = if fahrenheit { "&temperature_unit=fahrenheit" } else { "" };
-    let url = format!("{FORECAST}?latitude={:.4}&longitude={:.4}&current=temperature_2m,weather_code&timezone=auto{unit}", coords.0, coords.1);
+    let url = format!(
+        "{FORECAST}?latitude={:.4}&longitude={:.4}&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=3&timezone=auto{unit}",
+        coords.0, coords.1
+    );
     match agent.get(&url).call() {
         Ok(mut res) => match res.body_mut().read_json::<Value>() {
             Ok(v) => weather_reading(&v, &name),
@@ -1018,6 +1100,17 @@ mod tests {
         assert_eq!(format_value(&json!({}), &r), "13°", "whole degrees with a degree sign by default");
         assert_eq!(format_value(&json!({"decimals": 1, "suffix": " C"}), &r), "12.6 C", "the binding's own format wins");
         assert!(!weather_reading(&json!({"error": true, "reason": "bad latitude"}), "x").error.is_empty());
+        // the scene's hours start at the current one, the days come as they are
+        let v = json!({
+            "latitude": 50.06, "longitude": 19.94,
+            "current": {"time": "2026-10-14T11:30", "temperature_2m": 8.4, "weather_code": 3, "is_day": 1},
+            "hourly": {"time": ["2026-10-14T10:00", "2026-10-14T11:00", "2026-10-14T12:00"], "temperature_2m": [7.0, 8.0, 9.0], "weather_code": [3, 3, 61]},
+            "daily": {"time": ["2026-10-14", "2026-10-15"], "weather_code": [51, 3], "temperature_2m_max": [11.0, 13.7], "temperature_2m_min": [4.3, 7.5]}
+        });
+        let f = weather_reading(&v, "Kraków").forecast.expect("a forecast");
+        assert_eq!((f.code, f.day, f.place.as_str()), (3, true, "Kraków"));
+        assert_eq!(f.hours, vec![("11:00".to_string(), 8.0, 3), ("12:00".to_string(), 9.0, 61)]);
+        assert_eq!(f.days[1], ("2026-10-15".to_string(), 7.5, 13.7, 3));
         let src = source(&json!({"source": "weather", "place": "Warsaw|52.2|21.0", "every": 5}), "").unwrap();
         assert_eq!(src.every, WEATHER_EVERY, "weather is not fetched more often than every 10 minutes");
         assert_eq!(src.kind, Kind::Weather { place: "Warsaw|52.2|21.0".into(), fahrenheit: false });

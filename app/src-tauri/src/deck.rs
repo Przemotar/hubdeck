@@ -49,12 +49,15 @@ pub struct DeckSnapshot {
     pub paused: bool,
 }
 
-/// The sensor only tells "turned 90 degrees right" (vertical) from the rest (`PROTOCOL.md`); the
-/// rest is taken as lying flat, turned left.
+/// The sensor only tells one upright position (vertical) from the rest (`PROTOCOL.md`); the rest
+/// is taken as lying flat, turned left. Upright, the drawings stood upside down at 0 (owner's deck,
+/// 2026-10-14: "obracanie decku przekręca rzeczy do góry nogami"): that position is a half turn
+/// from 0, 90 degrees on from lying flat at 270 the other way.
 pub fn base_turn(orientation: Option<&str>, turn_override: Option<i32>) -> i32 {
     match (turn_override, orientation) {
         (Some(t), _) => t.rem_euclid(360) / 90 * 90,
         (None, Some("horizontal")) => 270,
+        (None, Some("vertical")) => 180,
         _ => 0,
     }
 }
@@ -205,7 +208,13 @@ impl Deck {
     /// Stop for good (app exit) and wait until keys and dial are handed back.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
-        self.wait_released(Duration::from_secs(2));
+        // the hand-back must finish before the app exits: a module left mid-way refused every
+        // command at the next start (2026-10-14, macOS; the log missed "deck released" each time)
+        let started = Instant::now();
+        self.wait_released(Duration::from_secs(8));
+        if self.running.load(Ordering::SeqCst) {
+            log::warn!("the deck was not handed back within {:?}", started.elapsed());
+        }
     }
 
     /// Hand the modules back to their firmware (`true`) or take them again (`false`).
@@ -271,6 +280,10 @@ impl Deck {
 
     /// An open module by its UI id (`"kind:serial"`), for commands that draw or light it.
     pub fn module(&self, id: &str) -> Option<Arc<mh_device::Module>> {
+        // quitting: nothing more is drawn or lit, so the hand-back has the modules to itself
+        if self.stop.load(Ordering::SeqCst) {
+            return None;
+        }
         let hub = self.hub.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
         hub.modules().into_iter().find(|m| module_key(&m.id) == id)
     }
@@ -456,7 +469,7 @@ mod tests {
     #[test]
     fn base_turn_follows_the_sensor_unless_overridden() {
         assert_eq!(base_turn(None, None), 0);
-        assert_eq!(base_turn(Some("vertical"), None), 0);
+        assert_eq!(base_turn(Some("vertical"), None), 180);
         assert_eq!(base_turn(Some("horizontal"), None), 270);
         assert_eq!(base_turn(Some("horizontal"), Some(90)), 90);
         assert_eq!(base_turn(None, Some(-90)), 270);

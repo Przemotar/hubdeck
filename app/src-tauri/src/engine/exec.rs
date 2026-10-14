@@ -17,6 +17,14 @@ pub enum InputEvent {
 }
 
 /// What the dial should show for a moment after an action changed a value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WeatherCmd {
+    Hours(i32),
+    View,
+    /// Open the forecast for the place in the browser.
+    Forecast,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feedback {
     /// 0..=1 drawn as a ring with a number; None shows only the caption (e.g. a dial mode name).
@@ -39,6 +47,16 @@ pub struct Outcome {
     pub lighting: Option<Lighting>,
     /// Start, pause, reset or set the control's countdown timer.
     pub timer: Option<super::timer::TimerCmd>,
+    /// The control's clock: its stopwatch, view or hours.
+    pub clock: Option<super::timer::ClockCmd>,
+    /// A system monitor shows the next (+) or previous (-) metric.
+    pub monitor_step: Option<i32>,
+    /// The control's pomodoro.
+    pub pomodoro: Option<super::timer::PomodoroCmd>,
+    /// What a gesture did to the dial pet.
+    pub pet: Option<super::pet::PetCmd>,
+    /// The weather scene: hours ahead by detents (`Hours`), or the next view (`View`).
+    pub weather: Option<WeatherCmd>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -344,7 +362,38 @@ impl Executor {
             },
             ("core.profile", InputEvent::Turn(d)) => out.profile_step = Some(d.signum() as i32),
 
-            ("core.timer", InputEvent::Press(true)) => out.timer = Some(if param_str(p, "press") == "reset" { super::timer::TimerCmd::Reset } else { super::timer::TimerCmd::StartPause }),
+            ("core.timer", InputEvent::Press(true)) => {
+                out.timer = Some(match param_str(p, "press") {
+                    "reset" => super::timer::TimerCmd::Reset,
+                    "addMinute" => super::timer::TimerCmd::AddMinute,
+                    _ => super::timer::TimerCmd::StartPause,
+                })
+            }
+            ("core.clock", InputEvent::Press(true)) => {
+                out.clock = match param_str(p, "press") {
+                    "stopwatch" => Some(super::timer::ClockCmd::Stopwatch),
+                    "stopwatchReset" => Some(super::timer::ClockCmd::StopwatchReset),
+                    "hours" => Some(super::timer::ClockCmd::Hours),
+                    _ => None,
+                }
+            }
+            ("core.clock", InputEvent::Turn(d)) => out.clock = Some(super::timer::ClockCmd::View(d as i32)),
+            ("core.pomodoro", InputEvent::Press(true)) => {
+                out.pomodoro = Some(match param_str(p, "press") {
+                    "skip" => super::timer::PomodoroCmd::Skip,
+                    "reset" => super::timer::PomodoroCmd::Reset,
+                    _ => super::timer::PomodoroCmd::StartPause,
+                })
+            }
+            ("core.pet", InputEvent::Turn(d)) => out.pet = Some(super::pet::PetCmd::Play(d as i32)),
+            ("core.pet", InputEvent::Press(true)) => {
+                out.pet = Some(match param_str(p, "press") {
+                    "feed" => super::pet::PetCmd::Feed,
+                    "sleep" => super::pet::PetCmd::Sleep,
+                    _ => super::pet::PetCmd::Pet,
+                })
+            }
+            ("core.pomodoro", InputEvent::Turn(d)) => out.pomodoro = Some(super::timer::PomodoroCmd::Adjust(d as i32)),
             ("core.timer", InputEvent::Turn(d)) => out.timer = Some(super::timer::TimerCmd::Adjust(d as i32)),
 
             ("core.lighting", InputEvent::Press(true)) => {
@@ -365,14 +414,30 @@ impl Executor {
             ("core.deckBrightness", InputEvent::Turn(d)) => out.deck_brightness = Some(DeckBrightness::By(d as i32 * param_f64(p, "step", 10.0) as i32)),
             ("core.deckBrightness", InputEvent::Slide(v)) => out.deck_brightness = Some(DeckBrightness::Set(v)),
 
-            ("core.nowPlaying", InputEvent::Press(true)) => keyboard(move |e| e.key(Key::MediaPlayPause, Direction::Click).map_err(|e| e.to_string()))?,
+            // the player the dial shows; else the media key
+            ("core.nowPlaying", InputEvent::Press(true)) => {
+                let (command, key) = match param_str(p, "press") {
+                    "next" => (super::media::Command::Next, Key::MediaNextTrack),
+                    "previous" => (super::media::Command::Previous, Key::MediaPrevTrack),
+                    _ => (super::media::Command::PlayPause, Key::MediaPlayPause),
+                };
+                match super::media::command(command) {
+                    Some(done) => done?,
+                    None => keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?,
+                }
+            }
             ("core.nowPlaying", InputEvent::Turn(d)) => {
                 if param_str(p, "turn") == "seek" {
                     // a detent is five seconds
                     super::media::seek(f64::from(d) * 5.0)?;
                 } else if param_str(p, "turn") == "tracks" {
-                    let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
-                    keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                    match super::media::command(if d > 0 { super::media::Command::Next } else { super::media::Command::Previous }) {
+                        Some(done) => done?,
+                        None => {
+                            let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
+                            keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                        }
+                    }
                 } else {
                     let volume = Binding { action: "core.volume".into(), params: serde_json::json!({"target": "system", "step": 2}), ..binding.clone() };
                     return self.run(&volume, input);
@@ -415,12 +480,18 @@ impl Executor {
                 }
             }
 
+            // the weather scene on the dial: turning goes through the hours, a press through the days
+            (super::live::ACTION, InputEvent::Turn(d)) if param_str(p, "dial") == "scene" => out.weather = Some(WeatherCmd::Hours(d as i32)),
+            (super::live::ACTION, InputEvent::Press(true)) if param_str(p, "press") == "view" => out.weather = Some(WeatherCmd::View),
+            (super::live::ACTION, InputEvent::Press(true)) if param_str(p, "press") == "forecast" => out.weather = Some(WeatherCmd::Forecast),
             (super::live::ACTION, InputEvent::Press(true)) => {
                 if let Some(caption) = super::live::press(p)? {
                     out.feedback = Some(Feedback { value: None, caption });
                 }
             }
 
+            ("core.monitor", InputEvent::Turn(d)) => out.monitor_step = Some(d as i32),
+            ("core.monitor", InputEvent::Press(true)) if param_str(p, "press") == "next" => out.monitor_step = Some(1),
             ("core.monitor", InputEvent::Press(true)) => {
                 let tool = if cfg!(target_os = "macos") { "/System/Applications/Utilities/Activity Monitor.app" } else { "taskmgr.exe" };
                 crate::system::shell_open(tool)?;

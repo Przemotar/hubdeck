@@ -81,7 +81,8 @@ pub fn switched(exe: &str) {
         if let Some((prev, since)) = s.current.take() {
             add(&mut s.file.apps, &prev, now - since, &day);
         }
-        if !exe.is_empty() && !exe.to_lowercase().starts_with("hubdeck") {
+        // not HubDeck itself, and not the lock screen (owner, 2026-10-14: "loginwindow" became a key)
+        if !exe.is_empty() && !exe.to_lowercase().starts_with("hubdeck") && !super::idle::is_lock_screen(exe) {
             s.current = Some((exe.to_string(), now));
         }
         (now - s.saved >= SAVE_EVERY).then(|| {
@@ -115,7 +116,7 @@ pub fn since() -> String {
 
 /// The apps used most, most first: (exe, hours, days).
 pub fn top(n: usize) -> Vec<(String, f32, u32)> {
-    let mut all: Vec<(String, f32, u32)> = with(|s| s.file.apps.iter().map(|(exe, u)| (exe.clone(), u.seconds as f32 / 3600.0, u.days)).collect());
+    let mut all: Vec<(String, f32, u32)> = with(|s| s.file.apps.iter().filter(|(exe, _)| !super::idle::is_lock_screen(exe)).map(|(exe, u)| (exe.clone(), u.seconds as f32 / 3600.0, u.days)).collect());
     all.sort_by(|a, b| b.1.total_cmp(&a.1));
     all.truncate(n);
     all

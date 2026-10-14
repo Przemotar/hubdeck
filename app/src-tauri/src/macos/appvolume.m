@@ -166,7 +166,7 @@ static MHTap *create(NSArray<NSNumber *> *processes, BOOL others, float gain, in
 /// other app when `others`, to `gain` (0..1). `key` names the control's target. 0 on success;
 /// 1 no such app plays, 2 macOS older than 14.2, 3 not allowed (System Audio Recording),
 /// 4 no output, 5/6 the device would not start.
-int mh_appvol_set(const char *key, const char *needles, int others, float gain) {
+static int appvol_set(const char *key, const char *needles, int others, float gain) {
     if (@available(macOS 14.2, *)) {
         @synchronized(taps()) {
             NSString *k = [NSString stringWithUTF8String:key];
@@ -202,7 +202,7 @@ int mh_appvol_set(const char *key, const char *needles, int others, float gain) 
 }
 
 /// The volume HubDeck plays `key` at (1 when it does not tap it).
-float mh_appvol_get(const char *key) {
+static float appvol_get(const char *key) {
     @synchronized(taps()) {
         MHTap *t = taps()[[NSString stringWithUTF8String:key]];
         return t ? atomic_load(&t->gain) : 1.0f;
@@ -210,11 +210,32 @@ float mh_appvol_get(const char *key) {
 }
 
 /// Every app back to playing straight (HubDeck quits).
-void mh_appvol_reset(void) {
+static void appvol_reset(void) {
     if (@available(macOS 14.2, *)) {
         @synchronized(taps()) {
             for (MHTap *t in taps().allValues) destroy(t);
             [taps() removeAllObjects];
         }
+    }
+}
+
+// Called from Rust threads that have no autorelease pool: each call drains its own, or the
+// autoreleased strings, arrays and app objects of every turn of a knob would stay until the
+// thread ends (2026-10-14: the same gap grew HubDeck to gigabytes in the icon reader).
+int mh_appvol_set(const char *key, const char *needles, int others, float gain) {
+    @autoreleasepool {
+        return appvol_set(key, needles, others, gain);
+    }
+}
+
+float mh_appvol_get(const char *key) {
+    @autoreleasepool {
+        return appvol_get(key);
+    }
+}
+
+void mh_appvol_reset(void) {
+    @autoreleasepool {
+        appvol_reset();
     }
 }

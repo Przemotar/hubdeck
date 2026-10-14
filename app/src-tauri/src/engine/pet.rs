@@ -1,0 +1,485 @@
+//! The dial pet, Mochi (owner's picks, 2026-10-14: a sweet companion that lives only on the dial;
+//! its mood follows the day and shows in the dial's color, nowhere else on the deck; it never
+//! dies, it only gets sad and falls asleep). This is the first version: turning plays with it, a
+//! press pets it, a double press feeds it, a hold puts it to sleep or wakes it. Growing up,
+//! accessories and the treat game come later.
+//!
+//! The state lives in `pet.json` next to the profiles, so Mochi remembers across restarts.
+
+use std::path::Path;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+
+pub const ACTION: &str = "core.pet";
+
+/// What a gesture does to the pet.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PetCmd {
+    /// Detents: it plays and looks that way.
+    Play(i32),
+    Pet,
+    Feed,
+    /// To sleep, or awake.
+    Sleep,
+}
+
+/// Mochi's needs, 0..=1, and when they were last worked out (seconds since 1970).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Needs {
+    pub fullness: f32,
+    pub joy: f32,
+    pub asleep: bool,
+    pub at: u64,
+}
+
+impl Default for Needs {
+    fn default() -> Self {
+        Self { fullness: 0.8, joy: 0.8, asleep: false, at: now_secs() }
+    }
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Fullness goes from full to empty in about 8 hours, joy in about 5; both rest while it sleeps.
+const FULL_HOURS: f32 = 8.0;
+const JOY_HOURS: f32 = 5.0;
+
+impl Needs {
+    /// Time passes (`now` in seconds since 1970).
+    pub fn age(&mut self, now: u64) {
+        let hours = now.saturating_sub(self.at) as f32 / 3600.0;
+        if !self.asleep {
+            self.fullness = (self.fullness - hours / FULL_HOURS).max(0.0);
+            self.joy = (self.joy - hours / JOY_HOURS).max(0.0);
+        }
+        self.at = now;
+    }
+}
+
+/// How it feels, from its needs, the time of day and the computer (locked = asleep).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mood {
+    Happy,
+    Hungry,
+    Sad,
+    Sleepy,
+    Asleep,
+}
+
+impl Mood {
+    pub fn word(self, polish: bool) -> &'static str {
+        match (self, polish) {
+            (Mood::Happy, false) => "happy",
+            (Mood::Happy, true) => "szczęśliwy",
+            (Mood::Hungry, false) => "hungry",
+            (Mood::Hungry, true) => "głodny",
+            (Mood::Sad, false) => "a bit sad",
+            (Mood::Sad, true) => "trochę smutny",
+            (Mood::Sleepy, false) => "sleepy",
+            (Mood::Sleepy, true) => "śpiący",
+            (Mood::Asleep, false) => "asleep",
+            (Mood::Asleep, true) => "śpi",
+        }
+    }
+
+    /// The dial's background for the mood (the only place it shows).
+    fn sky(self) -> (&'static str, &'static str) {
+        match self {
+            Mood::Happy => ("#2a2250", "#120f22"),
+            Mood::Hungry => ("#3a2618", "#170e0a"),
+            Mood::Sad => ("#1d2a3d", "#0b1018"),
+            Mood::Sleepy => ("#141a42", "#05060f"),
+            Mood::Asleep => ("#0f1438", "#04050c"),
+        }
+    }
+}
+
+/// The last thing that happened, for its little animation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Moment {
+    Hearts,
+    Munch,
+    Hop(i32),
+    Yawn,
+}
+
+/// Mochi as the engine keeps it.
+#[derive(Debug, Clone)]
+pub struct Pet {
+    pub needs: Needs,
+    pub moment: Option<(Moment, Instant)>,
+    /// Where it looks: -1 left .. 1 right, from the last turn.
+    pub look: f32,
+    file: Option<std::path::PathBuf>,
+}
+
+impl Pet {
+    pub fn load(data_dir: &Path) -> Self {
+        let file = data_dir.join("pet.json");
+        let mut needs: Needs = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        needs.age(now_secs());
+        Self { needs, moment: None, look: 0.0, file: Some(file) }
+    }
+
+    fn save(&self) {
+        if let Some(f) = &self.file
+            && let Ok(json) = serde_json::to_vec_pretty(&self.needs)
+            && let Err(e) = super::profile::write_atomic(f, &json)
+        {
+            log::warn!("pet.json: {e}");
+        }
+    }
+
+    pub fn apply(&mut self, cmd: PetCmd, now: Instant) {
+        self.needs.age(now_secs());
+        match cmd {
+            PetCmd::Play(_) | PetCmd::Pet | PetCmd::Feed if self.needs.asleep => {
+                // any touch wakes it, with a yawn (owner, 2026-10-14: it "slept all the time", only
+                // a second hold woke it)
+                self.needs.asleep = false;
+                self.moment = Some((Moment::Yawn, now));
+            }
+            PetCmd::Play(d) => {
+                self.look = (d as f32 / 3.0).clamp(-1.0, 1.0);
+                self.needs.joy = (self.needs.joy + 0.03 * d.unsigned_abs() as f32).min(1.0);
+                self.moment = Some((Moment::Hop(d.signum()), now));
+            }
+            PetCmd::Pet => {
+                self.needs.joy = (self.needs.joy + 0.15).min(1.0);
+                self.moment = Some((Moment::Hearts, now));
+            }
+            PetCmd::Feed => {
+                self.needs.fullness = (self.needs.fullness + 0.35).min(1.0);
+                self.moment = Some((Moment::Munch, now));
+            }
+            PetCmd::Sleep => {
+                self.needs.asleep = !self.needs.asleep;
+                self.moment = Some((Moment::Yawn, now));
+            }
+        }
+        self.save();
+    }
+
+    /// How it feels now: asleep while the computer is locked or put to bed, sleepy late at night.
+    pub fn mood(&self, locked: bool, hour: u32) -> Mood {
+        if self.needs.asleep || locked {
+            Mood::Asleep
+        } else if self.needs.fullness < 0.25 {
+            Mood::Hungry
+        } else if self.needs.joy < 0.3 {
+            Mood::Sad
+        } else if !(7..23).contains(&hour) {
+            Mood::Sleepy
+        } else {
+            Mood::Happy
+        }
+    }
+}
+
+/// The dust floating in the background, in the mood's color.
+fn dust(mood: Mood) -> &'static str {
+    match mood {
+        Mood::Happy => "#b2a6ff",
+        Mood::Hungry => "#ffb15c",
+        Mood::Sad => "#7fa6d9",
+        Mood::Sleepy | Mood::Asleep => "#8f9cff",
+    }
+}
+
+const SHAPE: &str = "M60 170 Q60 72 120 72 Q180 72 180 170 Q180 196 120 196 Q60 196 60 170Z";
+const HEART: &str = "M0 -4 C0 -10 -9 -10 -9 -3 C-9 3 0 8 0 11 C0 8 9 3 9 -3 C9 -10 0 -10 0 -4Z";
+const INK: &str = "#1a1433";
+const MOUTH: &str = "#2a1240";
+/// The deck's own font (the only one the renderer has: any other name drew boxes for missing glyphs).
+const FONT: &str = super::render::FONT_FAMILY;
+
+/// Mochi on the dial at `t` seconds, with its name and mood on top (owner's pick, 2026-10-14: the
+/// polished one: soft light from above, a shine and a lit edge, a jelly squash on every touch,
+/// glossy eyes, lids when sleepy, a tear when sad, hearts that sway up, a bitten cookie, a
+/// nightcap; still a drawing made by code, no picture files).
+pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: Instant, rotation: i32) -> String {
+    use std::f32::consts::PI;
+    let (s, c) = (240.0_f32, 120.0_f32);
+    let (top, bottom) = mood.sky();
+    let asleep = mood == Mood::Asleep;
+    let moment = pet.moment.filter(|(_, at)| now.duration_since(*at) < Duration::from_millis(2400)).map(|(m, at)| (m, now.duration_since(at).as_secs_f32()));
+    let age = moment.map_or(99.0, |(_, a)| a);
+    let is = |m: Moment| moment.is_some_and(|(x, _)| std::mem::discriminant(&x) == std::mem::discriminant(&m));
+    // jelly: a press squashes and springs back; a hop stretches up and squashes on landing
+    let breath = if asleep { (t * 1.5).sin() * 0.045 } else { (t * 2.3).sin() * 0.025 };
+    let (mut sx, mut sy, mut lift) = (1.0 - breath, 1.0 + breath, 0.0_f32);
+    if (is(Moment::Hearts) || is(Moment::Munch)) && age < 1.0 {
+        let k = (-5.0 * age).exp() * (16.0 * age).cos() * 0.14;
+        sx += k;
+        sy -= k;
+    }
+    if is(Moment::Hop(0)) && age < 0.8 {
+        if age < 0.45 {
+            let u = (age / 0.45 * PI).sin();
+            lift = u * 20.0;
+            sy += 0.08 * u;
+            sx -= 0.05 * u;
+        } else {
+            let k = (-7.0 * (age - 0.45)).exp() * (20.0 * (age - 0.45)).cos() * 0.12;
+            sx += k;
+            sy -= k;
+        }
+    }
+    let tilt = pet.look * 4.0 + if mood == Mood::Sleepy { (t * 0.9).sin() * 3.0 } else { 0.0 };
+    let m = mood as u8;
+    let mut b = format!(
+        r##"<defs><radialGradient id="psk{m}" cx="50%" cy="28%" r="80%"><stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></radialGradient><radialGradient id="pbd" cx="36%" cy="28%" r="78%"><stop offset="0" stop-color="#ece6ff"/><stop offset=".38" stop-color="#b3a7ff"/><stop offset=".78" stop-color="#8371f2"/><stop offset="1" stop-color="#5d4bd2"/></radialGradient><linearGradient id="psh" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#2a1a6e" stop-opacity="0"/><stop offset="1" stop-color="#2a1a6e" stop-opacity=".38"/></linearGradient><radialGradient id="pey" cx="50%" cy="30%"><stop offset="0" stop-color="#3a2d6e"/><stop offset="1" stop-color="#140f2b"/></radialGradient><linearGradient id="php" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb3dc"/><stop offset="1" stop-color="#f0569c"/></linearGradient><radialGradient id="pck" cx="40%" cy="35%"><stop offset="0" stop-color="#f2c48a"/><stop offset="1" stop-color="#c98a45"/></radialGradient><radialGradient id="pshd"><stop offset="0" stop-color="#000" stop-opacity=".9"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><radialGradient id="pglo"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><radialGradient id="pblu"><stop offset="0" stop-color="#ff8fc7" stop-opacity=".9"/><stop offset="1" stop-color="#ff8fc7" stop-opacity="0"/></radialGradient></defs><rect width="{s}" height="{s}" fill="url(#psk{m})"/>"##
+    );
+    let dust_color = dust(mood);
+    for i in 0..9 {
+        let fi = i as f32;
+        let x = (30.0 + fi * 23.0 + (t * 0.3 + fi).sin() * 8.0) % 220.0 + 10.0;
+        let y = 40.0 + ((i * 37) % 120) as f32 - (t * 6.0 + fi * 13.0) % 40.0;
+        b += &format!(r#"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="{dust_color}" opacity="{:.2}"/>"#, 1.0 + (i % 3) as f32 * 0.6, 0.18 + 0.15 * (t * 1.2 + fi).sin());
+    }
+    if matches!(mood, Mood::Sleepy | Mood::Asleep) {
+        for i in 0..10 {
+            let (x, y) = (34 + (i * 47) % 172, 30 + (i * 29) % 70);
+            b += &format!(r##"<circle cx="{x}" cy="{y}" r="1.3" fill="#fff" opacity="{:.2}"/>"##, 0.3 + 0.5 * ((t * 1.7 + i as f32 * 1.3).sin() * 0.5 + 0.5));
+        }
+    }
+    // the shadow shrinks while it is up in the air
+    // soft edges from gradients, not blur filters: a blur was 60% of a frame (2026-10-14)
+    b += &format!(r##"<ellipse cx="120" cy="199" rx="{:.1}" ry="12" fill="url(#pshd)" opacity="{:.2}"/>"##, 60.0 * (1.0 - lift / 60.0), 0.55 - lift / 90.0);
+    b += &format!(r#"<g transform="translate(0 {:.1}) rotate({tilt:.1} 120 196) translate(120 196) scale({sx:.3} {sy:.3}) translate(-120 -196)">"#, -lift);
+    b += &format!(r#"<path d="{SHAPE}" fill="url(#pbd)"/><path d="{SHAPE}" fill="url(#psh)"/>"#);
+    // the soft shine on the left (the lit edge on the right went: owner, "wygląda słabo")
+    b += r##"<ellipse cx="94" cy="100" rx="22" ry="14" fill="url(#pglo)" opacity=".6" transform="rotate(-28 94 100)"/><circle cx="86" cy="95" r="3.2" fill="#fff" opacity=".9"/>"##;
+    // eyes: shut asleep or blinking, happy arcs while petted, glossy otherwise (lids when sleepy)
+    let lx = pet.look * 6.0;
+    let blink = !asleep && (t % 4.2) > 4.05;
+    let happy_eyes = is(Moment::Hearts) && age < 1.8;
+    for x in [98.0_f32, 142.0] {
+        let ex = x + lx;
+        if asleep || blink {
+            b += &format!(r#"<path d="M{:.1} 132 Q{ex:.1} 140 {:.1} 132" fill="none" stroke="{INK}" stroke-width="4" stroke-linecap="round"/>"#, ex - 10.0, ex + 10.0);
+        } else if happy_eyes {
+            b += &format!(r#"<path d="M{:.1} 134 Q{ex:.1} 122 {:.1} 134" fill="none" stroke="{INK}" stroke-width="4.5" stroke-linecap="round"/>"#, ex - 10.0, ex + 10.0);
+        } else {
+            if mood == Mood::Sleepy {
+                // tired: half shut under a heavy, nearly flat lid, a soft shadow under the eye
+                b += &format!(
+                    r##"<ellipse cx="{ex:.1}" cy="145" rx="9" ry="3" fill="#5a46c8" opacity=".3"/><path d="M{l:.1} 131 A10.5 10 0 0 0 {r:.1} 131 Z" fill="url(#pey)"/><circle cx="{:.1}" cy="134.5" r="2.2" fill="#fff" opacity=".85"/><path d="M{l2:.1} 131 Q{ex:.1} 128 {r2:.1} 131" fill="none" stroke="{INK}" stroke-width="3.8" stroke-linecap="round"/>"##,
+                    ex + 3.0,
+                    l = ex - 10.5,
+                    r = ex + 10.5,
+                    l2 = ex - 12.0,
+                    r2 = ex + 12.0
+                );
+            } else {
+                b += &format!(
+                    r##"<ellipse cx="{ex:.1}" cy="130" rx="10.5" ry="13.5" fill="url(#pey)"/><circle cx="{:.1}" cy="124.5" r="3.8" fill="#fff"/><circle cx="{:.1}" cy="136" r="1.7" fill="#fff" opacity=".8"/>"##,
+                    ex + 3.5,
+                    ex - 3.5
+                );
+            }
+        }
+    }
+    b += r##"<ellipse cx="82" cy="153" rx="14" ry="8" fill="url(#pblu)" opacity=".6"/><ellipse cx="158" cy="153" rx="14" ry="8" fill="url(#pblu)" opacity=".6"/>"##;
+    // the mouth
+    b += &if is(Moment::Munch) && age < 2.0 {
+        format!(r#"<ellipse cx="120" cy="158" rx="8" ry="{:.1}" fill="{MOUTH}"/>"#, ((age * 13.0).sin() * 0.5 + 0.5) * 6.0 + 3.0)
+    } else if is(Moment::Yawn) && age < 1.5 {
+        let o = 3.0 + (age / 1.5 * PI).sin() * 8.0;
+        format!(r##"<ellipse cx="120" cy="159" rx="7.5" ry="{o:.1}" fill="{MOUTH}"/><ellipse cx="120" cy="{:.1}" rx="4" ry="{:.1}" fill="#ff7aa8"/>"##, 159.0 + o * 0.5, o * 0.35)
+    } else {
+        match mood {
+            Mood::Sad => {
+                let fall = (t * 18.0) % 24.0;
+                format!(
+                    r##"<path d="M109 161 Q120 151 131 161" fill="none" stroke="{INK}" stroke-width="4" stroke-linecap="round"/><path d="M{:.1} {:.1} q4 7 0 10 q-4 -3 0 -10z" fill="#9ed2ff" opacity="{:.2}"/>"##,
+                    150.0 + lx,
+                    140.0 + fall,
+                    1.0 - fall / 24.0
+                )
+            }
+            Mood::Hungry => format!(r#"<path d="M108 158 Q114 152 120 158 Q126 164 132 158" fill="none" stroke="{INK}" stroke-width="4" stroke-linecap="round"/>"#),
+            Mood::Asleep => format!(r#"<ellipse cx="120" cy="157" rx="4" ry="3" fill="{MOUTH}"/>"#),
+            _ if happy_eyes => format!(r##"<path d="M108 152 Q120 170 132 152 Z" fill="{MOUTH}"/><path d="M113 158 Q120 166 127 158 Z" fill="#ff7aa8"/>"##),
+            _ => format!(r#"<path d="M108 153 Q114 160 120 154 Q126 160 132 153" fill="none" stroke="{INK}" stroke-width="4" stroke-linecap="round"/>"#),
+        }
+    };
+    if asleep {
+        b += r##"<path d="M78 92 Q96 60 132 66 Q168 70 186 54 Q176 92 160 96 Q120 84 78 92Z" fill="#2f3a8f"/><path d="M76 92 Q120 80 162 96" fill="none" stroke="#e8ecff" stroke-width="7" stroke-linecap="round"/><circle cx="188" cy="54" r="8" fill="#e8ecff"/>"##;
+    }
+    b += "</g>";
+    // hearts float up and sway
+    if is(Moment::Hearts) {
+        for (i, (x, delay)) in [(150.0_f32, 0.0_f32), (176.0, 0.22), (92.0, 0.4)].into_iter().enumerate() {
+            let p = (age - delay).max(0.0) / 1.9;
+            if p > 0.0 && p < 1.0 {
+                let scale = (0.8 + i as f32 * 0.15) * if p < 0.15 { p / 0.15 } else { 1.0 };
+                b += &format!(
+                    r#"<path d="{HEART}" fill="url(#php)" transform="translate({:.1} {:.1}) scale({scale:.2})" opacity="{:.2}"/>"#,
+                    x + (p * 8.0 + i as f32).sin() * 6.0,
+                    100.0 - p * 58.0,
+                    1.0 - p * p
+                );
+            }
+        }
+    }
+    // the cookie, bitten three times, crumbs falling
+    if is(Moment::Munch) && age < 1.4 {
+        let bites = ((age / 0.35) as usize).min(3);
+        // the bites cut the cookie (a mask), whatever is behind it shows through
+        b += r##"<mask id="pbite"><rect x="-20" y="-20" width="40" height="40" fill="#fff"/>"##;
+        for k in 0..bites {
+            b += &format!(r##"<circle cx="{}" cy="-13" r="6.5" fill="#000"/>"##, -8 + k as i32 * 8);
+        }
+        b += r##"</mask><g transform="translate(120 186)"><g mask="url(#pbite)"><circle r="14" fill="url(#pck)"/><circle cx="-5" cy="-3" r="2.2" fill="#6b3a12"/><circle cx="5" cy="4" r="2.2" fill="#6b3a12"/><circle cx="2" cy="-6" r="1.6" fill="#6b3a12"/></g></g>"##;
+        for k in 0..6 {
+            let p = (age - 0.3 - k as f32 * 0.08).max(0.0);
+            if p > 0.0 {
+                b += &format!(r##"<circle cx="{}" cy="{:.1}" r="1.6" fill="#d9a066" opacity="{:.2}"/>"##, 108 + k * 5, 190.0 + p * 40.0, (1.0 - p * 1.4).max(0.0));
+            }
+        }
+    }
+    if asleep {
+        for i in 0..3 {
+            let p = (t * 0.45 + i as f32 / 3.0) % 1.0;
+            b += &format!(
+                r##"<text x="{:.1}" y="{:.1}" font-family="{FONT}" font-size="{:.0}" fill="#c4bcff" opacity="{:.2}" font-weight="700">z</text>"##,
+                196.0 + p * 16.0,
+                112.0 - p * 40.0,
+                13.0 + p * 10.0,
+                (1.0 - p) * 0.9
+            );
+        }
+    }
+    let label = format!("{name} · {}", mood.word(polish));
+    b += &format!(r##"<text x="{c}" y="36" text-anchor="middle" font-family="{FONT}" font-size="14" fill="#d6d1ea">{}</text>"##, xml(&label));
+    format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})">{b}</g></svg>"#)
+}
+
+fn xml(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mochi_gets_hungry_and_sad_over_hours_but_not_asleep() {
+        let mut n = Needs { fullness: 1.0, joy: 1.0, asleep: false, at: 0 };
+        n.age(4 * 3600);
+        assert!((n.fullness - 0.5).abs() < 0.01 && (n.joy - 0.2).abs() < 0.01);
+        let mut s = Needs { fullness: 1.0, joy: 1.0, asleep: true, at: 0 };
+        s.age(10 * 3600);
+        assert_eq!((s.fullness, s.joy), (1.0, 1.0), "asleep, nothing runs down");
+    }
+
+    /// Every mood and moment in one picture: `HUBDECK_OUT=<png> cargo test -p hubdeck mochi_sheet -- --ignored`.
+    #[test]
+    #[ignore]
+    fn mochi_sheet() {
+        use resvg::{tiny_skia, usvg};
+        let base = Instant::now();
+        let mut out = String::from(r##"<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="540"><rect width="100%" height="100%" fill="#101016"/>"##);
+        let cases: [(Mood, Option<Moment>, f32); 10] = [
+            (Mood::Happy, None, 0.0),
+            (Mood::Hungry, None, 0.0),
+            (Mood::Sad, None, 0.0),
+            (Mood::Sleepy, None, 0.0),
+            (Mood::Asleep, None, 0.0),
+            (Mood::Happy, Some(Moment::Hearts), 0.6),
+            (Mood::Happy, Some(Moment::Munch), 0.9),
+            (Mood::Happy, Some(Moment::Hop(1)), 0.2),
+            (Mood::Sleepy, Some(Moment::Yawn), 0.7),
+            (Mood::Happy, Some(Moment::Hop(-1)), 0.6),
+        ];
+        for (i, (mood, moment, age)) in cases.iter().enumerate() {
+            let now = base + Duration::from_secs(5);
+            let pet = Pet {
+                needs: Needs::default(),
+                moment: moment.map(|m| (m, now - Duration::from_secs_f32(*age))),
+                look: if i == 9 {
+                    -1.0
+                } else if i == 7 {
+                    1.0
+                } else {
+                    0.0
+                },
+                file: None,
+            };
+            let svg = dial_svg(&pet, *mood, "Mochi", true, 1.3, now, 0);
+            let (x, y) = (20 + (i % 5) * 255, 20 + (i / 5) * 260);
+            out += &format!(
+                r#"<svg x="{x}" y="{y}" width="240" height="240">{}</svg>"#,
+                svg.trim_start_matches(r#"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">"#).trim_end_matches("</svg>")
+            );
+        }
+        out += "</svg>";
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+        let tree = usvg::Tree::from_str(&out, &opt).unwrap();
+        let size = tree.size().to_int_size();
+        let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+        pixmap.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
+    }
+
+    /// How long a dial frame of Mochi takes to draw and encode (release: `--release`).
+    #[test]
+    #[ignore]
+    fn mochi_frame_time() {
+        let r = super::super::render::Renderer::default();
+        let base = Instant::now();
+        // where a frame's time goes: the drawing alone (no blur), the whole (draw + JPEG)
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let svg = dial_svg(&pet, Mood::Happy, "Mochi", false, 0.3, base, 0);
+        let plain = svg.replace(r#" filter="url(#pbl)""#, "").replace(r#" filter="url(#pbl1)""#, "");
+        for (label, svg) in [("with blur", &svg), ("without blur", &plain)] {
+            let started = Instant::now();
+            for _ in 0..30 {
+                r.jpeg(svg).unwrap();
+            }
+            println!("{label}: {:?} a frame", started.elapsed() / 30);
+        }
+        for (label, moment) in [("rest", None), ("hearts", Some(Moment::Hearts)), ("munch", Some(Moment::Munch))] {
+            let pet = Pet { needs: Needs::default(), moment: moment.map(|m| (m, base)), look: 0.0, file: None };
+            let started = Instant::now();
+            for f in 0..30 {
+                let svg = dial_svg(&pet, Mood::Happy, "Mochi", false, f as f32 * 0.06, base + Duration::from_millis(f * 60), 0);
+                r.jpeg(&svg).unwrap();
+            }
+            println!("{label}: {:?} a frame", started.elapsed() / 30);
+        }
+    }
+
+    #[test]
+    fn its_mood_follows_needs_the_day_and_the_lock() {
+        let mut p = Pet { needs: Needs { fullness: 0.9, joy: 0.9, asleep: false, at: now_secs() }, moment: None, look: 0.0, file: None };
+        assert_eq!(p.mood(false, 14), Mood::Happy);
+        assert_eq!(p.mood(true, 14), Mood::Asleep, "the computer is locked");
+        assert_eq!(p.mood(false, 2), Mood::Sleepy);
+        p.needs.fullness = 0.1;
+        assert_eq!(p.mood(false, 14), Mood::Hungry);
+        p.apply(PetCmd::Feed, Instant::now());
+        assert_eq!(p.mood(false, 14), Mood::Happy);
+        p.apply(PetCmd::Sleep, Instant::now());
+        assert_eq!(p.mood(false, 14), Mood::Asleep);
+        p.apply(PetCmd::Pet, Instant::now());
+        assert!(!p.needs.asleep, "any touch wakes it");
+        let svg = dial_svg(&p, Mood::Asleep, "Mochi & co", false, 1.0, Instant::now(), 0);
+        assert!(svg.starts_with("<svg") && svg.contains("Mochi &amp; co · asleep"));
+        // every mood and moment is a picture the renderer reads (a doubled attribute once broke one)
+        let r = super::super::render::Renderer::default();
+        for mood in [Mood::Happy, Mood::Hungry, Mood::Sad, Mood::Sleepy, Mood::Asleep] {
+            for moment in [None, Some(Moment::Hearts), Some(Moment::Munch), Some(Moment::Hop(1)), Some(Moment::Yawn)] {
+                let now = Instant::now() + Duration::from_secs(3);
+                let pet = Pet { moment: moment.map(|m| (m, now - Duration::from_millis(500))), ..p.clone() };
+                r.jpeg(&dial_svg(&pet, mood, "Mochi", true, 1.0, now, 0)).unwrap_or_else(|e| panic!("{mood:?} {moment:?}: {e}"));
+            }
+        }
+    }
+}

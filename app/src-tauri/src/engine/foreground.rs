@@ -132,8 +132,25 @@ mod platform {
     pub fn watch(tx: Sender<Msg>) {
         let own = std::process::id() as u64;
         let mut last = String::new();
+        let mut locked = None;
         loop {
             std::thread::sleep(Duration::from_millis(250));
+            let now = super::super::idle::session_locked();
+            if now.is_some() && now != locked {
+                locked = now;
+                if now == Some(false) {
+                    // report the app in front again: it may be the one from before the lock
+                    last.clear();
+                }
+                if let Some(l) = now
+                    && tx.send(Msg::Locked(l)).is_err()
+                {
+                    return;
+                }
+            }
+            if locked == Some(true) {
+                continue; // the lock screen switches no profile
+            }
             let Ok(win) = active_win_pos_rs::get_active_window() else { continue };
             if win.process_id == own {
                 continue;

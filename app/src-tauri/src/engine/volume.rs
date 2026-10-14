@@ -359,8 +359,8 @@ mod platform {
     /// The names of the apps running now (NSWorkspace).
     fn running_apps() -> Vec<String> {
         use objc2_app_kit::NSWorkspace;
-        let workspace = NSWorkspace::sharedWorkspace();
-        workspace.runningApplications().iter().filter_map(|a| a.localizedName().map(|n| n.to_string())).collect()
+        // its own pool: the list and its names are autoreleased (a thread without one keeps them)
+        objc2::rc::autoreleasepool(|_| NSWorkspace::sharedWorkspace().runningApplications().iter().filter_map(|a| a.localizedName().map(|n| n.to_string())).collect())
     }
 
     pub fn with_popup(level: f32, _up: bool) {

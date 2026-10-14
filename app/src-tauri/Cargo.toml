@@ -39,6 +39,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-log = "2"
 base64 = "0.22"
 chrono = "0.4.40"
+iana-time-zone = "0.1.65"
 sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
 nvml-wrapper = "0.13.0"
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }

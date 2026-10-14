@@ -60,10 +60,21 @@ pub fn init(data_dir: &Path) {
     let _ = FILE.set(data_dir.join("installed.json"));
 }
 
-/// The cached list, or a fresh scan when there is none or `refresh` is set. Blocking: call it
-/// from a blocking thread.
+/// The cached list with each item's icon, for the window's lists. Blocking: call it from a
+/// blocking thread. Reading icons is slow and, on a Mac, heavy (every size up to 1024 px), so
+/// nothing else asks for them (2026-10-14: icons of every app at start took gigabytes).
+pub fn list_with_icons(refresh: bool) -> Installed {
+    let mut found = list(refresh);
+    for item in found.apps.iter_mut().chain(found.games.iter_mut()) {
+        item.icon = super::apps::icon(&item.exe).or_else(|| png_icon(&item.logo));
+    }
+    found
+}
+
+/// The cached list, or a fresh scan when there is none or `refresh` is set; no icons. Blocking:
+/// call it from a blocking thread.
 pub fn list(refresh: bool) -> Installed {
-    let mut found = (!refresh).then(cached).flatten().unwrap_or_else(|| {
+    (!refresh).then(cached).flatten().unwrap_or_else(|| {
         let fresh = scan();
         if let Some(f) = FILE.get()
             && let Ok(json) = serde_json::to_vec_pretty(&fresh)
@@ -72,11 +83,7 @@ pub fn list(refresh: bool) -> Installed {
             log::warn!("installed.json: {e}");
         }
         fresh
-    });
-    for item in found.apps.iter_mut().chain(found.games.iter_mut()) {
-        item.icon = super::apps::icon(&item.exe).or_else(|| png_icon(&item.logo));
-    }
-    found
+    })
 }
 
 /// Just the games: from the cache when there is one, else a quick scan of the launchers (no apps).

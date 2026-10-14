@@ -9,6 +9,25 @@ unsafe extern "C" {
     fn mh_monitor_get(index: i32) -> i32;
     fn mh_monitor_set(index: i32, value: i32) -> i32;
     fn mh_sensor_names(out: *mut std::ffi::c_char, size: i32);
+    fn mh_session_locked() -> i32;
+    fn mh_idle_seconds() -> f64;
+}
+
+/// Whether the screen is locked (None = unknown).
+pub fn session_locked() -> Option<bool> {
+    // SAFETY: a plain C function without arguments; it releases what it copies.
+    match unsafe { mh_session_locked() } {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+/// Seconds since the last keyboard or mouse input.
+pub fn idle_seconds() -> Option<f64> {
+    // SAFETY: as above.
+    let s = unsafe { mh_idle_seconds() };
+    (s.is_finite() && s >= 0.0).then_some(s)
 }
 
 /// The temperature sensors' names (diagnostics: they differ from chip to chip).

@@ -113,6 +113,11 @@ mod platform {
         Ok(())
     }
 
+    /// Windows: the media keys go to the session the dial shows (the system's current one).
+    pub fn command(_command: super::Command) -> Option<Result<(), String>> {
+        None
+    }
+
     pub fn seek_to(seconds: f64) -> Result<(), String> {
         let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
         let session = manager.GetCurrentSession().map_err(|_| "nothing is playing".to_string())?;
@@ -143,6 +148,22 @@ pub fn seek(seconds: f64) -> Result<(), String> {
 /// Go to `seconds` from the start of what plays now (the dial scrubbing a song).
 pub fn seek_to(seconds: f64) -> Result<(), String> {
     platform::seek_to(seconds.max(0.0))
+}
+
+/// Play/pause, next or previous track.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Command {
+    PlayPause,
+    Next,
+    Previous,
+}
+
+/// Send `command` to the player whose song the dial shows. macOS: the system's media keys go to
+/// the app that played last (a YouTube tab) while the dial shows Spotify or Music (owner,
+/// 2026-10-14: "klikam żeby ją wznowić, a wznawia się to co na youtube"), so the player is told
+/// directly. None: no such player here (the caller presses the media key).
+pub fn command(command: Command) -> Option<Result<(), String>> {
+    platform::command(command)
 }
 
 #[cfg(target_os = "macos")]
@@ -194,15 +215,37 @@ mod platform {
         Some(("image/jpeg".to_string(), bytes))
     }
 
+    /// The player whose song shows: the first running one with a song (as `current` picks it).
+    fn shown() -> Option<&'static str> {
+        PLAYERS
+            .into_iter()
+            .filter(|a| running(a))
+            .find(|app| osascript(&format!(r#"if application "{app}" is running then tell application "{app}" to if player state is not stopped then return "yes""#)).is_some_and(|l| l == "yes"))
+    }
+
+    pub fn command(command: super::Command) -> Option<Result<(), String>> {
+        let app = shown()?;
+        let verb = match command {
+            super::Command::PlayPause => "playpause",
+            super::Command::Next => "next track",
+            super::Command::Previous => "previous track",
+        };
+        Some(
+            osascript(&format!(r#"tell application "{app}" to {verb}"#))
+                .map(|_| ())
+                .ok_or_else(|| format!("{app} did not answer (System Settings > Privacy & Security > Automation: allow HubDeck to control {app})")),
+        )
+    }
+
     pub fn seek(seconds: f64) -> Result<(), String> {
-        let app = PLAYERS.into_iter().find(|a| running(a)).ok_or("neither Spotify nor Music is open")?;
+        let app = shown().ok_or("neither Spotify nor Music plays a song")?;
         osascript(&format!(r#"tell application "{app}" to set player position to (player position + ({seconds}))"#))
             .map(|_| ())
             .ok_or_else(|| format!("{app} did not seek (System Settings > Privacy & Security > Automation: allow HubDeck to control {app})"))
     }
 
     pub fn seek_to(seconds: f64) -> Result<(), String> {
-        let app = PLAYERS.into_iter().find(|a| running(a)).ok_or("neither Spotify nor Music is open")?;
+        let app = shown().ok_or("neither Spotify nor Music plays a song")?;
         osascript(&format!(r#"tell application "{app}" to set player position to {seconds:.1}"#))
             .map(|_| ())
             .ok_or_else(|| format!("{app} did not seek (System Settings > Privacy & Security > Automation: allow HubDeck to control {app})"))
@@ -221,6 +264,10 @@ mod platform {
 
     pub fn seek(_seconds: f64) -> Result<(), String> {
         Err("seeking is not wired up on this system yet".into())
+    }
+
+    pub fn command(_command: super::Command) -> Option<Result<(), String>> {
+        None
     }
 
     pub fn seek_to(_seconds: f64) -> Result<(), String> {

@@ -16,9 +16,13 @@ pub fn system_idle() -> Option<Duration> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 pub fn system_idle() -> Option<Duration> {
-    // TODO(macOS): CGEventSourceSecondsSinceLastEventType
+    super::machw::idle_seconds().map(Duration::from_secs_f64)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn system_idle() -> Option<Duration> {
     None
 }
 
@@ -49,16 +53,22 @@ pub fn session_locked() -> Option<bool> {
     }
 }
 
-#[cfg(not(windows))]
+/// Whether the screen is locked, from the window server's session (None = unknown).
+#[cfg(target_os = "macos")]
+pub fn session_locked() -> Option<bool> {
+    super::machw::session_locked()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 #[allow(dead_code)]
 pub fn session_locked() -> Option<bool> {
-    // TODO(macOS): CGSessionCopyCurrentDictionary, "CGSSessionScreenIsLocked"
     None
 }
 
-/// Windows shows the lock screen as the app in front.
+/// The lock screen as the app in front: LockApp on Windows, loginwindow on macOS.
 pub fn is_lock_screen(exe: &str) -> bool {
-    exe.eq_ignore_ascii_case("LockApp.exe")
+    let name = exe.trim().trim_end_matches(".app").trim_end_matches(".APP");
+    ["LockApp.exe", "loginwindow", "ScreenSaverEngine"].iter().any(|e| name.eq_ignore_ascii_case(e))
 }
 
 /// Whether the screens should be off: locked (if that is wanted) or idle longer than `after`.
@@ -78,6 +88,9 @@ mod tests {
         assert!(should_blank(false, true, Duration::from_secs(600), 10));
         assert!(!should_blank(false, true, Duration::from_secs(599), 10));
         assert!(is_lock_screen("lockapp.exe"));
+        assert!(is_lock_screen("loginwindow"), "the macOS lock screen");
+        assert!(is_lock_screen("loginwindow.app"));
+        assert!(!is_lock_screen("Finder"));
     }
 
     /// Reads the real lock state (run while unlocked: expects Some(false)).

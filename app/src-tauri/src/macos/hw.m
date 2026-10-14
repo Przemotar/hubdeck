@@ -278,3 +278,21 @@ int mh_monitor_set(int index, int value) {
     }
     return done ? 0 : -1;
 }
+
+// ---------- session lock and idle time ----------
+
+/// 1 when the screen is locked, 0 when not, -1 when unknown (CGSessionCopyCurrentDictionary's
+/// "CGSSessionScreenIsLocked", present only while locked).
+int mh_session_locked(void) {
+    CFDictionaryRef session = CGSessionCopyCurrentDictionary();
+    if (!session) return -1;
+    CFBooleanRef locked = CFDictionaryGetValue(session, CFSTR("CGSSessionScreenIsLocked"));
+    int out = locked && CFGetTypeID(locked) == CFBooleanGetTypeID() && CFBooleanGetValue(locked) ? 1 : 0;
+    CFRelease(session);
+    return out;
+}
+
+/// Seconds since the last keyboard or mouse input in this session.
+double mh_idle_seconds(void) {
+    return CGEventSourceSecondsSinceLastEventType(kCGEventSourceStateCombinedSessionState, kCGAnyInputEventType);
+}

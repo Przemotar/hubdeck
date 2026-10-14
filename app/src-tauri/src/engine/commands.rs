@@ -207,7 +207,7 @@ pub async fn profile_check(engine: State<'_, Engine>, id: String) -> Res<Vec<sup
 /// Apps and games installed on this PC (cached; `refresh` scans again), with small icons.
 #[tauri::command]
 pub async fn installed_list(refresh: bool) -> super::installed::Installed {
-    tauri::async_runtime::spawn_blocking(move || super::installed::list(refresh)).await.unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(move || super::installed::list_with_icons(refresh)).await.unwrap_or_default()
 }
 
 /// A key picture for an installed app or game: its cover from the launcher's cache on this PC,

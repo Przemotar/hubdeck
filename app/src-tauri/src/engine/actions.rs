@@ -231,37 +231,43 @@ pub fn catalog() -> Vec<ActionDef> {
             id: NOW_PLAYING,
             name: "Now playing",
             group: "Media",
-            description: "Shows the cover, title and artist of what is playing (Windows: any player; macOS: Spotify and Apple Music). A press plays or pauses; turning changes the volume, skips tracks or moves in the song.",
+            description: "Shows the cover, title and artist of what is playing (Windows: any player; macOS: Spotify and Apple Music). A press plays or pauses (or skips: put one on the hold or double press); turning changes the volume, skips tracks or moves in the song.",
             inputs: vec![Press, Turn],
-            params: vec![p("turn", "Turning", ParamKind::Select { options: options(&[("volume", "Changes the volume"), ("tracks", "Skips tracks"), ("seek", "Moves in the song")]) }, json!("volume"))],
+            params: vec![
+                p("turn", "Turning", ParamKind::Select { options: options(&[("volume", "Changes the volume"), ("tracks", "Skips tracks"), ("seek", "Moves in the song")]) }, json!("volume")),
+                p("press", "A press", ParamKind::Select { options: options(&[("playPause", "Plays / pauses"), ("next", "Next track"), ("previous", "Previous track")]) }, json!("playPause")),
+            ],
             icon: "music",
         },
         ActionDef {
             id: MONITOR,
             name: "System monitor",
             group: "System",
-            description: "Shows CPU load or temperature, memory, or GPU load, temperature or memory on a key or the dial, updated every second. A press opens Task Manager (Activity Monitor on a Mac).",
-            inputs: vec![Press],
-            params: vec![ParamDef {
-                help: Some(
-                    "CPU temperature, and AMD or Intel GPUs, come from LibreHardwareMonitor: run it (Options > Run on Windows startup) and they show; without it the key shows a dash. NVIDIA GPUs work without it.",
-                ),
-                ..p(
-                    "metric",
-                    "Show",
-                    ParamKind::Select {
-                        options: options(&[
-                            ("cpu", "CPU load"),
-                            ("cpuTemp", "CPU temperature"),
-                            ("ram", "Memory used"),
-                            ("gpu", "GPU load"),
-                            ("gpuTemp", "GPU temperature"),
-                            ("vram", "GPU memory used"),
-                        ]),
-                    },
-                    json!("cpu"),
-                )
-            }],
+            description: "Shows CPU load or temperature, memory, or GPU load, temperature or memory on a key or the dial, updated every second. A press opens Task Manager (Activity Monitor on a Mac) or shows the next value; turning flips through the values.",
+            inputs: vec![Press, Turn],
+            params: vec![
+                p("press", "A press", ParamKind::Select { options: options(&[("open", "Opens Task Manager / Activity Monitor"), ("next", "Shows the next value")]) }, json!("open")),
+                ParamDef {
+                    help: Some(
+                        "CPU temperature, and AMD or Intel GPUs, come from LibreHardwareMonitor: run it (Options > Run on Windows startup) and they show; without it the key shows a dash. NVIDIA GPUs work without it.",
+                    ),
+                    ..p(
+                        "metric",
+                        "Show",
+                        ParamKind::Select {
+                            options: options(&[
+                                ("cpu", "CPU load"),
+                                ("cpuTemp", "CPU temperature"),
+                                ("ram", "Memory used"),
+                                ("gpu", "GPU load"),
+                                ("gpuTemp", "GPU temperature"),
+                                ("vram", "GPU memory used"),
+                            ]),
+                        },
+                        json!("cpu"),
+                    )
+                },
+            ],
             icon: "monitor",
         },
         ActionDef {
@@ -313,6 +319,20 @@ pub fn catalog() -> Vec<ActionDef> {
                 },
                 ParamDef {
                     when: Some(("source", vec!["weather"])), ..p("units", "Temperature in", ParamKind::Select { options: options(&[("metric", "°C"), ("imperial", "°F")]) }, json!("metric"))
+                },
+                ParamDef {
+                    when: Some(("source", vec!["weather"])),
+                    help: Some("The scene: the sky moves with the weather, day or night; turning goes through the next hours."),
+                    ..p("dial", "On the dial", ParamKind::Select { options: options(&[("value", "The value"), ("scene", "A weather scene")]) }, json!("value"))
+                },
+                ParamDef {
+                    when: Some(("source", vec!["weather"])),
+                    ..p(
+                        "press",
+                        "A press",
+                        ParamKind::Select { options: options(&[("refresh", "Refreshes (or opens the page below)"), ("view", "Today, tomorrow, three days"), ("forecast", "Opens the forecast")]) },
+                        json!("refresh"),
+                    )
                 },
                 ParamDef { when: Some(("source", vec!["url", "ha", "command", "calendar"])), ..p("every", "Refresh every (s)", ParamKind::Number { min: 5.0, max: 86_400.0, step: 5.0 }, json!(60)) },
                 p("prefix", "Before the value", ParamKind::Text { multiline: false }, json!("")),
@@ -960,11 +980,24 @@ pub fn catalog() -> Vec<ActionDef> {
             id: CLOCK,
             name: "Clock",
             group: "HubDeck",
-            description: "Shows the time, the date or both on a key or the dial.",
-            inputs: vec![Press],
+            description: "Shows the time, the date or both on a key or the dial. Turning flips through time and date, seconds, the date and the week; a press can run a stopwatch.",
+            inputs: vec![Press, Turn],
             params: vec![
-                p("show", "Show", ParamKind::Select { options: options(&[("time", "Time"), ("timeDate", "Time and date"), ("date", "Date")]) }, json!("time")),
+                p(
+                    "show",
+                    "Show",
+                    ParamKind::Select { options: options(&[("time", "Time"), ("timeDate", "Time and date"), ("seconds", "Time with seconds"), ("date", "Date"), ("week", "Week of the year")]) },
+                    json!("time"),
+                ),
                 p("hours", "Hours", ParamKind::Select { options: options(&[("24", "24-hour"), ("12", "12-hour")]) }, json!("24")),
+                p(
+                    "press",
+                    "A press",
+                    ParamKind::Select {
+                        options: options(&[("none", "Nothing"), ("stopwatch", "Starts / stops a stopwatch"), ("stopwatchReset", "Resets the stopwatch"), ("hours", "Switches 12 / 24 hours")]),
+                    },
+                    json!("none"),
+                ),
             ],
             icon: "clock",
         },
@@ -979,8 +1012,36 @@ pub fn catalog() -> Vec<ActionDef> {
                 p("seconds", "Seconds", ParamKind::Number { min: 0.0, max: 59.0, step: 1.0 }, json!(0)),
                 ParamDef {
                     help: Some("Put a Timer that resets on the hold or double press of the same key to have both."),
-                    ..p("press", "A press", ParamKind::Select { options: options(&[("startPause", "Starts / pauses"), ("reset", "Resets")]) }, json!("startPause"))
+                    ..p("press", "A press", ParamKind::Select { options: options(&[("startPause", "Starts / pauses"), ("reset", "Resets"), ("addMinute", "Adds a minute")]) }, json!("startPause"))
                 },
+                p("sound", "Sound at the end", ParamKind::Select { options: options(&[("on", "On"), ("off", "Off")]) }, json!("on")),
+            ],
+            icon: "timer",
+        },
+        ActionDef {
+            id: super::pet::ACTION,
+            name: "Dial pet",
+            group: "HubDeck",
+            description: "Mochi lives on the dial: turn to play, press to pet, double-press to feed, hold to put it to bed or wake it. It gets hungry and sad when left alone for hours, sleepy late at night and sleeps while the computer is locked; its mood shows in the dial's color. It never dies.",
+            inputs: vec![Press, Turn],
+            params: vec![
+                p("name", "Name", ParamKind::Text { multiline: false }, json!("Mochi")),
+                p("press", "A press", ParamKind::Select { options: options(&[("pet", "Pets it"), ("feed", "Feeds it"), ("sleep", "Bed / wake up")]) }, json!("pet")),
+            ],
+            icon: "heart",
+        },
+        ActionDef {
+            id: POMODORO,
+            name: "Pomodoro",
+            group: "HubDeck",
+            description: "Focus, a short break, again; after a few rounds a long break. The dial shows the time in a ring (red for focus, green for a break) and the rounds as dots. A press starts and pauses; turning sets the focus length while it is stopped; a phase that ends rings and waits for a press.",
+            inputs: vec![Press, Turn],
+            params: vec![
+                p("focus", "Focus (minutes)", ParamKind::Number { min: 1.0, max: 180.0, step: 1.0 }, json!(25)),
+                p("short", "Break (minutes)", ParamKind::Number { min: 1.0, max: 60.0, step: 1.0 }, json!(5)),
+                p("long", "Long break (minutes)", ParamKind::Number { min: 1.0, max: 120.0, step: 1.0 }, json!(15)),
+                p("rounds", "Rounds before the long break", ParamKind::Number { min: 1.0, max: 12.0, step: 1.0 }, json!(4)),
+                p("press", "A press", ParamKind::Select { options: options(&[("startPause", "Starts / pauses"), ("skip", "Goes to the next phase"), ("reset", "Starts over")]) }, json!("startPause")),
                 p("sound", "Sound at the end", ParamKind::Select { options: options(&[("on", "On"), ("off", "Off")]) }, json!("on")),
             ],
             icon: "timer",
@@ -1118,6 +1179,7 @@ pub const CLOCK: &str = "core.clock";
 
 /// Id of the countdown timer; the engine keeps its time and draws it.
 pub const TIMER: &str = "core.timer";
+pub const POMODORO: &str = "core.pomodoro";
 
 /// Id of the now playing action; the engine draws the cover on its key or the dial.
 pub const NOW_PLAYING: &str = "core.nowPlaying";

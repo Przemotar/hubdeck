@@ -28,6 +28,9 @@ pub enum Metric {
 }
 
 impl Metric {
+    /// What turning a monitor flips through (VRAM only where a GPU tells it).
+    pub const CYCLE: [Metric; 5] = [Metric::Cpu, Metric::Ram, Metric::Gpu, Metric::CpuTemp, Metric::GpuTemp];
+
     pub fn from_param(s: &str) -> Metric {
         match s {
             "ram" => Metric::Ram,

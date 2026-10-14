@@ -174,6 +174,8 @@ export interface AssistantScan {
   used: [string, number, number][];
   /** Since when the time in front is counted (local, `2026-10-12 16:30`). */
   since: string;
+  /** Installed apps HubDeck has a shortcut pack or a preset for. */
+  known: string[];
   modules: string[];
   /** Owned but not attached now (the assistant builds for `modules`). */
   detached: string[];
@@ -513,6 +515,8 @@ export interface DialFace {
   caption: string;
   captionPl: string;
   binding: Binding;
+  /** What turning, a press, a double press and a hold do on this look. */
+  gestures: { kind: "turn" | "press" | "double" | "hold"; what: string; whatPl: string }[];
   svg: string;
 }
 

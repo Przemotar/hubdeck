@@ -46,7 +46,7 @@ function tourView(focus: string) {
     part("music", faders ? 1 : 2, faders ? "keys.8" : "dial"),
     part("apps", 1, "keys.0"),
     { ...part("gestures", 1, "keys.5"), tasks: ["keys.5:hold", faders ? "keys.6:double" : "knobs.2:double", ...(faders ? [] : ["dial:hold"])] },
-    ...(faders ? [] : [{ ...part("dial", 6, "dial"), faces: ["nowPlaying", "clock", "timer", "cpu", "brightness", "scroll"] }]),
+    ...(faders ? [] : [{ ...part("dial", 8, "dial"), faces: ["nowPlaying", "pet", "clock", "pomodoro", "weather", "timer", "cpu", "volume"] }]),
     part("superAnimations", 1, "keys.9"),
     part("superSaver", 1, null),
     part("superRainbow", 1, null),
@@ -306,10 +306,11 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     return {
       used: [["Spotify", 6.2, 4], ["Visual Studio Code", 12.5, 5]],
       since: "2026-10-12 16:30",
+      known: ["Discord", "Figma", "Spotify", "Visual Studio Code"],
       modules: ["keys", "dial", "knobs", "rollers"],
       detached: ["faders"],
       profiles: ["Everyday desk", "OBS streaming"],
-      text: `What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most (time in front, counted since 2026-10-12 16:30): Visual Studio Code (12.5 h on 5 days), Spotify (6.2 h on 4 days)\n${deck}`,
+      text: `What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most (time in front, counted since 2026-10-12 16:30): Visual Studio Code (12.5 h on 5 days), Spotify (6.2 h on 4 days)\n- Installed apps HubDeck has checked shortcuts or a preset for: Discord, Figma, Spotify, Visual Studio Code\n${deck}`,
       deckText: `What HubDeck found on this computer (the user saw this before it was sent):\n- Apps used most: the user chose not to send them\n${deck}`,
     };
   },
@@ -432,6 +433,8 @@ export function installDemo() {
     { shouldMockEvents: true },
   );
   if (banners.includes("update")) setTimeout(() => void emit("update://available", UPDATE), 500);
+  // screenshot scripts stand in for the deck: `demoEmit("tour://gesture", "dial:turn")`
+  Object.assign(window, { demoEmit: (event: string, payload: unknown) => emit(event, payload) });
   if (banners.includes("error")) {
     const fail = () => void emit("engine://error", { control: "keys.2", message: "OBS is not running (ws://127.0.0.1:4455)" });
     setTimeout(fail, 500);

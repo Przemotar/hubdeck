@@ -3754,6 +3754,149 @@ button.chip.is-active {
   font-size: 13px;
   color: var(--tx2);
 }
+/* where the tour is (owner's pick C1, 2026-10-14): a segment per part, the current one filling up */
+.tour-progress {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.tour-seg {
+  flex: 0 1 44px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3, #26232e);
+  overflow: hidden;
+}
+.tour-seg > i {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+  border-radius: 3px;
+  transition: width 0.45s ease-out, background 0.3s;
+}
+.tour-seg.is-done > i {
+  background: var(--ok, #3fb950);
+}
+.tour-progress-n {
+  margin-left: 6px;
+  font-size: 12.5px;
+  color: var(--tx2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* now / next, and Next lights up once the part is done */
+.tour-foot {
+  position: sticky;
+  bottom: -24px;
+  margin: 0 -32px -24px;
+  padding: 12px 32px 16px;
+  background: var(--bg1);
+  border-top: 1px solid var(--ln);
+  flex-wrap: wrap;
+}
+.tour-now {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.tour-now b {
+  color: var(--tx);
+  font-weight: 600;
+}
+.tour-foot.is-ready .tool.primary {
+  animation: tour-ready 2s ease-in-out infinite;
+}
+@keyframes tour-ready {
+  50% {
+    box-shadow: 0 0 0 3px var(--accln), 0 0 22px rgba(139, 124, 246, 0.55);
+  }
+}
+/* a little party for every task done */
+.tour-cheer {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 60;
+  pointer-events: none;
+}
+.tour-cheer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: var(--ok, #3fb950);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 8px 30px rgba(63, 185, 80, 0.45);
+  animation: tour-cheer 1.7s ease-out both;
+}
+.tour-cheer-pill .i {
+  width: 16px;
+  height: 16px;
+}
+@keyframes tour-cheer {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.85);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1.06);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.tour-confetti i {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 7px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--c);
+  opacity: 0;
+  animation: tour-confetti 1.2s ease-out 0.1s both;
+}
+@keyframes tour-confetti {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), -70px) rotate(260deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-foot.is-ready .tool.primary,
+  .tour-confetti i {
+    animation: none;
+  }
+  .tour-cheer-pill {
+    animation-duration: 0.01s;
+  }
+}
+.reduce-motion .tour-foot.is-ready .tool.primary,
+.reduce-motion .tour-confetti i,
+.reduce-motion .tour-face-gestures li .tour-gesture-mark {
+  animation: none;
+}
 .tour-focus {
   flex: 1;
   min-height: 0;
@@ -4380,6 +4523,96 @@ button.lib-foot:focus-visible span {
 .tour-faces-more {
   grid-column: 1 / -1;
   margin: 4px 0 0;
+}
+
+/* the look on the dial: its four gestures, ticked off as they happen (owner, 2026-10-14) */
+.tour-face-gestures {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--ln);
+  transition: box-shadow 0.3s, background 0.3s;
+}
+.tour-face-gestures.is-all {
+  box-shadow: inset 0 0 0 1px var(--ok, #3fb950);
+}
+.tour-face-gestures ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.tour-face-gestures li {
+  display: grid;
+  grid-template-columns: 28px 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--tx2);
+}
+.tour-face-gestures li b {
+  font-weight: 600;
+  color: var(--tx);
+}
+.tour-gesture-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg3, #26232e);
+  color: var(--tx3);
+  transition: background 0.25s, color 0.25s, transform 0.25s;
+}
+.tour-gesture-mark .i {
+  width: 15px;
+  height: 15px;
+}
+.tour-face-gestures li.is-now .tour-gesture-mark {
+  color: var(--acc2);
+  box-shadow: 0 0 0 2px var(--accln);
+  animation: tour-gesture-pulse 1.6s ease-in-out infinite;
+}
+.tour-face-gestures li.is-done .tour-gesture-mark {
+  background: var(--ok, #3fb950);
+  color: #fff;
+  animation: tour-gesture-pop 0.35s ease-out;
+}
+.tour-face-gestures li.is-done {
+  color: var(--tx3);
+}
+.tour-face-gestures li.is-now b {
+  color: var(--acc2);
+}
+@keyframes tour-gesture-pulse {
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+@keyframes tour-gesture-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.15);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-face-gestures li.is-now .tour-gesture-mark,
+  .tour-face-gestures li.is-done .tour-gesture-mark {
+    animation: none;
+  }
+}
+@media (max-width: 520px) {
+  .tour-face-gestures li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+  .tour-face-gestures li > span:last-child {
+    grid-column: 2;
+  }
 }
 
 /* where things are, after the tour (owner's pick 2a, 2026-10-14): a veil with a cut-out, a card beside it */

@@ -2349,6 +2349,7 @@ dependencies = [
  "chrono",
  "crossbeam-channel",
  "enigo",
+ "iana-time-zone",
  "image",
  "keyring",
  "libloading 0.8.9",

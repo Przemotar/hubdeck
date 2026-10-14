@@ -255,6 +255,7 @@ pub fn discover(dir: &Path) -> Vec<(Manifest, PathBuf)> {
 /// Load plugins, start the server and the plugin programs. The API token is written to
 /// `<data>/api-token` for local scripts.
 pub fn start(data_dir: &Path, engine: Sender<Msg>) {
+    stop_orphans(&data_dir.join("plugins"));
     super::sdplugins::start_files(data_dir, data_dir.join("plugins"));
     let found = discover(&data_dir.join("plugins"));
     *ACTIONS.write().unwrap_or_else(|e| e.into_inner()) = found.iter().flat_map(|(m, _)| m.action_defs()).collect();
@@ -404,6 +405,32 @@ fn watch() {
             if let Some(p) = host.plugins.read().unwrap_or_else(|e| e.into_inner()).iter().find(|p| p.manifest.id == id) {
                 launch(p, host.port);
             }
+        }
+    }
+}
+
+/// Plugin programs left running by an earlier HubDeck that crashed (no Exit, so `stop` never ran):
+/// a process started from the plugins folder whose parent is gone is stopped before new copies
+/// start. A plugin of a HubDeck that still runs keeps its parent and is left alone.
+fn stop_orphans(plugins_dir: &Path) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    if !plugins_dir.is_dir() {
+        return;
+    }
+    // the path as the plugins were started with (`canonicalize` adds \\?\ on Windows)
+    let dir = plugins_dir;
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always).with_exe(UpdateKind::Always).with_cwd(UpdateKind::Always));
+    let me = sysinfo::Pid::from_u32(std::process::id());
+    for (pid, p) in sys.processes() {
+        // a plugin program, Node with a plugin's script, or a program run in a plugin's folder
+        let from_plugins = p.exe().is_some_and(|e| e.starts_with(dir)) || p.cwd().is_some_and(|c| c.starts_with(dir)) || p.cmd().iter().any(|a| Path::new(a).starts_with(dir));
+        let orphan = match p.parent() {
+            None => true,
+            Some(parent) => parent != me && (parent.as_u32() == 1 || sys.process(parent).is_none()),
+        };
+        if *pid != me && from_plugins && orphan && p.kill() {
+            log::info!("stopped a plugin program left by an earlier run (pid {pid})");
         }
     }
 }

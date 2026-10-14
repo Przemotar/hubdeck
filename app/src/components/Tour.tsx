@@ -110,6 +110,48 @@ export function Tour({
     return () => void off.then((f) => f());
   }, []);
   const nextTask = stop?.id === "gestures" ? (stop.tasks ?? []).find((task) => !gestured[task]) : undefined;
+
+  // "Your dial, many faces": the dial's looks and the gestures done on the one shown (a new look starts over)
+  const [gallery, setGallery] = useState<DialFace[]>([]);
+  useEffect(() => {
+    if (stop?.id === "dial" && gallery.length === 0) api.dialGallery().then(setGallery, () => {});
+  }, [stop?.id, gallery.length]);
+  const [faceTicked, setFaceTicked] = useState<Record<string, boolean>>({});
+  useEffect(() => setFaceTicked({}), [stop?.id, stop?.look]);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window) && !("demoEmit" in window)) return;
+    const off = listen<string>("tour://gesture", (e) => {
+      const kind = e.payload.startsWith("dial:") ? e.payload.slice(5) : "";
+      if (kind) setFaceTicked((f) => (f[kind] ? f : { ...f, [kind]: true }));
+    });
+    return () => void off.then((f) => f());
+  }, []);
+  const onFace = stop?.id === "dial" ? gallery.find((f) => f.id === (stop.faces ?? [])[stop.look]) : undefined;
+  const faceNext = onFace?.gestures.find((g) => !faceTicked[g.kind])?.kind;
+  useEffect(() => {
+    if (onFace && onFace.gestures.length > 0 && !faceNext) setTried((x) => ({ ...x, dial: true }));
+  }, [onFace, faceNext]);
+
+  // a little party for every task done (owner's pick C1): a "Done!" bubble and confetti
+  const [cheer, setCheer] = useState<{ key: number; text: string } | null>(null);
+  const celebrate = (text: string) => setCheer({ key: Date.now(), text });
+  useEffect(() => {
+    if (!cheer) return;
+    const id = setTimeout(() => setCheer(null), 1700);
+    return () => clearTimeout(id);
+  }, [cheer]);
+  const gestureCount = Object.keys(gestured).filter((g) => (stop?.tasks ?? []).includes(g)).length;
+  const faceCount = Object.keys(faceTicked).length;
+  const prevCounts = useRef({ gestures: 0, face: 0, tried: 0 });
+  const triedCount = Object.values(tried).filter(Boolean).length;
+  useEffect(() => {
+    const p = prevCounts.current;
+    if (stop?.id === "gestures" && gestureCount > p.gestures) celebrate(t("tour.cheer.count", { n: gestureCount, count: (stop.tasks ?? []).length }));
+    else if (stop?.id === "dial" && faceCount > p.face && onFace) celebrate(t("tour.cheer.count", { n: faceCount, count: onFace.gestures.length }));
+    else if (triedCount > p.tried) celebrate(t("tour.cheer.done"));
+    prevCounts.current = { gestures: gestureCount, face: faceCount, tried: triedCount };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gestureCount, faceCount, triedCount]);
   useEffect(() => {
     if (stop?.id === "gestures" && (stop.tasks ?? []).length > 0 && !nextTask) setTried((x) => ({ ...x, gestures: true }));
   }, [stop, nextTask]);
@@ -165,7 +207,25 @@ export function Tour({
         <Icon name="chevron-left" />
         {t("tour.exit")}
       </button>
-      <h2>{phase === "focus" || phase === "making" ? t("tour.title") : t("tour.walkTitle")}</h2>
+      {(phase === "stops" || phase === "finale") && tour ? (
+        <div className="tour-progress" role="progressbar" aria-label={t("tour.walkTitle")} aria-valuemin={0} aria-valuemax={main.length + 1} aria-valuenow={phase === "finale" ? main.length + 1 : at + 1}>
+          {main.map((s, i) => {
+            const share = s.id === "gestures" && (s.tasks ?? []).length ? gestureCount / (s.tasks ?? []).length : s.id === "dial" && onFace?.gestures.length ? faceCount / onFace.gestures.length : 0;
+            const full = tried[s.id] || phase === "finale";
+            return (
+              <span key={s.id} className={`tour-seg${full ? " is-done" : ""}${phase === "stops" && i === at ? " is-now" : ""}`}>
+                <i style={{ width: `${full ? 100 : phase === "stops" && i === at ? Math.max(12, share * 100) : 0}%` }} />
+              </span>
+            );
+          })}
+          <span className={`tour-seg${phase === "finale" ? " is-now" : ""}`}>
+            <i style={{ width: phase === "finale" ? "50%" : "0%" }} />
+          </span>
+          <span className="tour-progress-n">{t("tour.stopOf", { n: phase === "finale" ? main.length + 1 : at + 1, count: main.length + 1 })}</span>
+        </div>
+      ) : (
+        <h2>{phase === "focus" || phase === "making" ? t("tour.title") : t("tour.walkTitle")}</h2>
+      )}
       {tour && phase !== "end" && <span className="tour-made-for">{t("tour.madeFor", { focus: t(`tour.focus.${tour.focus}` as Key) })}</span>}
     </header>
   );
@@ -252,6 +312,19 @@ export function Tour({
   );
 
   if (phase === "stops" && stop && tour) {
+    // what to do now, in one line (owner's pick C1)
+    const nowWords =
+      stop.id === "gestures"
+        ? nextTask
+          ? gestureWords(nextTask, tour.music)[0]
+          : t("tour.now.done")
+        : stop.id === "dial"
+          ? faceNext
+            ? t(`tour.now.dial.${faceNext}` as Key)
+            : t("tour.now.pickLook")
+          : tried[stop.id]
+            ? t("tour.now.done")
+            : tryWords(stop, tour);
     return (
       <div className="tour-page">
         {header}
@@ -276,7 +349,7 @@ export function Tour({
             {at === 0 && <p className="help">{t("tour.firstHint")}</p>}
             {stop.id === "gestures" && <GestureTasks tasks={stop.tasks ?? []} done={gestured} next={nextTask} music={tour.music} />}
             {stop.id === "gestures" && <PressCard live={live} view={view} />}
-            {stop.id === "dial" && <DialFaces stop={stop} onPick={(i) => set(stop.id, null, i)} />}
+            {stop.id === "dial" && <DialFaces stop={stop} onPick={(i) => set(stop.id, null, i)} gallery={gallery} ticked={faceTicked} />}
             {stop.id !== "gestures" && stop.id !== "dial" && <div className="tour-try">
               <span className="tour-label">{t("tour.tryIt")}</span>
               <span className="tour-try-text">{tryWords(stop, tour)}</span>
@@ -312,7 +385,12 @@ export function Tour({
                 </div>
               </div>
             )}
-            <div className="tour-nav">
+            <div className={`tour-nav tour-foot${tried[stop.id] ? " is-ready" : ""}`}>
+              <p className="tour-now">
+                <b>{t("tour.nowLabel")}</b> {nowWords}
+                <br />
+                <b>{t("tour.nextLabel")}</b> {at + 1 < main.length ? t(`tour.${main[at + 1].id}.title` as Key) : t("tour.superTitle")}
+              </p>
               <label className="check tour-keep">
                 <input type="checkbox" checked={stop.keep} onChange={(e) => set(stop.id, e.target.checked, null)} />
                 {t("tour.keep")}
@@ -320,7 +398,21 @@ export function Tour({
               <button className="tool primary" onClick={next}>
                 {t("tour.next")}
               </button>
+              {cheer && (
+                <div key={cheer.key} className="tour-cheer" role="status">
+                  <span className="tour-cheer-pill">
+                    <Icon name="check" />
+                    {cheer.text}
+                  </span>
+                  <span className="tour-confetti" aria-hidden="true">
+                    {Array.from({ length: 10 }, (_, i) => (
+                      <i key={i} style={{ ["--dx" as string]: `${(i - 4.5) * 14}px`, ["--c" as string]: ["#ffd166", "#4ade80", "#e879f9", "#60a5fa", "#f472b6"][i % 5] }} />
+                    ))}
+                  </span>
+                </div>
+              )}
             </div>
+
             {error && <p className="help catalog-err">{error}</p>}
           </main>
           {deck}
@@ -437,13 +529,16 @@ function MakingSteps() {
 }
 
 /** "One control, many jobs": a hold and a double press on a key, a knob and the dial, ticked off live. */
+/** What a "One control, many jobs" task asks, and what it shows. */
+function gestureWords(task: string, music?: string | null): [string, string] {
+  if (task.startsWith("keys.5")) return [t("tour.gestures.keyHold"), t("tour.gestures.keyHoldHelp")];
+  if (task.startsWith("knobs")) return [t("tour.gestures.knobDouble"), t("tour.gestures.knobDoubleHelp")];
+  if (task.startsWith("keys")) return [t("tour.gestures.keyDouble"), t("tour.gestures.keyDoubleHelp")];
+  return [t("tour.gestures.dialHold"), t(music ? "tour.gestures.dialHoldHelp" : "tour.gestures.dialHoldHelpNext", { app: music ?? "" })];
+}
+
 function GestureTasks({ tasks, done, next, music }: { tasks: string[]; done: Record<string, boolean>; next?: string; music?: string | null }) {
-  const words = (task: string): [string, string] => {
-    if (task.startsWith("keys.5")) return [t("tour.gestures.keyHold"), t("tour.gestures.keyHoldHelp")];
-    if (task.startsWith("knobs")) return [t("tour.gestures.knobDouble"), t("tour.gestures.knobDoubleHelp")];
-    if (task.startsWith("keys")) return [t("tour.gestures.keyDouble"), t("tour.gestures.keyDoubleHelp")];
-    return [t("tour.gestures.dialHold"), t(music ? "tour.gestures.dialHoldHelp" : "tour.gestures.dialHoldHelpNext", { app: music ?? "" })];
-  };
+  const words = (task: string) => gestureWords(task, music);
   return (
     <div className="tour-try">
       <span className="tour-label">{t("tour.tryIt")}</span>
@@ -501,15 +596,42 @@ function PressCard({ live, view }: { live: LiveState; view: EngineView }) {
   );
 }
 
+const GESTURE_ICON: Record<string, string> = { turn: "rotate-cw", press: "circle-dot", double: "copy", hold: "hand" };
+
+/** The look on the dial: what each gesture does, ticked off when done on the deck; the next one to try stands out. */
+function FaceGestures({ face, ticked }: { face: DialFace; ticked: Record<string, boolean> }) {
+  const pl = getLanguage() === "pl";
+  const next = face.gestures.find((g) => !ticked[g.kind])?.kind;
+  const all = !next;
+  return (
+    <div className={`tour-face-gestures${all ? " is-all" : ""}`} aria-live="polite">
+      <span className="tour-label">{all ? t("tour.dial.allDone") : t("tour.dial.tryOn", { face: pl ? face.captionPl : face.caption })}</span>
+      <ul>
+        {face.gestures.map((g) => {
+          const done = !!ticked[g.kind];
+          return (
+            <li key={g.kind} className={done ? "is-done" : g.kind === next ? "is-now" : ""}>
+              <span className="tour-gesture-mark">
+                <Icon name={done ? "check" : GESTURE_ICON[g.kind]} />
+              </span>
+              <b>{t(`tour.dial.gesture.${g.kind}` as Key)}</b>
+              <span>{pl ? g.whatPl : g.what}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** "Your dial, many faces": HubDeck's own dial looks; Try puts one on the dial (the tour's deck keeps it). */
-function DialFaces({ stop, onPick }: { stop: TourStop; onPick: (i: number) => void }) {
-  const [gallery, setGallery] = useState<DialFace[]>([]);
-  useEffect(() => {
-    api.dialGallery().then(setGallery, () => {});
-  }, []);
+function DialFaces({ stop, onPick, gallery, ticked }: { stop: TourStop; onPick: (i: number) => void; gallery: DialFace[]; ticked: Record<string, boolean> }) {
   const ids = stop.faces ?? [];
+  // the look on the dial: its four gestures, ticked off as they happen on the deck (a new look starts over)
+  const onFace = gallery.find((f) => f.id === ids[stop.look]);
   return (
     <div className="tour-faces">
+      {onFace && onFace.gestures.length > 0 && <FaceGestures face={onFace} ticked={ticked} />}
       {ids.map((id, i) => {
         const face = gallery.find((f) => f.id === id);
         const on = stop.look === i;

@@ -87,17 +87,24 @@ impl Hub {
         if self.shared.stop.swap(true, Ordering::SeqCst) {
             return;
         }
+        // each step timed (2026-10-14: an app that quit before the hand-back finished left the
+        // dial refusing commands at the next start)
+        let started = Instant::now();
         if let Some(s) = self.scanner.take() {
             let _ = s.join();
         }
+        let scanner = started.elapsed();
         for r in std::mem::take(&mut *lock(&self.shared.readers)) {
             let _ = r.join();
         }
+        let readers = started.elapsed();
         for (id, m) in std::mem::take(&mut *lock(&self.shared.modules)) {
+            let t = Instant::now();
             if let Err(e) = m.release() {
-                debug!("release {id}: {e}");
+                warn!("release {id}: {e} (after {:?})", t.elapsed());
             }
         }
+        log::info!("hub closed: scanner {scanner:?}, readers {:?}, hand-back {:?}", readers - scanner, started.elapsed() - readers);
     }
 }
 

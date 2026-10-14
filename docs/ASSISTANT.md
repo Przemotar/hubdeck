@@ -21,7 +21,7 @@ itself, at once; the model refines them and talks. Safety lives in code, not in 
 | Conversation | `app/src-tauri/src/engine/assistant.rs` | The scan, the instructions (`assistant-rules.txt`), one Claude Code process per talk, reading its stream, quick sketches, the personal tour, drafts and trying them |
 | Tools | `app/src-tauri/src/engine/mcp.rs` | `hubdeck --mcp-assistant`: the assistant's own MCP server (the builder's tools limited to drafts, plus propose_idea, offer_choices, remember, make_tour, list_shortcuts) |
 | Guard | `app/src-tauri/src/engine/guard.rs` | What may go on a control: no commands; closing, quitting or deleting only on a hold |
-| Shortcut packs | `app/src-tauri/src/engine/shortcuts.json`, `shortcuts.rs` | Default Windows shortcuts of 33 apps read from their vendors' pages (each pack has its sources) |
+| Shortcut packs | `app/src-tauri/src/engine/shortcuts.json`, `shortcuts.rs` | Default shortcuts of 53 apps on Windows and macOS (`os`), read from their vendors' pages (each pack has its sources) |
 | Taste | `app/src-tauri/src/engine/taste.rs` | `taste.json`: notes the user can edit, ideas kept or thrown |
 | Suggestions | `app/src-tauri/src/engine/nudge.rs` | `nudges.json`: an app without a deck, a new kind of module; the brakes |
 | Design rules | `docs/PROFILE-DESIGN.md` | What the `design_guide` tool hands the assistant |

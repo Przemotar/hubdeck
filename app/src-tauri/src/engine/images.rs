@@ -40,6 +40,9 @@ struct Picture {
     frames: Vec<(String, Duration)>,
     /// A logo on a see-through background (an app's icon): drawn like an icon, not edge to edge.
     icon_like: bool,
+    /// An icon without its see-through margin, for drawing it over the whole key (macOS app icons
+    /// keep ~10% empty on each side: owner, 2026-10-14, "zostawiłeś trochę marginesu wokół ikon").
+    trimmed: Option<String>,
 }
 
 /// A PNG or WebP whose corners are see-through: an icon or a logo rather than a picture.
@@ -51,6 +54,36 @@ fn looks_like_icon(name: &str, bytes: &[u8]) -> bool {
     let img = img.to_rgba8();
     let (w, h) = img.dimensions();
     w > 0 && h > 0 && [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)].iter().all(|&(x, y)| img.get_pixel(x, y)[3] < 16)
+}
+
+/// The icon cropped to what is drawn on it (a square around the opaque pixels), as a PNG data URI;
+/// None when there is no margin worth taking off.
+fn trimmed_icon(bytes: &[u8]) -> Option<String> {
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (w, h) = img.dimensions();
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for (x, y, p) in img.enumerate_pixels() {
+        if p[3] >= 16 {
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+        }
+    }
+    if x1 < x0 || y1 < y0 {
+        return None;
+    }
+    // a square around the drawing, so filling the key crops nothing of it
+    let side = (x1 - x0 + 1).max(y1 - y0 + 1).min(w.min(h));
+    if side * 100 > w.min(h) * 96 {
+        return None;
+    }
+    let cx = (x0 + x1).div_ceil(2);
+    let cy = (y0 + y1).div_ceil(2);
+    let left = cx.saturating_sub(side / 2).min(w - side);
+    let top = cy.saturating_sub(side / 2).min(h - side);
+    let crop = image::DynamicImage::ImageRgba8(img).crop_imm(left, top, side, side);
+    let crop = if side > FRAME_PX { crop.thumbnail(FRAME_PX, FRAME_PX) } else { crop };
+    let mut png = Cursor::new(Vec::new());
+    crop.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(data_uri("image/png", png.get_ref()))
 }
 
 /// Is this stored picture an icon or a logo (drawn centred with the label under it)?
@@ -163,9 +196,16 @@ fn load(name: &str) -> Option<Arc<Picture>> {
     let bytes = std::fs::read(dir()?.join(name)).ok()?;
     let frames = if name.ends_with(".gif") { gif_frames(&bytes) } else { Vec::new() };
     let icon_like = looks_like_icon(name, &bytes);
-    let picture = Arc::new(Picture { still: data_uri(mime(name), &bytes), frames, icon_like });
+    let trimmed = if icon_like { trimmed_icon(&bytes) } else { None };
+    let picture = Arc::new(Picture { still: data_uri(mime(name), &bytes), frames, icon_like, trimmed });
     CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(name.to_string(), picture.clone());
     Some(picture)
+}
+
+/// Every frame of a GIF as a data URI (tests that draw what the engine draws).
+#[cfg(test)]
+pub fn gif_frame_uris(bytes: &[u8]) -> Vec<String> {
+    gif_frames(bytes).into_iter().map(|(u, _)| u).collect()
 }
 
 fn gif_frames(bytes: &[u8]) -> Vec<(String, Duration)> {
@@ -214,6 +254,17 @@ pub fn uri(reference: &str) -> Option<String> {
     }
 }
 
+/// The picture for drawing over a whole key or the dial: an icon without its see-through margin,
+/// anything else as it is.
+pub fn filled_uri(reference: &str) -> Option<String> {
+    if !reference.contains('#')
+        && let Some(t) = load(reference).and_then(|p| p.trimmed.clone())
+    {
+        return Some(t);
+    }
+    uri(reference)
+}
+
 /// Frame delays of an animated GIF; None for a still picture.
 pub fn animation(name: &str) -> Option<Vec<Duration>> {
     let p = load(name)?;
@@ -223,6 +274,33 @@ pub fn animation(name: &str) -> Option<Vec<Duration>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png(img: image::RgbaImage) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+
+    fn decode(uri: &str) -> image::RgbaImage {
+        use base64::Engine as _;
+        let data = base64::engine::general_purpose::STANDARD.decode(uri.split_once(";base64,").unwrap().1).unwrap();
+        image::load_from_memory(&data).unwrap().to_rgba8()
+    }
+
+    #[test]
+    fn an_icons_see_through_margin_is_trimmed_for_a_full_key() {
+        // a macOS-like icon: 100 px with the drawing in the middle 80 (a wide one: 80 x 60)
+        let img = image::RgbaImage::from_fn(100, 100, |x, y| if (10..90).contains(&x) && (20..80).contains(&y) { image::Rgba([200, 30, 30, 255]) } else { image::Rgba([0, 0, 0, 0]) });
+        let t = decode(&trimmed_icon(&png(img)).expect("a margin to trim"));
+        assert_eq!(t.dimensions(), (80, 80), "a square around the drawing");
+        assert_eq!(t.get_pixel(0, 40)[3], 255, "the drawing reaches the left edge");
+        assert_eq!(t.get_pixel(40, 5)[3], 0, "above the wide drawing stays see-through");
+        // nothing to take off
+        let full = image::RgbaImage::from_pixel(50, 50, image::Rgba([1, 2, 3, 255]));
+        assert!(trimmed_icon(&png(full)).is_none());
+        let empty = image::RgbaImage::from_pixel(50, 50, image::Rgba([0, 0, 0, 0]));
+        assert!(trimmed_icon(&png(empty)).is_none());
+    }
 
     #[test]
     fn plugin_pictures_are_checked() {

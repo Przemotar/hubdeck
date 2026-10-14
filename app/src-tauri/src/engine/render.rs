@@ -364,7 +364,7 @@ fn key_body(look: &Look, rotation: i32) -> String {
     // an app's icon or a logo stands where an icon would; other pictures fill the key
     let logo = look.image.as_deref().filter(|_| picture_as_icon(look)).and_then(super::images::uri);
     if logo.is_none()
-        && let Some(uri) = look.image.as_deref().and_then(super::images::uri)
+        && let Some(uri) = look.image.as_deref().and_then(super::images::filled_uri)
     {
         return format!(r#"<g transform="rotate({rotation} {c} {c})">{under}{}{over}</g>"#, picture(&uri, s, picture_label(look, label), &fg, 11.5, false), c = s / 2.0);
     }
@@ -543,7 +543,7 @@ pub fn dial_svg(look: &Look, value: Option<(Option<f32>, &str)>, rotation: i32) 
             format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#3a3646" stroke-width="12"/>{arc}{middle}{}"##, text(c, c + 62.0, caption_px, "#a8a4b5", &caption[0]))
         }
         None if !picture_as_icon(look) && look.image.as_deref().and_then(super::images::uri).is_some() => {
-            let uri = look.image.as_deref().and_then(super::images::uri).unwrap_or_default();
+            let uri = look.image.as_deref().and_then(super::images::filled_uri).unwrap_or_default();
             picture(&uri, s, picture_label(look, look.label.as_deref().unwrap_or("").trim()), &fg, 24.0, true)
         }
         None => {
@@ -605,6 +605,195 @@ pub fn time_dial_svg(look: &Look, main: &str, second: Option<&str>, ring: Option
         let y = c + size * 0.35 + 40.0;
         let (rows, px) = fit(second, 20.0, 14.0, 2.0 * dial_chord(y) - 40.0, false);
         body += &text(c, y, px, "#a8a4b5", &rows[0]);
+    }
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})"><rect width="{s}" height="{s}" fill="{bg}"/>{body}</g></svg>"#
+    )
+}
+
+/// What the weather dial shows: the hours ahead (0 = now), or today, tomorrow, the next days.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WeatherView {
+    pub hour: usize,
+    /// 0 hours, 1 today, 2 tomorrow, 3 three days.
+    pub mode: u8,
+}
+
+/// The weather as a scene on the dial (owner's pick W1): the sky of the weather code, day or
+/// night, moving with `t` (seconds), the temperature and a line under it.
+pub fn weather_dial_svg(look: &Look, fc: Option<&super::live::Forecast>, now_temp: Option<f64>, view: WeatherView, t: f32, polish: bool, rotation: i32) -> String {
+    let s = DIAL_PX as f32;
+    let c = s / 2.0;
+    let wrap = |body: String| format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})">{body}</g></svg>"#);
+    let Some(fc) = fc else {
+        let label = look.label.clone().unwrap_or_else(|| (if polish { "Pogoda" } else { "Weather" }).into());
+        return time_dial_svg(&Look { icon: None, ..look.clone() }, "…", Some(&label), None, rotation);
+    };
+    let word = |code: i64| if polish { super::live::condition_pl(code) } else { super::live::condition(code) };
+    let deg = |v: f64| format!("{}°", v.round() as i64);
+    let day_name = |date: &str, i: usize| -> String {
+        match (i, polish) {
+            (0, false) => "Today".into(),
+            (0, true) => "Dziś".into(),
+            (1, false) => "Tomorrow".into(),
+            (1, true) => "Jutro".into(),
+            _ => chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map(|d| {
+                    let n = d.format("%a").to_string();
+                    if polish { ["pon", "wt", "śr", "czw", "pt", "sob", "nd"][chrono::Datelike::weekday(&d).num_days_from_monday() as usize].to_string() } else { n }
+                })
+                .unwrap_or_default(),
+        }
+    };
+    // three days: a quiet list, no scene
+    if view.mode == 3 {
+        let mut body = format!(r##"<rect width="{s}" height="{s}" fill="#121a2a"/>"##);
+        for (i, (date, lo, hi, code)) in fc.days.iter().take(3).enumerate() {
+            let y = 78.0 + i as f32 * 44.0;
+            body += &text(c, y, 19.0, "#ffffff", &format!("{}  {} / {}", day_name(date, i), deg(*lo), deg(*hi)));
+            body += &text(c, y + 17.0, 12.0, "#9fb3d1", word(*code));
+        }
+        return wrap(body);
+    }
+    let (code, temp, line) = match view.mode {
+        1 | 2 => {
+            let i = view.mode as usize - 1;
+            match fc.days.get(i) {
+                Some((date, lo, hi, code)) => (*code, deg(*hi), format!("{} · {} / {}", day_name(date, i), deg(*lo), deg(*hi))),
+                None => (fc.code, now_temp.map(deg).unwrap_or_default(), fc.place.clone()),
+            }
+        }
+        _ => match fc.hours.get(view.hour).filter(|_| view.hour > 0) {
+            Some((hour, temp, code)) => (*code, deg(*temp), format!("{hour} · {}", word(*code))),
+            None => (fc.code, now_temp.map(deg).unwrap_or_default(), format!("{} · {}", fc.place, word(fc.code))),
+        },
+    };
+    let night = !fc.day && view.mode == 0 && view.hour == 0;
+    let kind = match code {
+        0 | 1 => "clear",
+        2 => "part",
+        3 => "cloud",
+        45 | 48 => "fog",
+        51..=57 | 61..=67 | 80..=82 => "rain",
+        71..=77 | 85 | 86 => "snow",
+        95..=99 => "storm",
+        _ => "cloud",
+    };
+    let (top, bottom) = match (kind, night) {
+        (_, true) => ("#0b1230", "#04060f"),
+        ("clear" | "part", false) => ("#2f6fb3", "#123056"),
+        ("storm", false) => ("#2a2f45", "#0e1018"),
+        ("snow", false) => ("#5a7192", "#26344a"),
+        _ => ("#1f3b63", "#0f1726"),
+    };
+    let mut body = format!(
+        r##"<defs><linearGradient id="{id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></linearGradient></defs><rect width="{s}" height="{s}" fill="url(#{id})"/>"##,
+        // its own id per sky: the window shows several dials on one page
+        id = format!("wsky{}{}", &top[1..], &bottom[1..])
+    );
+    // stars at night, twinkling
+    if night {
+        for i in 0..14 {
+            let (x, y) = (40.0 + ((i * 53) % 160) as f32, 40.0 + ((i * 37) % 90) as f32);
+            let o = 0.35 + 0.65 * ((t * 1.7 + i as f32 * 1.3).sin() * 0.5 + 0.5);
+            body += &format!(r##"<circle cx="{x}" cy="{y}" r="1.6" fill="#fff" opacity="{o:.2}"/>"##);
+        }
+    }
+    let sun = |body: &mut String, x: f32, y: f32| {
+        if night {
+            *body += &format!(r##"<circle cx="{x}" cy="{y}" r="22" fill="#e8ecff"/><circle cx="{:.1}" cy="{:.1}" r="20" fill="{top}"/>"##, x + 10.0, y - 6.0);
+        } else {
+            let a = t * 20.0;
+            *body += &format!(r##"<g transform="rotate({a:.1} {x} {y})" stroke="#ffd166" stroke-width="4" stroke-linecap="round">"##);
+            for k in 0..8 {
+                let r = (k as f32 * 45.0).to_radians();
+                *body += &format!(r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"#, x + 30.0 * r.cos(), y + 30.0 * r.sin(), x + 40.0 * r.cos(), y + 40.0 * r.sin());
+            }
+            *body += &format!(r##"</g><circle cx="{x}" cy="{y}" r="22" fill="#ffc35a"/>"##);
+        }
+    };
+    let cloud = |body: &mut String, dx: f32, y: f32, tone: &str| {
+        *body += &format!(
+            r#"<g fill="{tone}" transform="translate({dx:.1} 0)"><ellipse cx="112" cy="{y}" rx="44" ry="24"/><ellipse cx="140" cy="{:.1}" rx="30" ry="22"/><ellipse cx="90" cy="{:.1}" rx="26" ry="16"/></g>"#,
+            y - 8.0,
+            y + 8.0
+        );
+    };
+    let drift = (t * 0.6).sin() * 8.0;
+    match kind {
+        "clear" => sun(&mut body, c, 84.0),
+        "part" => {
+            sun(&mut body, 96.0, 74.0);
+            cloud(&mut body, 14.0 + drift, 96.0, "#dfe6f1");
+        }
+        "fog" => {
+            for i in 0..4 {
+                let y = 64.0 + i as f32 * 20.0;
+                let dx = ((t * 0.5 + i as f32).sin() * 14.0) as i32;
+                body += &format!(r##"<rect x="{}" y="{y}" width="150" height="8" rx="4" fill="#cfd8e6" opacity="0.5"/>"##, 45 + dx);
+            }
+        }
+        _ => {
+            let tone = if kind == "storm" { "#8a93a8" } else { "#cfd8e6" };
+            cloud(&mut body, drift, 76.0, tone);
+            if kind == "rain" || kind == "storm" {
+                for i in 0..10 {
+                    let x = 78.0 + ((i * 29) % 84) as f32;
+                    let y = 100.0 + ((t * 110.0 + (i * 23) as f32) % 30.0);
+                    body += &format!(r##"<line x1="{x}" y1="{y:.1}" x2="{:.1}" y2="{:.1}" stroke="#7fb3ff" stroke-width="3" stroke-linecap="round"/>"##, x - 4.0, y + 11.0);
+                }
+            }
+            if kind == "snow" {
+                for i in 0..12 {
+                    let x = 74.0 + ((i * 31) % 92) as f32 + (t * 1.3 + i as f32).sin() * 5.0;
+                    let y = 102.0 + ((t * 28.0 + (i * 19) as f32) % 36.0);
+                    body += &format!(r##"<circle cx="{x:.1}" cy="{y:.1}" r="3" fill="#ffffff"/>"##);
+                }
+            }
+            if kind == "storm" && (t * 1.3).fract() < 0.12 {
+                body += &format!(
+                    r##"<rect width="{s}" height="{s}" fill="#ffffff" opacity="0.25"/><path d="M126 98 L112 126 L124 126 L114 152" fill="none" stroke="#ffe066" stroke-width="5" stroke-linejoin="round"/>"##
+                );
+            }
+        }
+    }
+    body += &text(c, 190.0, 40.0, "#ffffff", &temp);
+    let (rows, px) = fit(&line, 14.0, 11.0, 2.0 * dial_chord(212.0) - 30.0, false);
+    body += &text(c, 212.0, px, "#c7d3e6", &rows[0]);
+    wrap(body)
+}
+
+/// A pomodoro on the dial (owner's pick P1): the time left in a ring, red while focusing and green
+/// on a break, the phase under it and the rounds as dots.
+pub fn pomodoro_dial_svg(look: &Look, pomo: &super::timer::Pomodoro, now: std::time::Instant, phase: &str, rotation: i32) -> String {
+    let (main, ring, on_break, done, rounds) = (pomo.timer.label(now), pomo.timer.fraction(now), pomo.on_break, pomo.done, pomo.rounds);
+    let main = main.as_str();
+    let s = DIAL_PX as f32;
+    let c = s / 2.0;
+    let bg = color(look.bg.as_ref(), DEFAULT_BG);
+    let fg = color(look.fg.as_ref(), DEFAULT_FG);
+    let tone = if on_break { "#3fb950" } else { "#f05252" };
+    let r = 100.0;
+    let v = ring.clamp(0.0, 1.0);
+    let mut body = format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="#2a2833" stroke-width="12"/>"##);
+    if v > 0.0 {
+        let angle = v * 359.9_f32;
+        let rad = (angle - 90.0).to_radians();
+        let (ex, ey) = (c + r * rad.cos(), c + r * rad.sin());
+        let large = if angle > 180.0 { 1 } else { 0 };
+        body += &format!(r##"<path d="M{c} {} A{r} {r} 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="{tone}" stroke-width="12" stroke-linecap="round"/>"##, c - r);
+    }
+    let (rows, size) = fit(main, 54.0, 28.0, s * 0.66, false);
+    body += &text(c, c + size * 0.3, size, &fg, &rows[0]);
+    let (phase_rows, px) = fit(phase, 16.0, 12.0, s * 0.6, false);
+    body += &text(c, c + size * 0.3 + 26.0, px, "#a8a4b5", &phase_rows[0]);
+    // the rounds: done ones in the phase's color
+    let n = rounds.clamp(1, 12) as f32;
+    let gap = 18.0;
+    let x0 = c - gap * (n - 1.0) / 2.0;
+    for i in 0..rounds.clamp(1, 12) {
+        let fill = if i < done { tone } else { "#3a3846" };
+        body += &format!(r#"<circle cx="{:.1}" cy="{}" r="5.5" fill="{fill}"/>"#, x0 + gap * i as f32, c + 62.0);
     }
     format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})"><rect width="{s}" height="{s}" fill="{bg}"/>{body}</g></svg>"#
@@ -779,6 +968,67 @@ mod tests {
     use super::super::house;
 
     /// Everything HubDeck draws on the deck, as SVG files, for a look at all of it at once:
+    /// Every weather sky on the dial in one picture: `HUBDECK_OUT=<png> cargo test -p hubdeck weather_skies -- --ignored`.
+    #[test]
+    #[ignore]
+    fn weather_skies() {
+        let mut out = String::from(r##"<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="540"><rect width="100%" height="100%" fill="#101016"/>"##);
+        let skies = [(0, true), (0, false), (2, true), (3, true), (61, true), (71, true), (95, true), (45, true)];
+        for (i, (code, day)) in skies.iter().enumerate() {
+            let fc = super::super::live::Forecast {
+                place: "Kraków".into(),
+                code: *code,
+                day: *day,
+                hours: vec![("15:00".into(), 13.0, *code)],
+                days: vec![("2026-10-14".into(), 9.0, 15.0, *code), ("2026-10-15".into(), 7.0, 12.0, 3), ("2026-10-16".into(), 5.0, 11.0, 71)],
+                ..Default::default()
+            };
+            let view = WeatherView { hour: 0, mode: if i == 7 { 3 } else { 0 } };
+            let svg = weather_dial_svg(&Look::default(), Some(&fc), Some(12.4), view, 0.6, true, 0);
+            let (x, y) = (20.0 + (i % 4) as f32 * 255.0, 20.0 + (i / 4) as f32 * 260.0);
+            out += &format!(
+                r#"<svg x="{x}" y="{y}" width="240" height="240">{}</svg>"#,
+                svg.replace(r#"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">"#, "").trim_end_matches("</svg>")
+            );
+        }
+        out += "</svg>";
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+        let tree = usvg::Tree::from_str(&out, &opt).unwrap();
+        let size = tree.size().to_int_size();
+        let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+        pixmap.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
+    }
+
+    /// App icons over the whole key, as they were (with the icon's own margin) and trimmed:
+    /// `HUBDECK_ICONS=<data dir> HUBDECK_OUT=<png> cargo test -p hubdeck app_icons_before_after -- --ignored`
+    /// with the images named in `HUBDECK_IMAGES` (comma-separated "file:label").
+    #[test]
+    #[ignore]
+    fn app_icons_before_after() {
+        let data = std::path::PathBuf::from(std::env::var("HUBDECK_ICONS").expect("HUBDECK_ICONS"));
+        super::super::images::init(&data);
+        set_app_icons("fillLabel");
+        let keys: Vec<(String, String)> = std::env::var("HUBDECK_IMAGES").expect("HUBDECK_IMAGES").split(',').filter_map(|p| p.split_once(':')).map(|(a, b)| (a.into(), b.into())).collect();
+        let s = KEY_PX as f32;
+        let (gap, pad) = (16.0, 12.0);
+        let w = pad * 2.0 + keys.len() as f32 * (s + gap) - gap;
+        let mut out = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{}"><rect width="100%" height="100%" fill="#16141c"/>"##, pad * 3.0 + s * 2.0);
+        for (i, (image, label)) in keys.iter().enumerate() {
+            let x = pad + i as f32 * (s + gap);
+            let before = picture(&super::super::images::uri(image).unwrap(), s, label, DEFAULT_FG, 11.5, false);
+            let look = Look { image: Some(image.clone()), label: Some(label.clone()), ..Look::default() };
+            out += &format!(r#"<svg x="{x}" y="{pad}" width="{s}" height="{s}">{before}</svg><svg x="{x}" y="{}" width="{s}" height="{s}">{}</svg>"#, pad * 2.0 + s, key_body(&look, 0));
+        }
+        out += "</svg>";
+        let tree = usvg::Tree::from_str(&out, &usvg::Options::default()).unwrap();
+        let size = tree.size().to_int_size();
+        let mut pixmap = tiny_skia::Pixmap::new(size.width() * 3, size.height() * 3).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::from_scale(3.0, 3.0), &mut pixmap.as_mut());
+        pixmap.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
+    }
+
     /// `HUBDECK_SHEET=<dir> cargo test -p hubdeck dump_render_sheet -- --ignored`.
     #[test]
     #[ignore]
@@ -1035,6 +1285,60 @@ mod timing {
     }
 
     /// `cargo test -p hubdeck render_timing -- --ignored --nocapture` (debug vs --release)
+    #[test]
+    #[ignore]
+    fn panel_with_gifs_memory() {
+        // the "fun" page's animations drawn many times: does the process keep growing?
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/demo");
+        // every frame of every GIF, as the engine has them (their sizes differ from frame to frame)
+        let mut frames = Vec::new();
+        for name in ["aurora.gif", "bars.gif", "dots.gif", "fire.gif", "heartbeat.gif", "lava.gif", "orbit.gif"] {
+            let bytes = std::fs::read(dir.join(name)).unwrap();
+            frames.extend(super::super::images::gif_frame_uris(&bytes));
+        }
+        eprintln!("{} frames", frames.len());
+        let rss = || {
+            let mut sys = sysinfo::System::new();
+            let pid = sysinfo::Pid::from_u32(std::process::id());
+            sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+            sys.process(pid).map(|p| p.memory() / 1_048_576).unwrap_or(0)
+        };
+        let r = Renderer::default();
+        let geometry = PanelGeometry::default();
+        for round in 0..6 {
+            for i in 0..100 {
+                let looks: Vec<Look> = (0..15).map(|k| Look { image: Some(frames[(k * 7 + i + round * 100) % frames.len()].clone()), label: Some("Fun".into()), ..Look::default() }).collect();
+                r.jpeg(&panel_svg(&looks, 0, &geometry)).unwrap();
+            }
+            eprintln!("after {} frames: {} MB", (round + 1) * 100, rss());
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn panel_with_gifs_timing() {
+        // a "fun" page: every key a frame of an animated GIF, as the engine draws it (one panel picture)
+        use base64::Engine as _;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/demo");
+        let mut frames = Vec::new();
+        for name in ["aurora.gif", "bars.gif", "dots.gif", "fire.gif", "heartbeat.gif", "lava.gif", "orbit.gif"] {
+            let bytes = std::fs::read(dir.join(name)).unwrap();
+            let img = image::load_from_memory(&bytes).unwrap();
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+            frames.push(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.get_ref())));
+        }
+        let looks: Vec<Look> = (0..15).map(|i| Look { image: Some(frames[i % frames.len()].clone()), label: Some("Fun".into()), ..Look::default() }).collect();
+        let r = Renderer::default();
+        let geometry = PanelGeometry::default();
+        let t = std::time::Instant::now();
+        let mut size = 0;
+        for _ in 0..10 {
+            size = r.jpeg(&panel_svg(&looks, 0, &geometry)).unwrap().len();
+        }
+        eprintln!("panel with 15 GIF frames: {:?} a frame, {} KB", t.elapsed() / 10, size / 1024);
+    }
+
     #[test]
     #[ignore]
     fn render_timing() {

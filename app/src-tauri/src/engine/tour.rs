@@ -93,7 +93,7 @@ pub struct Stop {
 }
 
 /// The dial looks the tour offers (owner's pick, 2026-10-14: the dial is what stands out).
-const DIAL_FACES: [&str; 6] = ["nowPlaying", "clock", "timer", "cpu", "brightness", "scroll"];
+const DIAL_FACES: [&str; 8] = ["nowPlaying", "pet", "clock", "pomodoro", "weather", "timer", "cpu", "volume"];
 
 /// The tour as the window sees it.
 #[derive(Debug, Clone, Serialize)]
@@ -506,12 +506,20 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                 stop.faces = DIAL_FACES.to_vec();
                 stop.looks = DIAL_FACES.len();
                 // the first is what the dial is now (the music); the others come from the dial gallery
+                let face = super::gallery::faces().into_iter().find(|f| f.id == DIAL_FACES[look(sid).min(DIAL_FACES.len() - 1)]);
                 if look(sid) > 0
-                    && let Some(face) = super::gallery::faces().into_iter().find(|f| f.id == DIAL_FACES[look(sid).min(DIAL_FACES.len() - 1)])
+                    && let Some(face) = &face
                 {
                     let mut b = serde_json::to_value(&face.binding).unwrap_or_default();
                     b["look"]["label"] = json!(face.caption_in(if ctx.polish { "pl" } else { "en" }));
                     put(&mut stop, "dial", b);
+                }
+                // each look brings its own double press and hold (none: the one from before goes)
+                if let Some(face) = &face {
+                    for gesture in ["dial:double", "dial:hold"] {
+                        let b = face.extra.iter().find(|(g, _)| *g == gesture).map(|(_, b)| serde_json::to_value(b).unwrap_or_default()).unwrap_or(Value::Null);
+                        put(&mut stop, gesture, b);
+                    }
                 }
                 // the first look leaves the dial as the parts before made it (the music, or the volume)
                 stop.try_control = Some("dial".into());
@@ -543,7 +551,7 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
         "id": id,
         "name": format!("{} · {kit}", ctx.tr("My deck", "Mój deck")),
         "apps": [],
-        "controls": controls,
+        "controls": controls.into_iter().filter(|(_, b)| !b.is_null()).collect::<serde_json::Map<_, _>>(),
     }))
     .unwrap_or_else(|_| Profile::new("My deck"));
     if fun_page {
@@ -831,12 +839,13 @@ mod tests {
         let gestures = stops.iter().find(|s| s.id == "gestures").unwrap();
         assert_eq!(gestures.tasks, vec!["keys.5:hold", "knobs.2:double", "dial:hold"]);
         assert!(p.controls.contains_key("keys.5:hold") && p.controls.contains_key("knobs.2:double") && p.controls.contains_key("dial:hold"));
-        assert_eq!(stops.iter().find(|s| s.id == "dial").unwrap().faces.len(), 6);
-        // another face: the dial shows it; its hold stays
-        ch.look.insert("dial".into(), 1);
+        assert_eq!(stops.iter().find(|s| s.id == "dial").unwrap().faces.len(), 8);
+        // another face: the dial shows it, with its own hold and double press
+        ch.look.insert("dial".into(), 2);
         let (p, _) = build(&ctx(&["keys", "dial", "knobs"], Focus::Mixed), &ch, "t5");
         assert_eq!(p.controls["dial"].action, super::super::actions::CLOCK);
-        assert!(p.controls.contains_key("dial:hold"));
+        assert_eq!(super::super::actions::param_str(&p.controls["dial:hold"].params, "press"), "stopwatchReset");
+        assert_eq!(super::super::actions::param_str(&p.controls["dial:double"].params, "press"), "hours");
         // no dial: no dial part, and the knob task stays
         let (_, stops) = build(&ctx(&["keys", "faders"], Focus::Mixed), &Choices::default(), "t6");
         assert!(!stops.iter().any(|s| s.id == "dial"));

@@ -82,6 +82,9 @@ pub struct Scan {
     pub used: Vec<(String, f32, u32)>,
     /// Since when that is counted (local time).
     pub since: String,
+    /// Installed apps HubDeck has a shortcut pack or a preset for (owner's pick 1a, 2026-10-14):
+    /// the assistant can give them checked keys.
+    pub known: Vec<String>,
     /// Attached to the base now (the assistant builds for these).
     pub modules: Vec<String>,
     /// Owned but not attached now.
@@ -113,10 +116,11 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let used: Vec<(String, f32, u32)> = super::usage::top(25).into_iter().map(|(exe, h, d)| (name_of(&exe), h, d)).filter(|(_, h, _)| *h >= 0.05).collect();
         let since = super::usage::since();
+        let known = known_installed();
         let taste = super::taste::text();
-        let text = format!("{}\n{taste}", scan_text(Some((&used, &since)), &modules, &detached, &profiles));
+        let text = format!("{}\n{taste}", scan_text(Some((&used, &since, &known)), &modules, &detached, &profiles));
         let deck_text = format!("{}\n{taste}", scan_text(None, &modules, &detached, &profiles));
-        Scan { used, since, modules, detached, profiles, text, deck_text }
+        Scan { used, since, known, modules, detached, profiles, text, deck_text }
     })
     .await
     .map_err(|e| e.to_string())
@@ -125,14 +129,40 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
 /// An app used: (name, hours in front, days).
 type Used = (String, f32, u32);
 
+/// Installed apps HubDeck knows by a preset or its own shortcut pack, by name (not every installed
+/// app: a short list the assistant can build checked keys for). From the cached scan: none before
+/// the first one.
+fn known_installed() -> Vec<String> {
+    // the cached scan, without icons (fast); none before the first scan
+    let mut names: Vec<String> = super::installed::cached_items()
+        .into_iter()
+        .filter(|item| {
+            let exe = item.exe.rsplit(['\\', '/']).find(|e| !e.is_empty()).unwrap_or_default();
+            let lower = exe.to_lowercase();
+            (lower.ends_with(".exe") || lower.ends_with(".app")) && (super::starter::preset_for(exe).is_some() || super::shortcuts::own_pack(exe).is_some())
+        })
+        .map(|item| item.name)
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names.dedup();
+    names.truncate(60);
+    names
+}
+
 /// The scan as the assistant gets it: the apps used most (None: the user left them out) and the deck.
-/// Installed apps and games are not in it; the assistant looks them up when an idea needs them.
-fn scan_text(used: Option<(&[Used], &str)>, modules: &[String], detached: &[String], profiles: &[String]) -> String {
+/// Of the installed apps only those HubDeck knows go in; others and games the assistant looks up
+/// when an idea needs them.
+fn scan_text(used: Option<(&[Used], &str, &[String])>, modules: &[String], detached: &[String], profiles: &[String]) -> String {
     let list = |v: &[String], max: usize| if v.is_empty() { "none".to_string() } else { v.iter().take(max).cloned().collect::<Vec<_>>().join(", ") };
     let apps = match used {
-        Some(([], _)) => "\n- Apps used most: nothing measured yet (HubDeck counts it from now on)".to_string(),
-        Some((used, since)) => {
-            format!("\n- Apps used most (time in front, counted since {since}): {}", used.iter().map(|(n, h, d)| format!("{n} ({h:.1} h on {d} days)")).collect::<Vec<_>>().join(", "))
+        Some((used, since, known)) => {
+            let used = if used.is_empty() {
+                "\n- Apps used most: nothing measured yet (HubDeck counts it from now on)".to_string()
+            } else {
+                format!("\n- Apps used most (time in front, counted since {since}): {}", used.iter().map(|(n, h, d)| format!("{n} ({h:.1} h on {d} days)")).collect::<Vec<_>>().join(", "))
+            };
+            let known = if known.is_empty() { String::new() } else { format!("\n- Installed apps HubDeck has checked shortcuts or a preset for: {}", known.join(", ")) };
+            format!("{used}{known}")
         }
         None => "\n- Apps used most: the user chose not to send them (ask what they use, or look up installed apps with list_apps)".to_string(),
     };
@@ -264,6 +294,16 @@ pub(crate) fn with_real_apps(p: &mut Profile) {
             super::installed::item_named(&named).or_else(|| b.look.label.as_deref().and_then(|l| super::installed::item_named(&l.replace('\n', " "))))
         };
         let Some(item) = item else {
+            // a program by its own path outside the installed apps (2026-10-14: an app of the
+            // user's own in a build folder showed the placeholder icon): its icon from the file
+            let own_file = key == "target" && is_target(&named) && !named.contains("://") && std::path::Path::new(&named).exists();
+            if own_file
+                && b.look.image.as_deref().unwrap_or_default().is_empty()
+                && let Some(image) = super::appicon::png(&named).ok().and_then(|png| super::images::import_bytes(&png, "png").ok())
+            {
+                b.look.image = Some(image);
+                b.look.icon = None;
+            }
             // not installed but seen in front: the user's own tools
             if key == "target"
                 && !is_target(&named)
@@ -1267,10 +1307,23 @@ mod tests {
         assert!(catalog_text().contains("core.hotkey") && catalog_text().contains("Spotify"));
     }
 
+    /// The installed apps HubDeck knows on this computer (run by hand: prints the list).
+    #[test]
+    #[ignore]
+    fn known_installed_apps_here() {
+        // the app's own cache (macOS path; on Windows %APPDATA%\\dev.hubdeck.app)
+        let home = std::env::var("HOME").or_else(|_| std::env::var("APPDATA")).unwrap_or_default();
+        let mac = std::path::Path::new(&home).join("Library/Application Support/dev.hubdeck.app");
+        let dir = if mac.is_dir() { mac } else { std::path::Path::new(&home).join("dev.hubdeck.app") };
+        super::super::installed::init(&dir);
+        println!("known: {:?}", known_installed());
+    }
+
     #[test]
     fn the_scan_text_says_what_was_found() {
         let used = [("Visual Studio Code".to_string(), 12.5, 4)];
-        let t = scan_text(Some((&used, "2026-10-12 16:30")), &["keys".into(), "dial".into()], &["faders".into()], &["Everyday desk".into()]);
+        let t = scan_text(Some((&used, "2026-10-12 16:30", &["Figma".into()])), &["keys".into(), "dial".into()], &["faders".into()], &["Everyday desk".into()]);
+        assert!(t.contains("checked shortcuts or a preset for: Figma"));
         assert!(t.contains("Owned but not attached now: faders"));
         assert!(t.contains("Visual Studio Code (12.5 h on 4 days)"));
         assert!(t.contains("keys, dial") && t.contains("Everyday desk"));

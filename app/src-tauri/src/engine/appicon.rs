@@ -94,16 +94,24 @@ mod platform {
         // an app linked into /Applications (Safari on macOS 26) would get Finder's alias arrow
         let real = std::fs::canonicalize(path).map_err(|e| format!("{path}: {e}"))?;
         let path = real.to_string_lossy();
-        // SAFETY: AppKit calls with objects we own; NSWorkspace and image encoding work off the
-        // main thread.
-        unsafe {
-            let image = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(&path));
-            image.setSize(NSSize::new(128.0, 128.0));
-            let tiff = image.TIFFRepresentation().ok_or("no icon")?;
-            let rep = NSBitmapImageRep::imageRepWithData(&tiff).ok_or("no icon")?;
-            let png = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()).ok_or("no icon")?;
+        // its own autorelease pool: AppKit hands the icon in every size (up to 1024 px, megabytes) as
+        // autoreleased objects, and a thread without a pool kept them all until it ended (2026-10-14:
+        // reading the icons of all installed apps at start grew HubDeck to 5 GB)
+        let png = objc2::rc::autoreleasepool(|_| -> Result<Vec<u8>, String> {
+            // SAFETY: AppKit calls with objects we own; NSWorkspace and image encoding work off the
+            // main thread.
+            unsafe {
+                let image = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(&path));
+                image.setSize(NSSize::new(128.0, 128.0));
+                let tiff = image.TIFFRepresentation().ok_or("no icon")?;
+                let rep = NSBitmapImageRep::imageRepWithData(&tiff).ok_or("no icon")?;
+                let png = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new()).ok_or("no icon")?;
+                Ok(png.to_vec())
+            }
+        })?;
+        {
             // the encoding carries the largest size (1024 px); keys need 128
-            let big = image::load_from_memory(&png.to_vec()).map_err(|e| e.to_string())?;
+            let big = image::load_from_memory(&png).map_err(|e| e.to_string())?;
             let mut out = std::io::Cursor::new(Vec::new());
             big.resize(128, 128, image::imageops::FilterType::Lanczos3).write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
             Ok(out.into_inner())
