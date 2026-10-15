@@ -172,9 +172,14 @@ const SETTLE: Duration = Duration::from_secs(6);
 /// Remember the hand-back time for the next start.
 pub fn mark_released(app: &AppHandle) {
     if let Ok(dir) = app.path().app_data_dir() {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let _ = std::fs::write(dir.join(RELEASED_AT), now.to_string());
+        mark_released_in(&dir);
     }
+}
+
+/// The same from the guard, which has no app handle.
+pub fn mark_released_in(dir: &std::path::Path) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let _ = std::fs::write(dir.join(RELEASED_AT), now.to_string());
 }
 
 /// Wait out the rest of `SETTLE` if the last app gave the modules back only moments ago.

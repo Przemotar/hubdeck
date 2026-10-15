@@ -24,6 +24,8 @@
   <a href="#faq">FAQ</a>
 </p>
 
+![HubDeck in 23 seconds: a key pressed on the deck gets an action picked in the window, the dial changes its face, ready decks switch with a click](docs/images/hubdeck-film.gif)
+
 ![HubDeck: the deck drawn live with its LED colors, the action library and the key editor](docs/images/hubdeck-main.png)
 
 > HubDeck is an independent project. It is not made, endorsed or supported by Cooler Master.
@@ -75,6 +77,8 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 - Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
   pages do.
 - Twitch sign-in is off until the app registration is done. Linux is not supported.
+- A module that drops off USB when you press it (Windows plays its unplug sound, the keys go blank
+  for a moment) has a loose contact with the base: take it off and put it back firmly.
 
 ## What it does
 
@@ -84,8 +88,9 @@ registration), a shared profiles gallery, more than one base.
 **Deck and modules**
 - Every module: 15 keys, dial with its 240x240 screen, knobs, faders, rollers and the base. Attach and
   remove modules while it runs; HubDeck finds where each one sits and how it is turned.
-- The window draws your deck as it is on the desk, live: key pictures, dial screen, LED colors and
-  the edge light. Press, turn or slide anything to select it.
+- The window draws your deck as it is on the desk, live: the very pictures the keys and the dial
+  get (clocks, values, covers), LED colors and the edge light. Press, turn or slide anything to
+  select it.
 - Modules you own but have not attached stay on a shelf beside the deck, still editable.
 
 **Profiles that follow you**
@@ -167,6 +172,9 @@ registration), a shared profiles gallery, more than one base.
   [PRIVACY.md](PRIVACY.md).
 - About 1 % of one CPU core and 45 MB of memory while it waits in the tray (measured on the
   release build with the deck attached); the window exists only while it is open.
+- If HubDeck ever stops unexpectedly, a small guard hands the deck back to its firmware and starts
+  HubDeck again; the window then says when it happened and lets you copy the details for a bug
+  report (nothing is sent).
 - Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
   flashes); English and Polish.
 

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode 
 import "../deck.css";
 import { controlKey, type ControlRef, type LiveState, type ModuleInfo, type ModuleKind } from "../deck";
 import { FADER_COLORS, KNOB_COLORS } from "../identify";
-import { api, controlId, useLeds, useLiveLooks, usePreview, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
+import { api, controlId, useDialFrame, useKeysFrame, useLeds, useLiveLooks, usePreview, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
 import { localizeError, t, useLanguage, type Key } from "../i18n";
 import { clampToGrid, detachedKinds, detachedModule, FOOTPRINT, GRID_COLS, GRID_ROWS, keysOfKind, MODULE_KINDS, ownedKey, placeModules, placementKey, rotatedSize, type Placed, type Placement, type Rotation } from "../layout";
 
@@ -226,6 +226,21 @@ function Ctl(props: { ctx: Ctx; index: number; kind: ModuleKind; label: string; 
  * What a knob, roller or fader does, written next to it on the drawing (owner's pick A): upright
  * whatever the module's turn, `down` units below its point as seen on screen.
  */
+/**
+ * The LED's color at full brightness, for a caption: a light that shows the level dims with it
+ * and its caption went nearly black at a low volume (owner, 2026-10-14: "system knob nie jest podpisany").
+ */
+export function readable(color: string | null | undefined): string | undefined {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(color ?? "");
+  if (!m) return undefined;
+  const rgb = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));
+  const top = Math.max(...rgb);
+  if (top < 24) return undefined;
+  // same hue, brightest channel at full, a little toward white so dark hues stay legible
+  const lift = rgb.map((v) => Math.round((v / top) * 255 * 0.8 + 255 * 0.2));
+  return `#${lift.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function CtlLabel({ ctx, x, y, down, text, color }: { ctx: Ctx; x: number; y: number; down: number; text?: string; color?: string | null }) {
   if (!text || ctx.arranging) return null;
   const a = (ctx.upright * Math.PI) / 180;
@@ -234,7 +249,7 @@ function CtlLabel({ ctx, x, y, down, text, color }: { ctx: Ctx; x: number; y: nu
   const shown = text.replace(/\s+/g, " ").trim();
   const short = shown.length > 12 ? `${shown.slice(0, 11)}…` : shown;
   return (
-    <text className="dk-ctl-label" x={lx} y={ly} textAnchor="middle" dominantBaseline="central" transform={`rotate(${ctx.upright} ${lx} ${ly})`} style={color ? { fill: color } : undefined}>
+    <text className="dk-ctl-label" x={lx} y={ly} textAnchor="middle" dominantBaseline="central" transform={`rotate(${ctx.upright} ${lx} ${ly})`} style={readable(color) ? { fill: readable(color) } : undefined}>
       {short}
     </text>
   );
@@ -285,17 +300,32 @@ function Recess({ ctx, x, y, w, h, rx, fill = "#0c0c0f" }: { ctx: Ctx; x: number
 // the picture fills the clear cap almost to its edge
 const KP = 0.8;
 
-function KeyFace({ ctx, i, look }: { ctx: Ctx; i: number; look?: Look }) {
+function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; mirror?: { src: string; rect: [number, number, number, number] } | null }) {
   const svg = usePreview("key", look);
   const [pw, ph] = [KW - 2 * KP, KH - 2 * KP];
-  if (svg) {
-    // a key turned a quarter shows its upright picture in a window that is taller than wide
-    const quarter = Math.abs(ctx.upright % 180) === 90;
-    const [w, h] = quarter ? [ph, pw] : [pw, ph];
+  if (mirror) {
+    // this key's window cut out of the picture the hardware got (live values, covers, clocks)
+    const [rx, ry, rw, rh] = mirror.rect;
     return (
       <g clipPath={`url(#${ctx.id("kclip")})`}>
+        <svg x={KP} y={KP} width={pw} height={ph} viewBox={`${rx} ${ry} ${rw} ${rh}`} preserveAspectRatio="none">
+          <image href={mirror.src} x="0" y="0" width="480" height="272" />
+        </svg>
+      </g>
+    );
+  }
+  if (svg) {
+    // a key turned a quarter shows its upright picture in a window that is taller than wide
+    // as on the hardware (render.rs panel_tiles): the square picture keeps its proportions,
+    // centred in the cap, and the key's background fills the rest (2026-10-15, the owner: icons
+    // looked flattened; the picture was stretched to the cap's 79x75)
+    const side = Math.min(pw, ph);
+    const bg = look?.style === "outline" ? "#0c0b10" : look?.bg ?? "#1f1d26";
+    return (
+      <g clipPath={`url(#${ctx.id("kclip")})`}>
+        <rect x={KP} y={KP} width={pw} height={ph} fill={bg} />
         <g transform={`rotate(${ctx.upright} ${KW / 2} ${KH / 2})`}>
-          <Screen svg={svg} prefix={`${ctx.id("k")}${i}-`} x={(KW - w) / 2} y={(KH - h) / 2} w={w} h={h} />
+          <Screen svg={svg} prefix={`${ctx.id("k")}${i}-`} x={(KW - side) / 2} y={(KH - side) / 2} w={side} h={side} />
         </g>
       </g>
     );
@@ -313,6 +343,8 @@ function KeyFace({ ctx, i, look }: { ctx: Ctx; i: number; look?: Look }) {
 
 function Keys({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, page, arranging, id } = ctx;
+  // what the hardware shows right now, while this profile and page are on the deck
+  const frame = useKeysFrame(profile?.id, page, m.id);
   return (
     <>
       <ModuleBody ctx={ctx} w={400} h={300} />
@@ -346,7 +378,7 @@ function Keys({ ctx }: { ctx: Ctx }) {
                   </text>
                 </>
               ) : (
-                <KeyFace ctx={ctx} i={i} look={look} />
+                <KeyFace ctx={ctx} i={i} look={look} mirror={frame && frame.rects[i] ? { src: frame.src, rect: frame.rects[i] } : null} />
               )}
               {/* glossy glass top: a thin bright rim, a sheen over the upper part, a hard highlight on the top edge */}
               <rect width={KW} height={KH} rx="8" fill={`url(#${id("vign")})`} pointerEvents="none" />
@@ -447,6 +479,9 @@ function Dial({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, arranging, id } = ctx;
   const look = ctx.liveLooks.dial ?? profile?.controls.dial?.look;
   const preview = usePreview("dial", look && (look.label || look.icon) ? look : profile ? { label: profile.name } : undefined);
+  // what the hardware shows right now (the clock's time, a live value, a cover), when this profile
+  // is the one on the deck; the saved look's preview otherwise
+  const frame = useDialFrame(profile?.id, m.id);
   const k = controlKey(m.id, 0);
   const turns = live.counters[k] ?? 0;
   const pressed = !!live.pressedKeys[k];
@@ -478,6 +513,8 @@ function Dial({ ctx }: { ctx: Ctx }) {
               {t("deck.top")}
             </text>
           </g>
+        ) : frame ? (
+          <image href={frame} x={cx - r} y={cy - r} width={2 * r} height={2 * r} clipPath={`url(#${id("dclip")})`} />
         ) : preview ? (
           <g transform={`rotate(${ctx.upright} ${cx} ${cy})`}>
             <Screen svg={preview} prefix={`${id("d")}-`} x={cx - r} y={cy - r} w={2 * r} h={2 * r} clip={`url(#${id("dclip")})`} />

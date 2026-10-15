@@ -380,6 +380,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     changed();
   },
   // `&nudge=unused`: the next-day card about a control of the tour's deck nobody touched
+  tour_done: () => demoParam("tourdone") === "1",
   nudge_get: () => (demoParam("nudge") === "unused" ? { subject: "unused:knobs.2", kind: "unused", exe: "knobs.2", name: "Music", hours: 0, deck: "My deck · dial and knobs", since: "2026-10-13" } : null),
   presses_counting: () => false,
   reduced_motion_set: () => null,

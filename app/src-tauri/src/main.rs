@@ -18,6 +18,11 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("--mcp-assistant") {
         return hubdeck_lib::mcp_assistant();
     }
+    // the guard HubDeck starts for itself: hands the deck back if HubDeck dies (guard.rs)
+    if std::env::args().nth(1).as_deref() == Some("--guard") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        return hubdeck_lib::guard(&args);
+    }
     // a terminal or a script: `hubdeck cli status`, `hubdeck cli profile Desk`...
     if std::env::args().nth(1).as_deref() == Some("cli") {
         let args: Vec<String> = std::env::args().skip(2).collect();

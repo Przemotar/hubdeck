@@ -414,7 +414,9 @@ fn panel_open() -> String {
     format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="{PANEL_W}" height="{PANEL_H}" viewBox="0 0 {PANEL_W} {PANEL_H}"><rect width="{PANEL_W}" height="{PANEL_H}" fill="#000"/>"##)
 }
 
-/// All 15 keys as one panel image: one transfer, and every key changes at the same moment.
+/// All 15 keys as one panel image: one transfer, and every key changes at the same moment. The
+/// engine draws it from tiles now ([`panel_tiles`]); this whole-panel SVG is their reference.
+#[cfg(test)]
 pub fn panel_svg(looks: &[Look], rotation: i32, geometry: &PanelGeometry) -> String {
     let mut out = panel_open();
     // the background bleeds half-way into the hidden gaps, so a pixel of misalignment between
@@ -432,6 +434,45 @@ pub fn panel_svg(looks: &[Look], rotation: i32, geometry: &PanelGeometry) -> Str
         out += &format!(r#"<g transform="translate({cx} {cy}) scale({scale})">{}</g>"#, key_body(look, rotation));
     }
     out + "</svg>"
+}
+
+/// The key panel as 15 tiles instead of one SVG: each tile is the same drawing as in
+/// [`panel_svg`] (its background with the bleed and the key), cut out by its viewBox at whole
+/// pixels. Tiles that did not change are not drawn again ([`Renderer::panel_jpeg`]), so a page
+/// of GIFs draws only the keys whose frame moved (2026-10-14: every frame drew all 15 pictures,
+/// 20.7 % of a core on the busiest deck).
+pub struct Tile {
+    pub x: i32,
+    pub y: i32,
+    pub svg: String,
+}
+
+pub fn panel_tiles(looks: &[Look], rotation: i32, geometry: &PanelGeometry) -> Vec<Tile> {
+    let bleed_x = ((geometry.dx - geometry.w) / 2.0).max(0.0);
+    let bleed_y = ((geometry.dy - geometry.h) / 2.0).max(0.0);
+    looks
+        .iter()
+        .enumerate()
+        .take(15)
+        .map(|(i, look)| {
+            let (x, y, w, h) = geometry.key_rect(i);
+            let (left, top) = ((x - bleed_x).floor(), (y - bleed_y).floor());
+            let (tw, th) = (((x + w + bleed_x).ceil() - left).max(1.0), ((y + h + bleed_y).ceil() - top).max(1.0));
+            let bg = if look.style.as_deref() == Some("outline") { OUTLINE_FILL.to_string() } else { color(look.bg.as_ref(), DEFAULT_BG) };
+            let scale = (w.min(h) / KEY_PX as f32).max(0.1);
+            let side = KEY_PX as f32 * scale;
+            let (cx, cy) = (x + (w - side) / 2.0, y + (h - side) / 2.0);
+            let svg = format!(
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{tw}" height="{th}" viewBox="{left} {top} {tw} {th}"><rect x="{}" y="{}" width="{}" height="{}" fill="{bg}"/><g transform="translate({cx} {cy}) scale({scale})">{}</g></svg>"#,
+                x - bleed_x,
+                y - bleed_y,
+                w + 2.0 * bleed_x,
+                h + 2.0 * bleed_y,
+                key_body(look, rotation)
+            );
+            Tile { x: left as i32, y: top as i32, svg }
+        })
+        .collect()
 }
 
 /// One picture or a clock across the whole key panel, upright for the user: for a module turned
@@ -903,14 +944,19 @@ const DIAL_QUALITY: u8 = 90;
 
 pub struct Renderer {
     options: usvg::Options<'static>,
+    /// Key tiles drawn before, by the hash of their SVG (one per key look and GIF frame).
+    tiles: std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<tiny_skia::Pixmap>>>,
 }
+
+/// Key tiles kept (a key tile is ~40 KB: 400 is ~16 MB, a page of GIFs of up to ~26 frames).
+const TILES_KEPT: usize = 400;
 
 impl Default for Renderer {
     fn default() -> Self {
         let mut options = usvg::Options::default();
         options.fontdb_mut().load_font_data(FONT.to_vec());
         options.font_family = FONT_FAMILY.into();
-        Self { options }
+        Self { options, tiles: Default::default() }
     }
 }
 
@@ -936,6 +982,45 @@ impl Renderer {
         let quality = quality.unwrap_or(if size.width() == DIAL_PX { DIAL_QUALITY } else { KEY_QUALITY });
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&rgb).map_err(|e| e.to_string())?;
         log::debug!("image {}x{}: render {:?}, jpeg {:?}", size.width(), size.height(), rendered, started.elapsed() - rendered);
+        Ok(out.into_inner())
+    }
+
+    /// The key panel from tiles ([`panel_tiles`]): a tile drawn before is taken from memory.
+    /// The same picture as [`Renderer::jpeg_with`] of [`panel_svg`].
+    pub fn panel_jpeg(&self, tiles: &[Tile], quality: Option<u8>) -> Result<Vec<u8>, String> {
+        use std::hash::{Hash, Hasher};
+        let mut panel = tiny_skia::Pixmap::new(PANEL_W, PANEL_H).ok_or("empty image")?;
+        panel.fill(tiny_skia::Color::BLACK);
+        for tile in tiles {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            tile.svg.hash(&mut h);
+            let key = h.finish();
+            let kept = self.tiles.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
+            let pixmap = match kept {
+                Some(p) => p,
+                None => {
+                    let tree = usvg::Tree::from_str(&tile.svg, &self.options).map_err(|e| e.to_string())?;
+                    let size = tree.size().to_int_size();
+                    let mut p = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or("empty tile")?;
+                    resvg::render(&tree, tiny_skia::Transform::default(), &mut p.as_mut());
+                    let p = std::sync::Arc::new(p);
+                    let mut all = self.tiles.lock().unwrap_or_else(|e| e.into_inner());
+                    // a new page or new looks: start over rather than grow
+                    if all.len() >= TILES_KEPT {
+                        all.clear();
+                    }
+                    all.insert(key, p.clone());
+                    p
+                }
+            };
+            panel.draw_pixmap(tile.x, tile.y, (*pixmap).as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
+        }
+        let rgb = image::RgbImage::from_fn(PANEL_W, PANEL_H, |x, y| {
+            let p = panel.pixel(x, y).expect("in bounds").demultiply();
+            image::Rgb([p.red(), p.green(), p.blue()])
+        });
+        let mut out = Cursor::new(Vec::new());
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.unwrap_or(KEY_QUALITY)).encode_image(&rgb).map_err(|e| e.to_string())?;
         Ok(out.into_inner())
     }
 
@@ -1337,6 +1422,41 @@ mod timing {
             size = r.jpeg(&panel_svg(&looks, 0, &geometry)).unwrap().len();
         }
         eprintln!("panel with 15 GIF frames: {:?} a frame, {} KB", t.elapsed() / 10, size / 1024);
+        // the same panel from tiles: the first time each tile is drawn, then taken from memory
+        let tiles = panel_tiles(&looks, 0, &geometry);
+        let t = std::time::Instant::now();
+        r.panel_jpeg(&tiles, Some(80)).unwrap();
+        eprintln!("from tiles, first: {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        for _ in 0..10 {
+            r.panel_jpeg(&panel_tiles(&looks, 0, &geometry), Some(80)).unwrap();
+        }
+        eprintln!("from tiles, again: {:?} a frame", t.elapsed() / 10);
+        // how much lighter a moving panel is sent (the engine's MOVING_QUALITY)
+        for q in [98, 90, 80, 70] {
+            eprintln!("  at quality {q}: {} KB", r.jpeg_with(&panel_svg(&looks, 0, &geometry), Some(q)).unwrap().len() / 1024);
+        }
+    }
+
+    #[test]
+    fn a_panel_from_tiles_looks_like_the_panel_drawn_at_once() {
+        let r = Renderer::default();
+        let looks: Vec<Look> = (0..15)
+            .map(|i| Look {
+                label: Some(format!("Key {i}")),
+                icon: Some(["play", "mic", "camera"][i % 3].into()),
+                bg: Some(["#1d1b2b", "#2a1a3a", "#103020"][i % 3].into()),
+                style: [None, Some("outline".to_string()), Some("glass".to_string())][i % 3].clone(),
+                ..Look::default()
+            })
+            .collect();
+        for (rotation, geometry) in [(0, PanelGeometry::default()), (90, PanelGeometry { x0: 1.5, y0: 0.5, dx: 99.5, dy: 98.7, w: 78.6, h: 74.4 })] {
+            let whole = image::load_from_memory(&r.jpeg_with(&panel_svg(&looks, rotation, &geometry), Some(95)).unwrap()).unwrap().to_rgb8();
+            let tiled = image::load_from_memory(&r.panel_jpeg(&panel_tiles(&looks, rotation, &geometry), Some(95)).unwrap()).unwrap().to_rgb8();
+            let diff: u64 = whole.as_raw().iter().zip(tiled.as_raw()).map(|(a, b)| a.abs_diff(*b) as u64).sum();
+            let mean = diff as f64 / whole.as_raw().len() as f64;
+            assert!(mean < 1.5, "rotation {rotation}: mean difference {mean:.2}");
+        }
     }
 
     #[test]

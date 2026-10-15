@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { api, usePreview, type AssistantEvent, type AssistantInfo, type AssistantScan, type EngineView, type Idea, type Look, type Nudge, type Profile, type Taste } from "../engine";
+import { api, usePreview, type AssistantEvent, type AssistantInfo, type AssistantScan, type EngineView, type Idea, type Look, type Nudge, type Profile, type Taste, type TourSuggestion } from "../engine";
 import { getLanguage, t, useLanguage, type Key } from "../i18n";
 import { Icon } from "./Icon";
 
@@ -825,13 +825,34 @@ function TasteCard() {
 }
 
 /** HubDeck's suggestion as a calm card: try its sketch, ask the assistant, or let it be. */
-function NudgeCard({ nudge, onAsk }: { nudge: Nudge; onAsk: (message: string) => void }) {
+/** A suggestion's words: what it says, what it asks the assistant, and its short chip. */
+function nudgeWords(nudge: Nudge) {
   const kind = nudge.kind === "module" ? t(`kind.${nudge.exe}` as Key) : "";
   // a control of the tour's deck: "Knob 3"
   const [ctlKind, ctlIndex] = nudge.exe === "dial" ? ["dial", null] : nudge.exe.split(".");
   const control = nudge.kind === "unused" ? `${t(`control.${ctlKind}` as Key)}${ctlIndex !== null ? ` ${Number(ctlIndex) + 1}` : ""}` : "";
-  const text = nudge.kind === "app" ? t("nudge.app", { name: nudge.name, hours: nudge.hours.toFixed(1) }) : nudge.kind === "unused" ? t("nudge.unused", { control, label: nudge.name, deck: nudge.deck ?? "", since: nudge.since ? new Date(`${nudge.since}T12:00:00`).toLocaleDateString(getLanguage(), { weekday: "long", day: "numeric", month: "long" }) : "" }) : t("nudge.module", { kind });
   const ask = nudge.kind === "app" ? t("nudge.askApp", { name: nudge.name }) : nudge.kind === "unused" ? t("nudge.askUnused", { control, label: nudge.name, deck: nudge.deck ?? "" }) : t("nudge.askModule", { kind });
+  const chip = nudge.kind === "app" ? t("nudge.chipApp", { name: nudge.name }) : nudge.kind === "unused" ? t("nudge.chipUnused", { control }) : t("nudge.chipModule", { kind });
+  return { kind, control, ask, chip };
+}
+
+/** Examples for the assistant from what HubDeck knows of this desk (2026-10-14 review: fixed ones
+ * said "my two free knobs" on a deck with three busy knobs). At most two. */
+function examplesFor(s: TourSuggestion): string[] {
+  const out: string[] = [];
+  const hasDial = s.kit === "dialKnobs";
+  if (s.music && hasDial) out.push(t("assistant.exMusicDial", { app: s.music }));
+  if (s.call) out.push(t("assistant.exCall", { app: s.call === "discord" ? "Discord" : s.call === "teams" ? "Teams" : "Zoom" }));
+  if (s.kit === "faders") out.push(t("assistant.exFaders"));
+  if (hasDial) out.push(t("assistant.exKnobs"));
+  out.push(t("assistant.exApps"));
+  return out.slice(0, 2);
+}
+
+function NudgeCard({ nudge, onAsk, canAsk = true }: { nudge: Nudge; onAsk: (message: string) => void; canAsk?: boolean }) {
+  const { kind, control } = nudgeWords(nudge);
+  const text = nudge.kind === "app" ? t("nudge.app", { name: nudge.name, hours: nudge.hours.toFixed(1) }) : nudge.kind === "unused" ? t("nudge.unused", { control, label: nudge.name, deck: nudge.deck ?? "", since: nudge.since ? new Date(`${nudge.since}T12:00:00`).toLocaleDateString(getLanguage(), { weekday: "long", day: "numeric", month: "long" }) : "" }) : t("nudge.module", { kind });
+  const { ask } = nudgeWords(nudge);
   const act = (action: "later" | "never" | "done") => {
     api.nudgeAct(nudge.subject, action).catch(() => {});
     talk.nudge = null;
@@ -845,7 +866,6 @@ function NudgeCard({ nudge, onAsk }: { nudge: Nudge; onAsk: (message: string) =>
   return (
     <div className="as-nudge">
       <p>{text}</p>
-      {nudge.kind === "unused" && <p className="help">{t("nudge.unusedHow")}</p>}
       <div className="row wrap">
         {nudge.kind === "app" && (
           <button className="tool small primary" onClick={sketch}>
@@ -853,10 +873,12 @@ function NudgeCard({ nudge, onAsk }: { nudge: Nudge; onAsk: (message: string) =>
             {t("nudge.sketch")}
           </button>
         )}
-        <button className={`tool small${nudge.kind === "unused" ? " primary" : ""}`} onClick={() => (act("done"), onAsk(ask))}>
-          <Icon name="sparkles" />
-          {t("nudge.ask")}
-        </button>
+        {canAsk && (
+          <button className={`tool small${nudge.kind === "unused" ? " primary" : ""}`} onClick={() => (act("done"), onAsk(ask))}>
+            <Icon name="sparkles" />
+            {t("nudge.ideas")}
+          </button>
+        )}
         <button className="link-btn" onClick={() => act("later")}>
           {t("nudge.later")}
         </button>
@@ -905,6 +927,13 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
   }, [talk.lines.length, talk.busy]);
   const state = view.state;
   const drafts = state?.profiles.filter((p) => p.draft) ?? [];
+  // the tour was done: its button turns into a row, and examples from the user's own deck show
+  const [tourDone, setTourDone] = useState(false);
+  const [examples, setExamples] = useState<string[]>([]);
+  useEffect(() => {
+    api.tourDone().then(setTourDone, () => {});
+    api.tourSuggest(getLanguage()).then((s) => setExamples(examplesFor(s)), () => {});
+  }, [state?.profiles.length]);
 
   useEffect(refreshNudge, []);
   // a suggestion's "Ask the assistant": its message waits in the first box
@@ -966,7 +995,8 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
 
   return (
     <div className="assistant">
-      <div className="as-head">
+      {/* the tab already says Get started: no second title over the start (owner, 2026-10-14) */}
+      <div className={`as-head${talk.phase === "start" || talk.phase === "scanning" ? " is-quiet" : ""}`}>
         <span className="as-title">
           <Icon name="sparkles" />
           {talk.phase === "start" || talk.phase === "scanning" ? t("assistant.tab") : t("assistant.title")}
@@ -981,7 +1011,8 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
       {talk.phase === "chat" && info && <SessionBar info={info} />}
 
       <div className="as-body">
-        {talk.nudge && talk.phase !== "chat" && (
+        {/* while consenting the suggestion stays in sight; at the start it is a line below the assistant */}
+        {talk.nudge && talk.phase === "consent" && (
           <NudgeCard
             nudge={talk.nudge}
             onAsk={(message) => {
@@ -992,29 +1023,44 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
           />
         )}
         {(talk.phase === "start" || talk.phase === "scanning") && (
-          // one way in (owner, 2026-10-13: "za dużo na start"): the tour, or straight to the talk
+          // always the same places (owner's pick M2, 2026-10-14: "zawsze to samo"): the tour, building
+          // step by step, the AI assistant (always open), then a suggestion; only the tour's look
+          // changes once a tour deck was kept, and before that it is marked Recommended
           <div className="as-intro">
-            <h3 className="as-lets">{t("assistant.letsSet")}</h3>
-            <p className="help">{t("assistant.letsSetHelp")}</p>
-            {onTour && (
-              <button className="tool primary as-show" onClick={onTour}>
-                <Icon name="play" />
-                <span className="as-show-words">
-                  <b>{t("assistant.showMe")}</b>
-                  <small>{t("assistant.showMeHelp")}</small>
-                </span>
+            <h3 className="as-lets">{tourDone ? t("assistant.yourDeck") : t("assistant.letsSet")}</h3>
+            {onTour &&
+              (tourDone ? (
+                <button className="as-row" onClick={onTour}>
+                  <span className="as-row-lead">
+                    <Icon name="play" />
+                    {t("assistant.showMeAgain")}
+                  </span>
+                  <Icon name="chevron-right" />
+                </button>
+              ) : (
+                <button className="tool primary as-show" onClick={onTour}>
+                  <Icon name="play" />
+                  <span className="as-show-words">
+                    <b>
+                      {t("assistant.showMe")}
+                      <span className="as-rec">{t("assistant.recommended")}</span>
+                    </b>
+                    <small>{t("assistant.showMeHelp")}</small>
+                  </span>
+                </button>
+              ))}
+            {onBuild && (
+              <button className="as-row" onClick={onBuild}>
+                <span>{t("assistant.buildYourself")}</span>
+                <Icon name="chevron-right" />
               </button>
             )}
-            {/* the assistant's own card (owner's pick 2a, 2026-10-14: "za słabo pokazane") */}
             <section className="as-card" aria-labelledby="as-card-title">
-              <div className="as-card-head">
-                <span className="as-card-ic">
-                  <Icon name="sparkles" />
-                </span>
+              <div className="as-ai-head">
                 <span>
-                  <b id="as-card-title">{t("assistant.title")}</b>
-                  <small>{t("assistant.cardLine")}</small>
+                  <b id="as-card-title">{t("assistant.aiTitle")}</b> · Claude Code
                 </span>
+                {ready && info && <small>{[planName(info), modelName(info.chosenModel ?? info.defaultModel ?? info.model)].filter(Boolean).join(" · ")}</small>}
               </div>
               {ready ? (
                 <form
@@ -1027,35 +1073,38 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
                   <input id="as-know" className="input grow" placeholder={t("assistant.cardPlaceholder")} aria-label={t("assistant.cardPlaceholder")} value={know} onChange={(e) => setKnow(e.target.value)} />
                   <button type="submit" className="tool primary" disabled={!know.trim() || talk.phase === "scanning"}>
                     {talk.phase === "scanning" ? <Icon name="refresh-cw" className="tour-spin" /> : <Icon name="sparkles" />}
-                    {t("assistant.sendShort")}
+                    {t("assistant.cardNext")}
                   </button>
                 </form>
               ) : (
-                <p className="help">{info ? t(!info.cli ? "assistant.cardNoCli" : "assistant.cardSignIn") : t("assistant.checking")}</p>
+                <p className="help">{info ? t(!info.cli ? "assistant.needsCli" : "assistant.needsSignIn") : t("assistant.checking")}</p>
               )}
-              {ready && (
+              {ready && tourDone && examples.length > 0 && (
                 <div className="as-examples">
-                  {(["assistant.example1", "assistant.example2", "assistant.example3"] as Key[]).map((k) => (
-                    <button key={k} className="chip" disabled={talk.phase === "scanning"} onClick={() => ask(t(k))}>
-                      {t(k)}
+                  {examples.map((x) => (
+                    <button key={x} className="chip" disabled={talk.phase === "scanning"} onClick={() => ask(x)}>
+                      {x}
                     </button>
                   ))}
                 </div>
               )}
-            <details className="as-details">
-              <summary>
-                {ready && info ? [t("assistant.runsLine", { plan: planName(info) }), modelName(info.chosenModel ?? info.defaultModel ?? info.model)].filter(Boolean).join(" · ") : info ? t("assistant.needsLine") : t("assistant.checking")} · {t("assistant.details")}
-              </summary>
-              <RunsOn info={info} onCheck={reload} />
-              {ready && <p className="help">{t("assistant.privacy")}</p>}
-              {ready && <TasteCard />}
-              {onBuild && (
-                <button className="link-btn align-start" onClick={onBuild}>
-                  {t("builder.open")}
-                </button>
-              )}
-            </details>
+              <details className="as-details">
+                <summary>{ready ? t("assistant.usesAndSends") : t("assistant.howToGet")}</summary>
+                <RunsOn info={info} onCheck={reload} />
+                {ready && <p className="help">{t("assistant.privacy")}</p>}
+                {ready && <TasteCard />}
+              </details>
             </section>
+            {talk.nudge && (
+              <NudgeCard
+                nudge={talk.nudge}
+                canAsk={ready}
+                onAsk={(message) => {
+                  talk.prefill = message;
+                  if (ready) scan();
+                }}
+              />
+            )}
           </div>
         )}
 
@@ -1177,7 +1226,12 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
 
       {drafts.length > 0 && (
         <details className="as-drafts">
-          <summary className="label">{t("assistant.drafts", { count: drafts.length })}</summary>
+          <summary className="label">{t("assistant.draftsWaiting", { count: drafts.length })}</summary>
+          {drafts.length > 1 && (
+            <button className="link-btn align-start as-throw-all" onClick={() => drafts.forEach((d) => api.settleDraft(d.id, false).catch(() => {}))}>
+              {t("assistant.throwAll")}
+            </button>
+          )}
           {drafts.map((d) => {
             const trying = state?.trying === d.id;
             return (

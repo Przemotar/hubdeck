@@ -236,6 +236,12 @@ pub fn catalog() -> Vec<ActionDef> {
             params: vec![
                 p("turn", "Turning", ParamKind::Select { options: options(&[("volume", "Changes the volume"), ("tracks", "Skips tracks"), ("seek", "Moves in the song")]) }, json!("volume")),
                 p("press", "A press", ParamKind::Select { options: options(&[("playPause", "Plays / pauses"), ("next", "Next track"), ("previous", "Previous track")]) }, json!("playPause")),
+                ParamDef {
+                    help: Some(
+                        "Windows: the music app this is for, e.g. Spotify. Its song shows even when a video played last, and a press opens it and plays when it is closed. Empty: whatever plays (a music app first).",
+                    ),
+                    ..p("player", "Music app", ParamKind::Text { multiline: false }, json!(""))
+                },
             ],
             icon: "music",
         },
@@ -1026,9 +1032,26 @@ pub fn catalog() -> Vec<ActionDef> {
             inputs: vec![Press, Turn],
             params: vec![
                 p("name", "Name", ParamKind::Text { multiline: false }, json!("Mochi")),
-                p("press", "A press", ParamKind::Select { options: options(&[("pet", "Pets it"), ("feed", "Feeds it"), ("sleep", "Bed / wake up")]) }, json!("pet")),
+                ParamDef {
+                    help: Some("On a key: \"Puts it on the dial\" brings Mochi to this profile's dial, and a second press gives the dial back what it had."),
+                    ..p(
+                        "press",
+                        "A press",
+                        ParamKind::Select { options: options(&[("pet", "Pets it"), ("feed", "Feeds it"), ("sleep", "Bed / wake up"), ("dial", "Puts it on the dial / takes it off")]) },
+                        json!("pet"),
+                    )
+                },
             ],
             icon: "heart",
+        },
+        ActionDef {
+            id: SAVER,
+            name: "Screensaver",
+            group: "HubDeck",
+            description: "Shows a screensaver on the keys for a few seconds; any touch ends it. With Next, every press shows the next one. The one that starts by itself is set in Settings > Lights and screens.",
+            inputs: vec![Press],
+            params: vec![p("effect", "Which", ParamKind::Select { options: options(&[("", "Next"), ("rain", "Code rain"), ("stars", "Night sky"), ("waves", "Waves")]) }, json!(""))],
+            icon: "image",
         },
         ActionDef {
             id: POMODORO,
@@ -1180,6 +1203,7 @@ pub const CLOCK: &str = "core.clock";
 /// Id of the countdown timer; the engine keeps its time and draws it.
 pub const TIMER: &str = "core.timer";
 pub const POMODORO: &str = "core.pomodoro";
+pub const SAVER: &str = "core.saver";
 
 /// Id of the now playing action; the engine draws the cover on its key or the dial.
 pub const NOW_PLAYING: &str = "core.nowPlaying";

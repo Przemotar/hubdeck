@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { actionFits, api, controlId, GAMES_ENABLED, setPreviewSalt, type AppInfo, type AppsState, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { actionFits, api, controlId, GAMES_ENABLED, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -80,17 +80,19 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
     return () => clearInterval(timer);
   }, []);
   return (
-    <aside data-guide="library" className={`library${tab === "assistant" ? " is-wide" : ""}`} aria-label={tab === "actions" ? t("library.title") : tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
+    // one width for every tab (owner, 2026-10-14: Get started widening the column looked odd);
+    // Get started comes first and is open at start
+    <aside data-guide="library" className="library" aria-label={tab === "actions" ? t("library.title") : tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
       <div className="lib-tabs seg full" role="tablist">
+        <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
+          {t("assistant.tab")}
+          {nudge && tab !== "assistant" && <span className="tab-dot" aria-label={t("nudge.ask")} />}
+        </button>
         <button role="tab" aria-selected={tab === "actions"} className={`tab${tab === "actions" ? " is-active" : ""}`} onClick={() => onTab("actions")}>
           {t("library.title")}
         </button>
         <button role="tab" data-guide="profiles" aria-selected={tab === "profiles"} className={`tab${tab === "profiles" ? " is-active" : ""}`} onClick={() => onTab("profiles")}>
           {t("profiles.title")}
-        </button>
-        <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
-          {t("assistant.tab")}
-          {nudge && tab !== "assistant" && <span className="tab-dot" aria-label={t("nudge.ask")} />}
         </button>
       </div>
       {tab === "actions" ? (
@@ -1741,6 +1743,32 @@ function AccessibilityBanner() {
   );
 }
 
+/** After HubDeck ended without quitting (a crash, Task Manager): when, and the details to copy. */
+function CrashBanner() {
+  useLanguage();
+  const [report, setReport] = useState<CrashReport | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.crashReport().then(setReport, () => setReport(null));
+  }, []);
+  if (!report) return null;
+  const at = report.at.slice(11, 16);
+  const details = [`HubDeck ended without quitting at ${report.at}${report.restarted ? " (started again by its guard)" : ""}.`, report.panic ?? "", "", ...report.log].join("\n");
+  return (
+    <div className="banner is-warn" role="status">
+      <Icon name="alert" />
+      <span className="grow">{t(report.restarted ? "crash.back" : "crash.stopped", { at })}</span>
+      <button className="tool small" onClick={() => navigator.clipboard.writeText(details).then(() => setCopied(true), () => {})}>
+        <Icon name="copy" />
+        {copied ? t("crash.copied") : t("crash.copy")}
+      </button>
+      <button className="tool small" onClick={() => (api.crashSeen(), setReport(null))}>
+        {t("crash.ok")}
+      </button>
+    </div>
+  );
+}
+
 function UpdateBanner() {
   useLanguage();
   const [info, dismiss] = useUpdateAvailable();
@@ -3027,6 +3055,7 @@ export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live
   return (
     <>
       <UpdateBanner />
+      <CrashBanner />
       <AccessibilityBanner />
       {made.length > 0 && (
         <div className="banner is-info" role="status">

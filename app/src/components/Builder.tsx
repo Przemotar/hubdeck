@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ControlRef, LiveState } from "../deck";
-import { api, type Binding, type EngineView, type Profile } from "../engine";
+import { api, svgDataUrl, type Binding, type EngineView, type Profile } from "../engine";
 import { t, useLanguage } from "../i18n";
 import type { Placement } from "../layout";
 import { DeckView } from "./DeckView";
@@ -21,6 +21,8 @@ interface BuilderOption {
   setup: boolean;
   binding: Binding;
   svg: string | null;
+  /** The double press and hold that go with it (`double`, `hold`). */
+  extra?: Record<string, Binding>;
 }
 
 /** One step: a control (the dial, one knob) or the review at the end. */
@@ -33,7 +35,6 @@ interface Step {
   ref: ControlRef | null;
 }
 
-const svgUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 
 export function Builder({ live, view, saved, onPlace, onClose }: { live: LiveState; view: EngineView; saved: Record<string, Placement>; onPlace: (key: string, p: Placement | null) => void; onClose: () => void }) {
   useLanguage();
@@ -84,7 +85,14 @@ export function Builder({ live, view, saved, onPlace, onClose }: { live: LiveSta
   const put = async (o: BuilderOption) => {
     const d = draftRef.current;
     if (!d || !step.control) return;
-    const next: Profile = { ...d, controls: { ...d.controls, [step.control]: o.binding } };
+    const controls = { ...d.controls, [step.control]: o.binding };
+    // each option brings its own double press and hold; without them, the ones from before go
+    for (const g of ["double", "hold"]) {
+      const id = `${step.control}:${g}`;
+      if (o.extra?.[g]) controls[id] = o.extra[g];
+      else delete controls[id];
+    }
+    const next: Profile = { ...d, controls };
     draftRef.current = next;
     setDraft(next);
     await api.saveProfile(next);
@@ -171,9 +179,23 @@ export function Builder({ live, view, saved, onPlace, onClose }: { live: LiveSta
                         const isTrying = step.control && trying[step.control] === o.id;
                         const isPicked = step.control && picked[step.control] === o.id;
                         return (
-                          <article key={o.id} className={`builder-card${isTrying ? " is-trying" : ""}${isPicked ? " is-picked" : ""}`}>
+                          // a click anywhere on the card tries it (owner, 2026-10-14: not only the button)
+                          <article
+                            key={o.id}
+                            className={`builder-card${isTrying ? " is-trying" : ""}${isPicked ? " is-picked" : ""}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={!!isTrying}
+                            onClick={() => draft && !isTrying && put(o)}
+                            onKeyDown={(e) => {
+                              if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && draft) {
+                                e.preventDefault();
+                                put(o);
+                              }
+                            }}
+                          >
                             {o.svg ? (
-                              <img className="builder-face" src={svgUrl(o.svg)} alt="" />
+                              <img className="builder-face" src={svgDataUrl(o.svg)} alt="" />
                             ) : (
                               <span className="builder-knob" aria-hidden="true" dangerouslySetInnerHTML={{ __html: iconSvg(o.binding.look.icon) }} />
                             )}
@@ -184,10 +206,24 @@ export function Builder({ live, view, saved, onPlace, onClose }: { live: LiveSta
                               {o.setup ? ` · ${t("builder.needsSetup")}` : ""}
                             </span>
                             <div className="builder-card-actions">
-                              <button className="tool small" onClick={() => put(o)} disabled={!draft}>
+                              <button
+                                className="tool small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  put(o);
+                                }}
+                                disabled={!draft}
+                              >
                                 {isTrying ? t("builder.onDeck") : t("builder.try")}
                               </button>
-                              <button className="tool small primary" onClick={() => pick(o)} disabled={!draft}>
+                              <button
+                                className="tool small primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  pick(o);
+                                }}
+                                disabled={!draft}
+                              >
                                 {t("builder.pick")}
                               </button>
                             </div>

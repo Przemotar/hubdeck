@@ -23,6 +23,31 @@ pub struct Track {
 
 const POLL: Duration = Duration::from_millis(1000);
 
+/// The music app the dial's Now playing is for (`player` of the action, e.g. "Spotify"); empty: any.
+/// Windows: its session is shown and steered even when another app played last, and a press with
+/// it closed opens it and plays (owner, 2026-10-14: nothing played, and a press paused a video in
+/// Firefox instead of starting his Spotify).
+static PREFER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Set the preferred player (the engine does it for the dial's Now playing).
+pub fn prefer(player: &str) {
+    let player = player.trim().to_lowercase();
+    if let Ok(mut p) = PREFER.lock()
+        && *p != player
+    {
+        *p = player;
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn preferred() -> String {
+    PREFER.lock().map(|p| p.clone()).unwrap_or_default()
+}
+
+/// Music players by a piece of their app id (Windows), so they come before a browser or a video.
+#[cfg_attr(not(windows), allow(dead_code))]
+const MUSIC_APPS: [&str; 9] = ["spotify", "zunemusic", "applemusic", "tidal", "deezer", "musicbee", "foobar2000", "itunes", "amazon music"];
+
 /// Report the current track to the engine whenever it changes. Runs on its own thread forever.
 pub fn watch(tx: Sender<Msg>) {
     platform::init();
@@ -59,7 +84,7 @@ pub fn watch(tx: Sender<Msg>) {
 
 #[cfg(windows)]
 mod platform {
-    use windows::Media::Control::{GlobalSystemMediaTransportControlsSessionManager, GlobalSystemMediaTransportControlsSessionPlaybackStatus};
+    use windows::Media::Control::{GlobalSystemMediaTransportControlsSession as Session, GlobalSystemMediaTransportControlsSessionManager, GlobalSystemMediaTransportControlsSessionPlaybackStatus};
     use windows::Storage::Streams::DataReader;
     use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 
@@ -77,23 +102,56 @@ mod platform {
         static MANAGER: std::cell::RefCell<Option<GlobalSystemMediaTransportControlsSessionManager>> = const { std::cell::RefCell::new(None) };
     }
 
-    /// `same`: the title and artist reported last time; the cover is read again only for a new track.
-    pub fn current(same: Option<(&str, &str)>) -> Option<Track> {
-        let manager = MANAGER.with(|m| {
+    fn manager() -> Option<GlobalSystemMediaTransportControlsSessionManager> {
+        MANAGER.with(|m| {
             let mut m = m.borrow_mut();
             if m.is_none() {
                 *m = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().ok().and_then(|op| op.join().ok());
             }
             m.clone()
-        })?;
-        let session = manager.GetCurrentSession().ok()?;
+        })
+    }
+
+    fn app_id(s: &Session) -> String {
+        s.SourceAppUserModelId().map(|h| h.to_string().to_lowercase()).unwrap_or_default()
+    }
+
+    fn is_playing(s: &Session) -> bool {
+        s.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).map(|st| st == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing).unwrap_or(false)
+    }
+
+    fn sessions(manager: &GlobalSystemMediaTransportControlsSessionManager) -> Vec<Session> {
+        let Ok(list) = manager.GetSessions() else { return Vec::new() };
+        (0..list.Size().unwrap_or(0)).filter_map(|i| list.GetAt(i).ok()).collect()
+    }
+
+    /// The session the dial shows and steers: the preferred player's; else what plays now (a music
+    /// app first); else a paused music app; else the system's current one. With a preferred player
+    /// that is not open, only something playing now is shown.
+    fn pick() -> Option<Session> {
+        let manager = manager()?;
+        let all = sessions(&manager);
+        let music = |s: &Session| super::MUSIC_APPS.iter().any(|m| app_id(s).contains(m));
+        let prefer = super::preferred();
+        if !prefer.is_empty() {
+            if let Some(s) = all.iter().find(|s| app_id(s).contains(&prefer)) {
+                return Some(s.clone());
+            }
+            return all.iter().find(|s| is_playing(s)).cloned();
+        }
+        all.iter().find(|s| is_playing(s) && music(s)).or_else(|| all.iter().find(|s| is_playing(s))).or_else(|| all.iter().find(|s| music(s))).cloned().or_else(|| manager.GetCurrentSession().ok())
+    }
+
+    /// `same`: the title and artist reported last time; the cover is read again only for a new track.
+    pub fn current(same: Option<(&str, &str)>) -> Option<Track> {
+        let session = pick()?;
         let props = session.TryGetMediaPropertiesAsync().ok()?.join().ok()?;
         let title = props.Title().map(|s| s.to_string()).unwrap_or_default();
         let artist = props.Artist().map(|s| s.to_string()).unwrap_or_default();
         if title.is_empty() && artist.is_empty() {
             return None;
         }
-        let playing = session.GetPlaybackInfo().and_then(|i| i.PlaybackStatus()).map(|s| s == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing).unwrap_or(false);
+        let playing = is_playing(&session);
         let cover = if same == Some((title.as_str(), artist.as_str())) { None } else { thumbnail(&props) };
         let position = session.GetTimelineProperties().ok().and_then(|t| {
             let at = t.Position().ok()?.Duration as f32 / 10_000_000.0;
@@ -104,8 +162,7 @@ mod platform {
     }
 
     pub fn seek(seconds: f64) -> Result<(), String> {
-        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
-        let session = manager.GetCurrentSession().map_err(|_| "nothing is playing".to_string())?;
+        let session = pick().ok_or_else(|| "nothing is playing".to_string())?;
         let timeline = session.GetTimelineProperties().map_err(|e| e.to_string())?;
         let now = timeline.Position().map_err(|e| e.to_string())?.Duration;
         let target = (now + (seconds * 10_000_000.0) as i64).max(0);
@@ -113,14 +170,53 @@ mod platform {
         Ok(())
     }
 
-    /// Windows: the media keys go to the session the dial shows (the system's current one).
-    pub fn command(_command: super::Command) -> Option<Result<(), String>> {
-        None
+    /// The session the dial shows gets the command (not whatever app the media keys reach). A
+    /// preferred player that is not open is opened and plays once its session shows up.
+    pub fn command(command: super::Command) -> Option<Result<(), String>> {
+        match pick() {
+            Some(s) => Some(
+                match command {
+                    super::Command::PlayPause => s.TryTogglePlayPauseAsync().and_then(|op| op.join()),
+                    super::Command::Next => s.TrySkipNextAsync().and_then(|op| op.join()),
+                    super::Command::Previous => s.TrySkipPreviousAsync().and_then(|op| op.join()),
+                }
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+            ),
+            None => {
+                let prefer = super::preferred();
+                if prefer.is_empty() || command != super::Command::PlayPause {
+                    return None;
+                }
+                Some(open_and_play(prefer))
+            }
+        }
+    }
+
+    fn open_and_play(player: String) -> Result<(), String> {
+        // Spotify opens by its own link; other players by name, as the Run box would
+        let target = if player == "spotify" { "spotify:".to_string() } else { player.clone() };
+        crate::system::shell_open(&target)?;
+        log::info!("now playing: opening {player} to play");
+        std::thread::spawn(move || {
+            init();
+            for _ in 0..30 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let Some(manager) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().ok().and_then(|op| op.join().ok()) else { continue };
+                if let Some(s) = sessions(&manager).into_iter().find(|s| app_id(s).contains(&player)) {
+                    if !is_playing(&s) {
+                        let _ = s.TryPlayAsync().and_then(|op| op.join());
+                    }
+                    return;
+                }
+            }
+            log::info!("now playing: {player} did not show a session within 15 s");
+        });
+        Ok(())
     }
 
     pub fn seek_to(seconds: f64) -> Result<(), String> {
-        let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
-        let session = manager.GetCurrentSession().map_err(|_| "nothing is playing".to_string())?;
+        let session = pick().ok_or_else(|| "nothing is playing".to_string())?;
         session.TryChangePlaybackPositionAsync((seconds * 10_000_000.0) as i64).map_err(|e| e.to_string())?.join().map_err(|e| e.to_string())?;
         Ok(())
     }

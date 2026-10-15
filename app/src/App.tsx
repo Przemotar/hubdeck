@@ -54,7 +54,8 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(DEMO_PANEL === "plugins" ? "plugins" : "general");
   const [galleryOpen, setGalleryOpen] = useState(DEMO_PANEL === "gallery");
   const [newRequest, setNewRequest] = useState(0);
-  const [leftTab, setLeftTab] = useState<LeftTab>(DEMO_PANEL === "profiles" ? "profiles" : "actions");
+  // Get started is open when the app opens (owner, 2026-10-14)
+  const [leftTab, setLeftTab] = useState<LeftTab>(DEMO_PANEL === "profiles" ? "profiles" : DEMO_PANEL === "actions" ? "actions" : "assistant");
   const [forAppOpen, setForAppOpen] = useState(DEMO_PANEL === "forapp");
   // a profile just made for an app: the inspector suggests next steps until something is picked
   const [fresh, setFresh] = useState<string | null>(DEMO_PANEL === "fresh" ? "demo-obs" : null);

@@ -110,3 +110,16 @@ describe("HubDeck's rainbow", () => {
     expect(hubRainbow(RAINBOW_MS)).toBe("rgb(255, 0, 0)");
   });
 });
+
+import { readable } from "./components/DeckView";
+
+describe("captions of dimmed lights", () => {
+  it("keep the hue at full brightness", () => {
+    expect(readable("#0a1a33")).toBe("#5b9bff");
+    const lifted = readable("#081a10")!;
+    expect(parseInt(lifted.slice(1, 3), 16) + parseInt(lifted.slice(3, 5), 16) + parseInt(lifted.slice(5, 7), 16)).toBeGreaterThan(300);
+    expect(readable("#05100a")).toBeUndefined(); // nearly off: the caption keeps its own light color
+    expect(readable("#000000")).toBeUndefined();
+    expect(readable(null)).toBeUndefined();
+  });
+});

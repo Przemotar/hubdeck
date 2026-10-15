@@ -32,11 +32,15 @@ pub struct Needs {
     pub joy: f32,
     pub asleep: bool,
     pub at: u64,
+    /// What a profile's dial had before a key put Mochi there, by profile id (`{"dial": binding,
+    /// "dial:double": .., "dial:hold": ..}`), given back when it is taken off.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub dials: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl Default for Needs {
     fn default() -> Self {
-        Self { fullness: 0.8, joy: 0.8, asleep: false, at: now_secs() }
+        Self { fullness: 0.8, joy: 0.8, asleep: false, at: now_secs(), dials: Default::default() }
     }
 }
 
@@ -71,21 +75,6 @@ pub enum Mood {
 }
 
 impl Mood {
-    pub fn word(self, polish: bool) -> &'static str {
-        match (self, polish) {
-            (Mood::Happy, false) => "happy",
-            (Mood::Happy, true) => "szczęśliwy",
-            (Mood::Hungry, false) => "hungry",
-            (Mood::Hungry, true) => "głodny",
-            (Mood::Sad, false) => "a bit sad",
-            (Mood::Sad, true) => "trochę smutny",
-            (Mood::Sleepy, false) => "sleepy",
-            (Mood::Sleepy, true) => "śpiący",
-            (Mood::Asleep, false) => "asleep",
-            (Mood::Asleep, true) => "śpi",
-        }
-    }
-
     /// The dial's background for the mood (the only place it shows).
     fn sky(self) -> (&'static str, &'static str) {
         match self {
@@ -125,7 +114,7 @@ impl Pet {
         Self { needs, moment: None, look: 0.0, file: Some(file) }
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         if let Some(f) = &self.file
             && let Ok(json) = serde_json::to_vec_pretty(&self.needs)
             && let Err(e) = super::profile::write_atomic(f, &json)
@@ -197,11 +186,34 @@ const MOUTH: &str = "#2a1240";
 /// The deck's own font (the only one the renderer has: any other name drew boxes for missing glyphs).
 const FONT: &str = super::render::FONT_FAMILY;
 
+/// Everything Mochi does at rest repeats every `LOOP` seconds on a grid of `STEP` (one engine
+/// tick), so each resting frame is drawn once and then only sent again (owner, 2026-10-14: more
+/// than 12 frames a second without doubling the CPU).
+pub const LOOP: f32 = 16.8;
+const STEP_MS: u64 = 40;
+const LOOP_FRAMES: u64 = 420;
+
+/// The clock Mochi is drawn at, on the loop's grid (whole milliseconds: an `f32` of seconds gets
+/// coarser than a step after a few days).
+pub fn loop_clock() -> f32 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    loop_at(START.get_or_init(Instant::now).elapsed())
+}
+
+fn loop_at(since: Duration) -> f32 {
+    ((since.as_millis() as u64 / STEP_MS) % LOOP_FRAMES * STEP_MS) as f32 / 1000.0
+}
+
+/// A speed that turns `k` whole times in a loop.
+fn w(k: f32) -> f32 {
+    2.0 * std::f32::consts::PI * k / LOOP
+}
+
 /// Mochi on the dial at `t` seconds, with its name and mood on top (owner's pick, 2026-10-14: the
 /// polished one: soft light from above, a shine and a lit edge, a jelly squash on every touch,
 /// glossy eyes, lids when sleepy, a tear when sad, hearts that sway up, a bitten cookie, a
 /// nightcap; still a drawing made by code, no picture files).
-pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: Instant, rotation: i32) -> String {
+pub fn dial_svg(pet: &Pet, mood: Mood, t: f32, now: Instant, rotation: i32) -> String {
     use std::f32::consts::PI;
     let (s, c) = (240.0_f32, 120.0_f32);
     let (top, bottom) = mood.sky();
@@ -210,7 +222,7 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
     let age = moment.map_or(99.0, |(_, a)| a);
     let is = |m: Moment| moment.is_some_and(|(x, _)| std::mem::discriminant(&x) == std::mem::discriminant(&m));
     // jelly: a press squashes and springs back; a hop stretches up and squashes on landing
-    let breath = if asleep { (t * 1.5).sin() * 0.045 } else { (t * 2.3).sin() * 0.025 };
+    let breath = if asleep { (t * w(4.0)).sin() * 0.045 } else { (t * w(6.0)).sin() * 0.025 };
     let (mut sx, mut sy, mut lift) = (1.0 - breath, 1.0 + breath, 0.0_f32);
     if (is(Moment::Hearts) || is(Moment::Munch)) && age < 1.0 {
         let k = (-5.0 * age).exp() * (16.0 * age).cos() * 0.14;
@@ -229,7 +241,7 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
             sy -= k;
         }
     }
-    let tilt = pet.look * 4.0 + if mood == Mood::Sleepy { (t * 0.9).sin() * 3.0 } else { 0.0 };
+    let tilt = pet.look * 4.0 + if mood == Mood::Sleepy { (t * w(2.0)).sin() * 3.0 } else { 0.0 };
     let m = mood as u8;
     let mut b = format!(
         r##"<defs><radialGradient id="psk{m}" cx="50%" cy="28%" r="80%"><stop offset="0" stop-color="{top}"/><stop offset="1" stop-color="{bottom}"/></radialGradient><radialGradient id="pbd" cx="36%" cy="28%" r="78%"><stop offset="0" stop-color="#ece6ff"/><stop offset=".38" stop-color="#b3a7ff"/><stop offset=".78" stop-color="#8371f2"/><stop offset="1" stop-color="#5d4bd2"/></radialGradient><linearGradient id="psh" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#2a1a6e" stop-opacity="0"/><stop offset="1" stop-color="#2a1a6e" stop-opacity=".38"/></linearGradient><radialGradient id="pey" cx="50%" cy="30%"><stop offset="0" stop-color="#3a2d6e"/><stop offset="1" stop-color="#140f2b"/></radialGradient><linearGradient id="php" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb3dc"/><stop offset="1" stop-color="#f0569c"/></linearGradient><radialGradient id="pck" cx="40%" cy="35%"><stop offset="0" stop-color="#f2c48a"/><stop offset="1" stop-color="#c98a45"/></radialGradient><radialGradient id="pshd"><stop offset="0" stop-color="#000" stop-opacity=".9"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient><radialGradient id="pglo"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient><radialGradient id="pblu"><stop offset="0" stop-color="#ff8fc7" stop-opacity=".9"/><stop offset="1" stop-color="#ff8fc7" stop-opacity="0"/></radialGradient></defs><rect width="{s}" height="{s}" fill="url(#psk{m})"/>"##
@@ -237,14 +249,14 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
     let dust_color = dust(mood);
     for i in 0..9 {
         let fi = i as f32;
-        let x = (30.0 + fi * 23.0 + (t * 0.3 + fi).sin() * 8.0) % 220.0 + 10.0;
-        let y = 40.0 + ((i * 37) % 120) as f32 - (t * 6.0 + fi * 13.0) % 40.0;
-        b += &format!(r#"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="{dust_color}" opacity="{:.2}"/>"#, 1.0 + (i % 3) as f32 * 0.6, 0.18 + 0.15 * (t * 1.2 + fi).sin());
+        let x = (30.0 + fi * 23.0 + (t * w(1.0) + fi).sin() * 8.0) % 220.0 + 10.0;
+        let y = 40.0 + ((i * 37) % 120) as f32 - (t * (40.0 * 3.0 / LOOP) + fi * 13.0) % 40.0;
+        b += &format!(r#"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="{dust_color}" opacity="{:.2}"/>"#, 1.0 + (i % 3) as f32 * 0.6, 0.18 + 0.15 * (t * w(3.0) + fi).sin());
     }
     if matches!(mood, Mood::Sleepy | Mood::Asleep) {
         for i in 0..10 {
             let (x, y) = (34 + (i * 47) % 172, 30 + (i * 29) % 70);
-            b += &format!(r##"<circle cx="{x}" cy="{y}" r="1.3" fill="#fff" opacity="{:.2}"/>"##, 0.3 + 0.5 * ((t * 1.7 + i as f32 * 1.3).sin() * 0.5 + 0.5));
+            b += &format!(r##"<circle cx="{x}" cy="{y}" r="1.3" fill="#fff" opacity="{:.2}"/>"##, 0.3 + 0.5 * ((t * w(5.0) + i as f32 * 1.3).sin() * 0.5 + 0.5));
         }
     }
     // the shadow shrinks while it is up in the air
@@ -294,7 +306,7 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
     } else {
         match mood {
             Mood::Sad => {
-                let fall = (t * 18.0) % 24.0;
+                let fall = (t * (24.0 * 13.0 / LOOP)) % 24.0;
                 format!(
                     r##"<path d="M109 161 Q120 151 131 161" fill="none" stroke="{INK}" stroke-width="4" stroke-linecap="round"/><path d="M{:.1} {:.1} q4 7 0 10 q-4 -3 0 -10z" fill="#9ed2ff" opacity="{:.2}"/>"##,
                     150.0 + lx,
@@ -345,7 +357,7 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
     }
     if asleep {
         for i in 0..3 {
-            let p = (t * 0.45 + i as f32 / 3.0) % 1.0;
+            let p = (t * (8.0 / LOOP) + i as f32 / 3.0) % 1.0;
             b += &format!(
                 r##"<text x="{:.1}" y="{:.1}" font-family="{FONT}" font-size="{:.0}" fill="#c4bcff" opacity="{:.2}" font-weight="700">z</text>"##,
                 196.0 + p * 16.0,
@@ -355,13 +367,9 @@ pub fn dial_svg(pet: &Pet, mood: Mood, name: &str, polish: bool, t: f32, now: In
             );
         }
     }
-    let label = format!("{name} · {}", mood.word(polish));
-    b += &format!(r##"<text x="{c}" y="36" text-anchor="middle" font-family="{FONT}" font-size="14" fill="#d6d1ea">{}</text>"##, xml(&label));
+    // no name or mood over it (owner, 2026-10-14: "nie da się bez tekstu, żeby było czyściej?"):
+    // its face and the dial's color say how it feels
     format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" viewBox="0 0 {s} {s}"><g transform="rotate({rotation} {c} {c})">{b}</g></svg>"#)
-}
-
-fn xml(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 #[cfg(test)]
@@ -370,10 +378,10 @@ mod tests {
 
     #[test]
     fn mochi_gets_hungry_and_sad_over_hours_but_not_asleep() {
-        let mut n = Needs { fullness: 1.0, joy: 1.0, asleep: false, at: 0 };
+        let mut n = Needs { fullness: 1.0, joy: 1.0, asleep: false, at: 0, ..Needs::default() };
         n.age(4 * 3600);
         assert!((n.fullness - 0.5).abs() < 0.01 && (n.joy - 0.2).abs() < 0.01);
-        let mut s = Needs { fullness: 1.0, joy: 1.0, asleep: true, at: 0 };
+        let mut s = Needs { fullness: 1.0, joy: 1.0, asleep: true, at: 0, ..Needs::default() };
         s.age(10 * 3600);
         assert_eq!((s.fullness, s.joy), (1.0, 1.0), "asleep, nothing runs down");
     }
@@ -411,7 +419,7 @@ mod tests {
                 },
                 file: None,
             };
-            let svg = dial_svg(&pet, *mood, "Mochi", true, 1.3, now, 0);
+            let svg = dial_svg(&pet, *mood, 1.3, now, 0);
             let (x, y) = (20 + (i % 5) * 255, 20 + (i / 5) * 260);
             out += &format!(
                 r#"<svg x="{x}" y="{y}" width="240" height="240">{}</svg>"#,
@@ -436,7 +444,7 @@ mod tests {
         let base = Instant::now();
         // where a frame's time goes: the drawing alone (no blur), the whole (draw + JPEG)
         let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
-        let svg = dial_svg(&pet, Mood::Happy, "Mochi", false, 0.3, base, 0);
+        let svg = dial_svg(&pet, Mood::Happy, 0.3, base, 0);
         let plain = svg.replace(r#" filter="url(#pbl)""#, "").replace(r#" filter="url(#pbl1)""#, "");
         for (label, svg) in [("with blur", &svg), ("without blur", &plain)] {
             let started = Instant::now();
@@ -449,16 +457,58 @@ mod tests {
             let pet = Pet { needs: Needs::default(), moment: moment.map(|m| (m, base)), look: 0.0, file: None };
             let started = Instant::now();
             for f in 0..30 {
-                let svg = dial_svg(&pet, Mood::Happy, "Mochi", false, f as f32 * 0.06, base + Duration::from_millis(f * 60), 0);
+                let svg = dial_svg(&pet, Mood::Happy, f as f32 * 0.06, base + Duration::from_millis(f * 60), 0);
                 r.jpeg(&svg).unwrap();
             }
             println!("{label}: {:?} a frame", started.elapsed() / 30);
         }
     }
 
+    /// What a second of Mochi at rest costs to draw: before (12 frames, each drawn) and now (25,
+    /// drawn once a loop, then taken by the hash of the picture): `--release -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn mochi_rest_cost() {
+        use std::hash::{Hash, Hasher};
+        let r = super::super::render::Renderer::default();
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let now = Instant::now();
+        let started = Instant::now();
+        for f in 0..120 {
+            r.jpeg(&dial_svg(&pet, Mood::Happy, f as f32 / 12.0, now, 0)).unwrap();
+        }
+        println!("before, 12 a second, drawn: {:?} of work a second", started.elapsed() / 10);
+        let mut kept: std::collections::HashMap<u64, Vec<u8>> = std::collections::HashMap::new();
+        let mut round = |frames: std::ops::Range<u64>| {
+            let started = Instant::now();
+            for f in frames.clone() {
+                let svg = dial_svg(&pet, Mood::Happy, loop_at(Duration::from_millis(f * STEP_MS)), now, 0);
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                svg.hash(&mut h);
+                let key = h.finish();
+                kept.entry(key).or_insert_with(|| r.jpeg(&svg).unwrap());
+            }
+            started.elapsed() * 25 / (frames.end - frames.start) as u32
+        };
+        println!("now, 25 a second, first loop: {:?} of work a second", round(0..LOOP_FRAMES));
+        println!("now, 25 a second, after it: {:?} of work a second", round(LOOP_FRAMES..3 * LOOP_FRAMES));
+        println!("kept: {} frames, {} KB", kept.len(), kept.values().map(Vec::len).sum::<usize>() / 1024);
+    }
+
+    #[test]
+    fn its_rest_is_a_loop_drawn_once() {
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let now = Instant::now();
+        let at = |ms: u64| dial_svg(&pet, Mood::Happy, loop_at(Duration::from_millis(ms)), now, 0);
+        assert_eq!(at(3_000), at(3_000 + 16_800), "the same frame a loop later");
+        assert_eq!(at(3_000), at(9 * 24 * 3600 * 1000 + 3_000 - 9 * 24 * 3600 * 1000 % 16_800), "and after days");
+        let frames: std::collections::HashSet<String> = (0..2 * LOOP_FRAMES).map(|f| at(f * STEP_MS)).collect();
+        assert!(frames.len() <= LOOP_FRAMES as usize && frames.len() > 300, "{} frames", frames.len());
+    }
+
     #[test]
     fn its_mood_follows_needs_the_day_and_the_lock() {
-        let mut p = Pet { needs: Needs { fullness: 0.9, joy: 0.9, asleep: false, at: now_secs() }, moment: None, look: 0.0, file: None };
+        let mut p = Pet { needs: Needs { fullness: 0.9, joy: 0.9, asleep: false, at: now_secs(), ..Needs::default() }, moment: None, look: 0.0, file: None };
         assert_eq!(p.mood(false, 14), Mood::Happy);
         assert_eq!(p.mood(true, 14), Mood::Asleep, "the computer is locked");
         assert_eq!(p.mood(false, 2), Mood::Sleepy);
@@ -470,15 +520,15 @@ mod tests {
         assert_eq!(p.mood(false, 14), Mood::Asleep);
         p.apply(PetCmd::Pet, Instant::now());
         assert!(!p.needs.asleep, "any touch wakes it");
-        let svg = dial_svg(&p, Mood::Asleep, "Mochi & co", false, 1.0, Instant::now(), 0);
-        assert!(svg.starts_with("<svg") && svg.contains("Mochi &amp; co · asleep"));
+        let svg = dial_svg(&p, Mood::Asleep, 1.0, Instant::now(), 0);
+        assert!(svg.starts_with("<svg") && !svg.contains("Mochi"), "no text over it");
         // every mood and moment is a picture the renderer reads (a doubled attribute once broke one)
         let r = super::super::render::Renderer::default();
         for mood in [Mood::Happy, Mood::Hungry, Mood::Sad, Mood::Sleepy, Mood::Asleep] {
             for moment in [None, Some(Moment::Hearts), Some(Moment::Munch), Some(Moment::Hop(1)), Some(Moment::Yawn)] {
                 let now = Instant::now() + Duration::from_secs(3);
                 let pet = Pet { moment: moment.map(|m| (m, now - Duration::from_millis(500))), ..p.clone() };
-                r.jpeg(&dial_svg(&pet, mood, "Mochi", true, 1.0, now, 0)).unwrap_or_else(|e| panic!("{mood:?} {moment:?}: {e}"));
+                r.jpeg(&dial_svg(&pet, mood, 1.0, now, 0)).unwrap_or_else(|e| panic!("{mood:?} {moment:?}: {e}"));
             }
         }
     }

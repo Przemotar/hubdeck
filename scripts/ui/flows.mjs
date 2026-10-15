@@ -143,13 +143,11 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(250);
     return visible(page, '#action');
   });
-  await step(page, `${label}: Build my deck step by step opens its page, a card can be tried, Back returns`, async () => {
+  await step(page, `${label}: Build it yourself, step by step opens its page, a card can be tried, Back returns`, async () => {
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
     await page.waitForTimeout(200);
-    // the builder now sits in the Assistant tab's Details (the tour is the way in)
-    await page.locator('.as-details > summary').click();
-    await page.waitForTimeout(150);
-    await page.getByRole('button', { name: /Build my deck step by step/ }).click();
+    // a row of its own under the tour (owner's pick M2, 2026-10-14)
+    await page.getByRole('button', { name: /Build it yourself, step by step/ }).click();
     await page.waitForTimeout(500);
     if (!(await visible(page, '.builder-page'))) return 'no builder page';
     if ((await page.locator('.builder-card').count()) < 2) return 'no option cards';
@@ -222,7 +220,8 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.evaluate(() => localStorage.removeItem('hubdeck.assistantConsent'));
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
     await page.waitForTimeout(400);
-    if ((await page.locator('.as-examples .chip').count()) !== 3) return 'no three examples';
+    // examples come from the user's own deck, and only once a tour deck was kept
+    if ((await page.locator('.as-examples .chip').count()) > 2) return 'more than two examples';
     await page.locator('#as-know').fill('Use my two free knobs');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
@@ -234,7 +233,8 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     if (!(await page.locator('.as-body > .as-msg.is-user', { hasText: 'Use my two free knobs' }).isVisible()) || (await visible(page, '.as-consent'))) return 'Enter did not send';
     await page.locator('.as-head .icon-btn').click();
     await page.waitForTimeout(300);
-    await page.locator('.as-examples .chip').first().click();
+    await page.locator('#as-know').fill('A deck for meetings');
+    await page.keyboard.press('Enter');
     await page.waitForTimeout(700);
     const again = (await visible(page, '.as-body > .as-msg.is-user')) && !(await visible(page, '.as-consent'));
     await page.locator('.as-head .icon-btn').click();

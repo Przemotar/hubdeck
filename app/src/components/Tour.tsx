@@ -8,7 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ControlRef, LiveState } from "../deck";
-import { api, type DialFace, type EngineView, type TourFocus, type TourStop, type TourSuggestion, type TourView } from "../engine";
+import { api, inWindow, type DialFace, type EngineView, type TourFocus, type TourStop, type TourSuggestion, type TourView } from "../engine";
 import { getLanguage, localizeAction, t, useLanguage, type Key } from "../i18n";
 import type { Placement } from "../layout";
 import { DeckView } from "./DeckView";
@@ -93,7 +93,6 @@ export function Tour({
   const main = useMemo(() => tour?.stops.filter((s) => !s.id.startsWith("super")) ?? [], [tour]);
   const finale = useMemo(() => tour?.stops.filter((s) => s.id.startsWith("super")) ?? [], [tour]);
   const stop = phase === "stops" ? main[Math.min(at, main.length - 1)] : null;
-  const tryRef = refOf(live, stop?.tryControl ?? (phase === "finale" ? "keys.9" : null));
 
   // the volume part plays HubDeck's own sound, so turning is heard even when nothing plays
   useEffect(() => {
@@ -161,6 +160,9 @@ export function Tour({
     stop?.id === "gestures"
       ? (nextTask?.split(":")[0] ?? null)
       : (stop?.tryControl ?? (phase === "finale" && tour?.stops.some((s) => s.id === "superAnimations" && s.keep) ? "keys.9" : null));
+  // the drawing marks the same control the deck blinks: for the gestures the one to do now, not
+  // the first (owner, 2026-10-14: it said the System knob and marked the Mic key)
+  const tryRef = refOf(live, pointAt);
   useEffect(() => {
     if (!pointAt) return;
     api.tourHighlight(pointAt).catch(() => {});
@@ -405,8 +407,10 @@ export function Tour({
                     {cheer.text}
                   </span>
                   <span className="tour-confetti" aria-hidden="true">
-                    {Array.from({ length: 10 }, (_, i) => (
-                      <i key={i} style={{ ["--dx" as string]: `${(i - 4.5) * 14}px`, ["--c" as string]: ["#ffd166", "#4ade80", "#e879f9", "#60a5fa", "#f472b6"][i % 5] }} />
+                    {/* a burst, not a row (owner, 2026-10-14: "lecą w jednej linii"): each piece its own
+                        angle, height, spin and delay, then it falls */}
+                    {CONFETTI.map((c, i) => (
+                      <i key={i} style={{ ["--dx" as string]: `${c.dx}px`, ["--dy" as string]: `${c.dy}px`, ["--r" as string]: `${c.r}deg`, ["--d" as string]: `${c.d}s`, ["--c" as string]: c.color }} />
                     ))}
                   </span>
                 </div>
@@ -443,7 +447,10 @@ export function Tour({
                       </button>
                     )}
                   </div>
-                  <Toggle on={s.keep} label={t("tour.keepPart", { part: t(`tour.${s.id}.title` as Key) })} onChange={(on) => set(s.id, on, null)} />
+                  {/* the Fun page is always on the deck (owner, 2026-10-14): nothing to keep or drop */}
+                  {s.id !== "superAnimations" && (
+                    <Toggle on={s.keep} label={t("tour.keepPart", { part: t(`tour.${s.id}.title` as Key) })} onChange={(on) => set(s.id, on, null)} />
+                  )}
                 </div>
               ))}
             </div>
@@ -596,6 +603,19 @@ function PressCard({ live, view }: { live: LiveState; view: EngineView }) {
   );
 }
 
+/** The pieces of the cheer's burst: spread around the pill, mostly up, fixed so it looks the same each time. */
+const CONFETTI = Array.from({ length: 18 }, (_, i) => {
+  const angle = -Math.PI / 2 + ((i / 17) - 0.5) * Math.PI * 1.25 + (i % 3) * 0.07;
+  const reach = 46 + ((i * 37) % 5) * 11;
+  return {
+    dx: Math.round(Math.cos(angle) * reach * 1.6),
+    dy: Math.round(Math.sin(angle) * reach),
+    r: ((i * 97) % 360) + 180,
+    d: ((i * 13) % 7) * 0.025,
+    color: ["#ffd166", "#4ade80", "#e879f9", "#60a5fa", "#f472b6"][i % 5],
+  };
+});
+
 const GESTURE_ICON: Record<string, string> = { turn: "rotate-cw", press: "circle-dot", double: "copy", hold: "hand" };
 
 /** The look on the dial: what each gesture does, ticked off when done on the deck; the next one to try stands out. */
@@ -637,7 +657,7 @@ function DialFaces({ stop, onPick, gallery, ticked }: { stop: TourStop; onPick: 
         const on = stop.look === i;
         return (
           <div key={id} className={`tour-face${on ? " is-on" : ""}`}>
-            <div className="tour-face-dial" dangerouslySetInnerHTML={{ __html: face?.svg ?? "" }} />
+            <div className="tour-face-dial" dangerouslySetInnerHTML={{ __html: inWindow(face?.svg ?? "") }} />
             <b>{face ? (getLanguage() === "pl" ? face.captionPl : face.caption) : id}</b>
             <span className="help">{t(`tour.dial.face.${id}` as Key)}</span>
             {on ? (

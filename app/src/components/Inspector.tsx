@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState } from "../deck";
-import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, newBinding, POPULAR_ACTIONS, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
+import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, inWindow, newBinding, POPULAR_ACTIONS, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
 import { localizeAction, specialKeyName, t, useLanguage, type Key } from "../i18n";
 import { Icon } from "./Icon";
 import { IconPicker } from "./IconPicker";
@@ -822,7 +822,7 @@ function DialLooks({ bound, onPick }: { bound: boolean; onPick: (b: Binding) => 
     <div className="dial-looks">
       {faces.map((f) => (
         <button key={f.id} className="dial-look" onClick={() => onPick(f.binding)} title={lang === "pl" ? f.captionPl : f.caption}>
-          <span className="dial-look-face" dangerouslySetInnerHTML={{ __html: f.svg }} />
+          <span className="dial-look-face" dangerouslySetInnerHTML={{ __html: inWindow(f.svg) }} />
           <span className="sugg-label">{lang === "pl" ? f.captionPl : f.caption}</span>
         </button>
       ))}

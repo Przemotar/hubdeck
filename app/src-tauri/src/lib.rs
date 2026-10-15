@@ -1,6 +1,7 @@
 mod automation;
 mod deck;
 mod engine;
+mod guard;
 mod output;
 mod placements;
 mod system;
@@ -110,6 +111,18 @@ fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     builder.build()
 }
 
+/// A panic aborts the whole app (`panic = "abort"`) and its message went to a stderr nobody
+/// reads: the 2026-10-15 night death left nothing in the log. Now it is the log's last line.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        log::error!("panic in thread {}: {info}\n{}", thread.name().unwrap_or("unnamed"), std::backtrace::Backtrace::force_capture());
+        log::logger().flush();
+        default(info);
+    }));
+}
+
 /// Identifier the app had before it was named HubDeck; its data folder sits next to ours.
 const OLD_IDENTIFIER: &str = "dev.masterhub.app";
 
@@ -170,6 +183,12 @@ pub fn mcp_assistant() {
     engine::mcp::run_assistant();
 }
 
+/// `hubdeck --guard <data dir> <log dir>`: hands the deck back and restarts HubDeck if it ends
+/// without quitting (`guard.rs`).
+pub fn guard(args: &[String]) {
+    guard::run(args);
+}
+
 /// `hubdeck cli ...`: one command against the running app; the exit code for the shell.
 pub fn cli(args: &[String]) -> i32 {
     engine::cli::run(args)
@@ -197,12 +216,16 @@ pub fn run() {
         .setup(move |app| {
             let _ = engine::exec::APP.set(app.handle().clone());
             log::info!("HubDeck {} starting", app.package_info().version);
+            log_panics();
             let data_dir = match testing {
                 Some(a) => a.data_dir.clone(),
                 None => app.path().app_data_dir()?,
             };
             if testing.is_none() {
                 migrate_old_data(&data_dir);
+                if let Ok(log_dir) = app.path().app_log_dir() {
+                    guard::spawn(&data_dir, &log_dir);
+                }
             }
             app.manage(Placements::load(data_dir.join("placements.json")));
             let deck = app.state::<Deck>().inner().clone();
@@ -227,6 +250,17 @@ pub fn run() {
             engine::api::install(app.handle().clone());
             engine::tour::recover(app.handle());
             engine::auto::at_start(app.handle());
+            if automation::real_deck() {
+                // the film copy: its own data, the real deck, the window on screen (or off it, to
+                // check the window against the hardware without taking the owner's screen)
+                deck.spawn(app.handle().clone());
+                if std::env::var_os("HUBDECK_OFFSCREEN").is_some() {
+                    automation::open_window(app.handle());
+                } else {
+                    tray::show_main(app.handle());
+                }
+                return Ok(());
+            }
             if testing.is_some() {
                 // a test copy: virtual modules, no tray, no update check, the window off-screen
                 deck.spawn_virtual(app.handle().clone(), automation::virtual_modules());
@@ -293,6 +327,7 @@ pub fn run() {
             engine::sdcatalog::sd_catalog,
             engine::sdcatalog::sd_catalog_install,
             engine::tour::tour_suggest,
+            engine::nudge::tour_done,
             engine::tour::tour_start,
             engine::tour::tour_set,
             engine::tour::tour_sound,
@@ -302,6 +337,10 @@ pub fn run() {
             engine::tour::tour_exit,
             engine::starter::profile_for_app,
             engine::auto::auto_seen,
+            guard::crash_report,
+            engine::dial_frame,
+            engine::keys_frame,
+            guard::crash_seen,
             engine::commands::profile_switch_in,
             engine::states::apps_seen,
             engine::suggest::suggestions,
@@ -421,6 +460,7 @@ pub fn run() {
             // macOS: apps whose volume HubDeck set play straight again
             #[cfg(target_os = "macos")]
             engine::volume::release();
+            guard::leaving();
             log::info!("HubDeck stopped");
         }
     });

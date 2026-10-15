@@ -309,7 +309,9 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
         _ => "",
     };
     let dial_music = ctx.has("dial") && keep("music");
-    let fun_page = keep("superAnimations");
+    // the Fun page is always on the deck the tour makes (owner, 2026-10-14): the animations,
+    // Mochi on the dial, the screensavers
+    let fun_page = true;
     for sid in stop_ids(ctx) {
         let mut stop = Stop { id: sid, keep: keep(sid), look: look(sid), looks: 1, controls: Vec::new(), try_control: None, tasks: Vec::new(), faces: Vec::new() };
         match sid {
@@ -402,7 +404,10 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                 if ctx.has("dial") {
                     stop.looks = 2;
                     let turn = if look(sid) == 1 { "seek" } else { "volume" };
-                    put(&mut stop, "dial", binding("core.nowPlaying", json!({"turn": turn}), &ctx.tr("Now playing", "Teraz gra"), "music"));
+                    // for the user's music app (owner, 2026-10-14: a press paused a video in Firefox
+                    // instead of starting Spotify)
+                    let player = ctx.music.as_deref().filter(|_| !ctx.mac).unwrap_or("");
+                    put(&mut stop, "dial", binding("core.nowPlaying", json!({"turn": turn, "player": player}), &ctx.tr("Now playing", "Teraz gra"), "music"));
                     put(&mut stop, "keys.8", binding("core.media", json!({"command": "next"}), &ctx.tr("Next", "Następny"), "skip-forward"));
                     stop.try_control = Some("dial".into());
                 } else {
@@ -480,7 +485,9 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
                 stop.try_control = Some("keys.11".into());
             }
             "superAnimations" => {
-                put(&mut stop, "keys.9", binding("core.page", json!({"page": "fun"}), &ctx.tr("Fun", "Zabawa"), "sparkles"));
+                // always kept: the way to the Fun page
+                stop.keep = true;
+                stop.controls.push("keys.9".into());
                 stop.try_control = Some("keys.9".into());
             }
             "gestures" => {
@@ -529,17 +536,42 @@ fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
         }
         stops.push(stop);
     }
-    // the Fun page: HubDeck's own animations on every key, any key goes back
+    // the Fun page: HubDeck's own animations to look through, Mochi on the dial and off again,
+    // the screensavers one after another, and the way back
     if fun_page {
-        for (i, name) in
-            ["fire.gif", "rain.gif", "bars.gif", "orbit.gif", "heartbeat.gif", "lava.gif", "ping.gif", "dots.gif", "spinner.gif", "scope.gif", "typing.gif", "aurora.gif", "rainbow.gif", "fire.gif"]
-                .iter()
-                .enumerate()
-        {
-            let image = super::demo::animation(name);
-            controls.insert(format!("fun/keys.{i}"), json!({"action": "core.page", "params": {"page": ""}, "look": {"label": "", "image": image, "fit": "fill"}}));
+        controls.insert("keys.9".into(), binding("core.page", json!({"page": "fun"}), &ctx.tr("Fun", "Zabawa"), "sparkles"));
+        let mut tools: Vec<(usize, Value)> = vec![
+            (11, binding(super::actions::SAVER, json!({"effect": ""}), &ctx.tr("Screensaver", "Wygaszacz"), "image")),
+            (14, binding("core.page", json!({"page": ""}), &ctx.tr("Back", "Wróć"), "arrow-left")),
+        ];
+        if ctx.has("dial") {
+            tools.push((10, binding(super::pet::ACTION, json!({"name": "Mochi", "press": "dial"}), "Mochi", "heart")));
         }
-        controls.insert("fun/keys.14".into(), binding("core.page", json!({"page": ""}), &ctx.tr("Back", "Wróć"), "arrow-left"));
+        let mut gifs = [
+            "aurora.gif",
+            "fire.gif",
+            "rain.gif",
+            "equalizer.gif",
+            "orbit.gif",
+            "lava.gif",
+            "heartbeat.gif",
+            "bars.gif",
+            "ping.gif",
+            "scope.gif",
+            "rainbow.gif",
+            "dots.gif",
+            "typing.gif",
+            "spinner.gif",
+        ]
+        .into_iter();
+        for i in 0..15 {
+            if let Some((_, b)) = tools.iter().find(|(k, _)| *k == i) {
+                controls.insert(format!("fun/keys.{i}"), b.clone());
+            } else if let Some(name) = gifs.next() {
+                // a look to watch, nothing to run
+                controls.insert(format!("fun/keys.{i}"), json!({"action": "", "look": {"label": "", "image": super::demo::animation(name), "fit": "fill"}}));
+            }
+        }
     }
     let kit = match ctx.kit() {
         "faders" => ctx.tr("faders", "suwaki"),
@@ -830,6 +862,24 @@ mod tests {
         assert!(p.controls.contains_key("keys.14"));
         assert!(p.controls.contains_key("fun/keys.14"));
         assert_eq!(p.pages.len(), 1);
+        assert!(!p.controls.contains_key("fun/keys.10") || p.controls["fun/keys.10"].action.is_empty(), "no dial: no Mochi key");
+    }
+
+    #[test]
+    fn the_fun_page_is_always_there_with_mochi_and_the_screensavers() {
+        // even when its part was not kept (owner, 2026-10-14)
+        let mut ch = Choices::default();
+        ch.keep.insert("superAnimations".into(), false);
+        let (p, stops) = build(&ctx(&["keys", "dial", "knobs"], Focus::Mixed), &ch, "t7");
+        assert_eq!(p.pages.len(), 1);
+        assert_eq!(p.controls["keys.9"].action, "core.page");
+        assert!(stops.iter().find(|s| s.id == "superAnimations").is_some_and(|s| s.keep));
+        assert_eq!(p.controls["fun/keys.10"].action, super::super::pet::ACTION);
+        assert_eq!(super::super::actions::param_str(&p.controls["fun/keys.10"].params, "press"), "dial");
+        assert_eq!(p.controls["fun/keys.11"].action, super::super::actions::SAVER);
+        assert_eq!(p.controls["fun/keys.14"].action, "core.page");
+        // the animations are to watch: a press runs nothing
+        assert!(p.controls["fun/keys.0"].action.is_empty());
     }
 
     #[test]

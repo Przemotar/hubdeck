@@ -187,7 +187,7 @@ pub fn previews() -> Vec<Preview> {
                 }
                 "pet" => {
                     let p = super::pet::Pet::load(std::path::Path::new("/nonexistent-hubdeck-preview"));
-                    super::pet::dial_svg(&p, super::pet::Mood::Happy, "Mochi", false, 0.5, std::time::Instant::now(), 0)
+                    super::pet::dial_svg(&p, super::pet::Mood::Happy, 0.5, std::time::Instant::now(), 0)
                 }
                 "pomodoro" => {
                     let mut p = super::timer::pomodoro_of(&f.binding.params);

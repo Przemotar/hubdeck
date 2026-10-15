@@ -570,6 +570,14 @@ export interface LedView {
 /** What the knob, fader and base LEDs show now, by module id; null = the module's own rainbow. */
 export type LedsShown = Record<string, LedView[] | null>;
 
+/** The last time HubDeck ended without quitting (written by its guard process). */
+export interface CrashReport {
+  at: string;
+  restarted: boolean;
+  panic: string | null;
+  log: string[];
+}
+
 export const api = {
   state: () => invoke<EngineState>("engine_state"),
   leds: () => invoke<LedsShown>("leds_get"),
@@ -580,6 +588,8 @@ export const api = {
   deleteProfile: (id: string) => invoke("profile_delete", { id }),
   activate: (id: string) => invoke("profile_activate", { id }),
   autoSeen: () => invoke("auto_seen"),
+  crashReport: () => invoke<CrashReport | null>("crash_report"),
+  crashSeen: () => invoke("crash_seen"),
   appsSeen: () => invoke("apps_seen"),
   callSwitchSet: (on: boolean) => invoke("call_switch_set", { on }),
   reducedMotionSet: (on: boolean) => invoke("reduced_motion_set", { on }),
@@ -640,6 +650,7 @@ export const api = {
   sdCatalogInstall: (id: string) => invoke<string>("sd_catalog_install", { id }),
   /** The tour: what HubDeck suggests the deck is mostly for, from what it sees. */
   tourSuggest: (language: string) => invoke<TourSuggestion>("tour_suggest", { language }),
+  tourDone: () => invoke<boolean>("tour_done"),
   /** Make the deck for this focus and show it on the deck (a draft). */
   tourStart: (focus: TourFocus, language: string) => invoke<TourView>("tour_start", { focus, language }),
   /** Keep or leave out a part, or pick its look; the deck follows. */
@@ -837,6 +848,52 @@ export function useLiveLooks(): LiveLooks {
   return looks;
 }
 
+interface DialFrame {
+  profile: string | null;
+  module: string;
+  jpeg: string;
+}
+
+/** The dial's picture exactly as the hardware shows it (live values, covers, animations), for the
+ * profile on the deck; null when another profile is shown or nothing came yet. */
+export function useDialFrame(profile: string | undefined, module: string): string | null {
+  const [frame, setFrame] = useState<DialFrame | null>(null);
+  useEffect(() => {
+    if (!inTauri()) return;
+    invoke<DialFrame | null>("dial_frame").then((f) => f && setFrame(f)).catch(() => {});
+    const un = listen<DialFrame>("engine://dial-frame", (e) => setFrame(e.payload));
+    return () => {
+      un.then((u) => u());
+    };
+  }, []);
+  if (!frame || !profile || frame.profile !== profile || frame.module !== module) return null;
+  return `data:image/jpeg;base64,${frame.jpeg}`;
+}
+
+interface KeysFrame {
+  profile: string | null;
+  page: string | null;
+  module: string;
+  jpeg: string;
+  rects: [number, number, number, number][];
+}
+
+/** The key panel's picture exactly as the hardware shows it, with each key's window in it, for the
+ * profile and page on the deck; null otherwise. */
+export function useKeysFrame(profile: string | undefined, page: string | null | undefined, module: string): { src: string; rects: KeysFrame["rects"] } | null {
+  const [frame, setFrame] = useState<KeysFrame | null>(null);
+  useEffect(() => {
+    if (!inTauri()) return;
+    invoke<KeysFrame | null>("keys_frame").then((f) => f && setFrame(f)).catch(() => {});
+    const un = listen<KeysFrame>("engine://keys-frame", (e) => setFrame(e.payload));
+    return () => {
+      un.then((u) => u());
+    };
+  }, []);
+  if (!frame || !profile || frame.profile !== profile || (frame.page ?? null) !== (page ?? null) || frame.module !== module) return null;
+  return { src: `data:image/jpeg;base64,${frame.jpeg}`, rects: frame.rects };
+}
+
 const previewCache = new Map<string, string>();
 /** Changes when a setting that changes how looks are drawn changes, so previews are drawn again. */
 let previewSalt = "";
@@ -859,7 +916,8 @@ export function usePreview(screen: "key" | "dial", look: Look | undefined): stri
       return;
     }
     let live = true;
-    api.preview(screen, look).then((s) => {
+    api.preview(screen, look).then((raw) => {
+      const s = inWindow(raw);
       previewCache.set(key, s);
       if (live) setSvg(s);
     });
@@ -871,4 +929,8 @@ export function usePreview(screen: "key" | "dial", look: Look | undefined): stri
   return svg;
 }
 
-export const svgDataUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+export const svgDataUrl = (svg: string) => `data:image/svg+xml;utf8,${encodeURIComponent(inWindow(svg))}`;
+
+/** A deck drawing for the window: the deck's own font is the only one the renderer has, the window
+ * may not have it at all, and without a fallback the browser drew its serif (2026-10-14). */
+export const inWindow = (svg: string) => svg.replace(/font-family="IBM Plex Sans"/g, 'font-family="IBM Plex Sans, system-ui, Segoe UI, Helvetica Neue, Arial, sans-serif"');

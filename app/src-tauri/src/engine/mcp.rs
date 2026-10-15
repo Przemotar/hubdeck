@@ -229,6 +229,7 @@ fn binding_schema() -> Value {
             "label": {"type": "string", "description": "Short text, 10 characters a line or fewer; a newline makes a second line."},
             "icon": {"type": "string", "description": "A built-in icon name, or game:<name> for a game icon (list_icons)."},
             "image": {"type": "string", "description": "A picture name returned by add_image or add_animation; replaces the icon. Animated GIFs move."},
+            "fit": {"type": "string", "enum": ["icon", "fill"], "description": "Leave it out for app and game icons: the user's own setting (Settings > Screens) decides how they show (2026-10-15: sketches with fit icon kept game icons small against the user's whole-key setting). fill only for photos, covers and animations."},
             "bg": {"type": "string", "description": "Background #rrggbb."},
             "fg": {"type": "string", "description": "Icon and text #rrggbb."},
             "style": {"type": "string", "enum": crate::engine::api::KEY_STYLES, "description": "Key background: flat, gradient, glass (a highlight like the hardware caps) or outline."},

@@ -55,6 +55,10 @@ pub struct Outcome {
     pub pomodoro: Option<super::timer::PomodoroCmd>,
     /// What a gesture did to the dial pet.
     pub pet: Option<super::pet::PetCmd>,
+    /// A key puts Mochi on the dial, or takes it off.
+    pub pet_dial: bool,
+    /// Show a screensaver now for a moment: its effect, "" for the next one.
+    pub saver: Option<String>,
     /// The weather scene: hours ahead by detents (`Hours`), or the next view (`View`).
     pub weather: Option<WeatherCmd>,
 }
@@ -156,7 +160,9 @@ impl Executor {
     pub fn run(&mut self, binding: &Binding, input: InputEvent) -> Result<Outcome, String> {
         // a test copy runs next to the person working at this computer: only what stays inside
         // HubDeck (no media keys, volume, shortcuts, programs, smart home...)
-        if crate::automation::get().is_some() && !TEST_COPY_RUNS.contains(&binding.action.as_str()) {
+        // The film copy (`automation::real_deck`) drives the real deck for the owner's hands, so its
+        // actions run (2026-10-15: his dial turn on the film changed nothing)
+        if crate::automation::get().is_some() && !crate::automation::real_deck() && !TEST_COPY_RUNS.contains(&binding.action.as_str()) {
             log::info!("test copy: {} not run (it would act on this computer)", binding.action);
             return Ok(Outcome::default());
         }
@@ -287,6 +293,20 @@ impl Executor {
                 });
                 // system volume with the Windows popup: a volume key shows it (see `volume::with_popup`)
                 let popup = target == volume::Target::System && param_str(p, "popup") != "hide" && volume::POPUP_AVAILABLE;
+                // an app with no sound open now: the dial says so, no error banner (a tour's call app
+                // or the app in front often is silent)
+                macro_rules! or_silent {
+                    ($e:expr) => {
+                        match $e {
+                            Ok(v) => v,
+                            Err(e) if matches!(target, volume::Target::App(_)) && e.ends_with(volume::SILENT) => {
+                                out.feedback = Some(Feedback { value: None, caption: format!("{caption}: no sound now") });
+                                return Ok(out);
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    };
+                }
                 let key = format!("{target:?}");
                 let last = match self.volumes.get(&key) {
                     Some((v, at)) if at.elapsed() < VOLUME_MEMORY => Some(*v),
@@ -298,7 +318,7 @@ impl Executor {
                             InputEvent::Turn(d) => {
                                 let base = match last {
                                     Some(v) => v,
-                                    None => volume::get(&target)?,
+                                    None => or_silent!(volume::get(&target)),
                                 };
                                 ((base + param_f64(p, "step", 2.0) as f32 / 100.0 * d as f32).clamp(0.0, 1.0), d > 0)
                             }
@@ -311,7 +331,7 @@ impl Executor {
                         if popup {
                             volume::with_popup(v, up);
                         } else {
-                            volume::set(&target, v)?;
+                            or_silent!(volume::set(&target, v));
                         }
                         self.volumes.insert(key, (v, std::time::Instant::now()));
                         v
@@ -322,9 +342,18 @@ impl Executor {
                             keyboard(move |e| e.key(Key::VolumeMute, Direction::Click).map_err(|e| e.to_string()))?;
                             muted
                         } else {
-                            volume::toggle_mute(&target)?
+                            match volume::toggle_mute(&target) {
+                                Ok(m) => m,
+                                // an app that is not open: a press opens it (owner, 2026-10-14: the
+                                // Spotify knob should start Spotify when it is closed)
+                                Err(e) if e.ends_with(volume::SILENT) && open_closed_app(&target)? => {
+                                    out.feedback = Some(Feedback { value: None, caption: format!("{caption}: opening") });
+                                    return Ok(out);
+                                }
+                                other => or_silent!(other),
+                            }
                         };
-                        out.feedback = Some(Feedback { value: Some(if muted { 0.0 } else { volume::get(&target)? }), caption: if muted { format!("{caption}: muted") } else { caption } });
+                        out.feedback = Some(Feedback { value: Some(if muted { 0.0 } else { or_silent!(volume::get(&target)) }), caption: if muted { format!("{caption}: muted") } else { caption } });
                         return Ok(out);
                     }
                     InputEvent::Press(false) => return Ok(out),
@@ -386,6 +415,8 @@ impl Executor {
                 })
             }
             ("core.pet", InputEvent::Turn(d)) => out.pet = Some(super::pet::PetCmd::Play(d as i32)),
+            ("core.pet", InputEvent::Press(true)) if param_str(p, "press") == "dial" => out.pet_dial = true,
+            (super::actions::SAVER, InputEvent::Press(true)) => out.saver = Some(param_str(p, "effect").to_string()),
             ("core.pet", InputEvent::Press(true)) => {
                 out.pet = Some(match param_str(p, "press") {
                     "feed" => super::pet::PetCmd::Feed,
@@ -416,6 +447,10 @@ impl Executor {
 
             // the player the dial shows; else the media key
             ("core.nowPlaying", InputEvent::Press(true)) => {
+                let player = param_str(p, "player");
+                if !player.trim().is_empty() {
+                    super::media::prefer(player);
+                }
                 let (command, key) = match param_str(p, "press") {
                     "next" => (super::media::Command::Next, Key::MediaNextTrack),
                     "previous" => (super::media::Command::Previous, Key::MediaPrevTrack),
@@ -792,6 +827,21 @@ fn mac_screenshot(combo: &str) -> Option<Result<(), String>> {
 fn is_lock_combo(combo: &str) -> bool {
     let parts: Vec<String> = combo.split('+').map(|p| p.trim().to_lowercase()).collect();
     parts.len() == 2 && ["win", "meta", "super", "cmd"].contains(&parts[0].as_str()) && parts[1] == "l"
+}
+
+/// A press on the volume of an app with no window open: open it, when HubDeck knows where it is
+/// (Spotify by its own link). False when it is open already (it is only silent) or unknown.
+fn open_closed_app(target: &volume::Target) -> Result<bool, String> {
+    let volume::Target::App(app) = target else { return Ok(false) };
+    let stem = app.trim().trim_end_matches(".exe").to_lowercase();
+    let open = super::apps::list().iter().any(|a| a.running && a.exe.to_lowercase().trim_end_matches(".exe") == stem);
+    if open {
+        return Ok(false);
+    }
+    let Some(what) = (if stem == "spotify" { Some("spotify:".to_string()) } else { super::installed::target_named(&stem) }) else { return Ok(false) };
+    crate::system::shell_open(&what)?;
+    log::info!("{app} was closed: opened {what}");
+    Ok(true)
 }
 
 #[cfg(test)]

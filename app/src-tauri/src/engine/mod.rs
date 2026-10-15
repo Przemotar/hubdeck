@@ -111,6 +111,12 @@ const STATE_POLL: Duration = Duration::from_millis(1000);
 /// Minimum time between two dial images.
 /// The dial takes ~32 pictures a second (`examples/framerate.rs`); a frame draws in ~4 ms (release).
 const DIAL_FRAME: Duration = Duration::from_millis(36);
+/// A moving key panel is drawn at most this often (20 a second; the GIFs run at 14-25).
+const KEYS_MOVING_EVERY: Duration = Duration::from_millis(50);
+/// JPEG quality of the key panel while it moves (GIFs, the screensaver); 98 at rest.
+const MOVING_QUALITY: u8 = 80;
+/// Mochi's resting frames kept as JPEG: one loop and a little (420 frames, ~6 KB each).
+const PET_FRAMES_KEPT: usize = 480;
 
 /// Merge consecutive turns of the same control (`+1 +1 +1` -> `+3`), keeping order otherwise.
 fn coalesce_turns(batch: &mut Vec<Msg>) {
@@ -191,6 +197,27 @@ pub enum Msg {
 }
 
 /// The looks plugins give the active profile's controls now (see `publish_looks`).
+/// The dial's last picture as the hardware got it, for the window's drawing of the deck (owner,
+/// 2026-10-15: "w apce na dialu nie pokazuje dokładnie tego co jest pokazywane na urządzeniu").
+static DIAL_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value>>> = std::sync::LazyLock::new(Default::default);
+/// At most this often to the window (the hardware gets every frame).
+const DIAL_MIRROR_EVERY: Duration = Duration::from_millis(125);
+
+/// The key panel's last picture, the same way (keys with live values showed only their icon).
+static KEYS_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value>>> = std::sync::LazyLock::new(Default::default);
+
+/// The key panel's last picture (`{profile, page, module, jpeg, rects}`), when the window opens.
+#[tauri::command]
+pub fn keys_frame() -> Option<serde_json::Value> {
+    KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The dial's last picture (`{profile, module, jpeg}` in base64), when the window opens.
+#[tauri::command]
+pub fn dial_frame() -> Option<serde_json::Value> {
+    DIAL_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 static LIVE_LOOKS: std::sync::LazyLock<std::sync::Mutex<(String, HashMap<String, Look>)>> = std::sync::LazyLock::new(Default::default);
 
 /// `{profile, looks}`: the profile they are for, and the looks by control id.
@@ -524,6 +551,9 @@ impl Engine {
             weather_view: HashMap::new(),
             pet: pet::Pet::load(data_dir),
             pet_frame: Instant::now(),
+            pet_jpegs: HashMap::new(),
+            dial_mirror_at: Instant::now(),
+            keys_mirror_at: Instant::now(),
             monitor_pick: HashMap::new(),
             live_sig: String::new(),
             live_next: Instant::now(),
@@ -543,6 +573,10 @@ impl Engine {
             fleet_pulse: Instant::now(),
             saver_on: false,
             saver_frame: Instant::now(),
+            saver_next: 0,
+            keys_waiting: false,
+            keys_moved: Instant::now(),
+            perf: Perf::new(),
             fleet_sweep: Instant::now(),
             plugin_leds: HashMap::new(),
             plugin_panel: None,
@@ -998,6 +1032,188 @@ fn next_frame(delays: &[Duration], (mut frame, mut ends): (usize, Instant), now:
     if now < ends { (frame, ends) } else { (frame, now + delays[frame]) }
 }
 
+/// The key panel and the dial get their pictures from threads of their own (2026-10-14: drawn
+/// and sent one after the other on the engine thread, both stayed at 10.6 a second on the
+/// busiest deck, the engine 77 % busy). A picture is whole, so only the newest waiting one is sent;
+/// a module handed back takes nothing (`Module::send_all` after `release` does nothing).
+#[derive(Clone, Copy)]
+enum Screen {
+    Keys,
+    Dial,
+}
+
+type Picture = (String, Arc<mh_device::Module>, Vec<report::Report>);
+
+struct PictureSender {
+    slot: Arc<(Mutex<Option<Picture>>, std::sync::Condvar)>,
+    /// A picture waits or is going out now.
+    busy: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl PictureSender {
+    fn send(&self, id: String, module: Arc<mh_device::Module>, reports: Vec<report::Report>) {
+        let (lock, wake) = &*self.slot;
+        self.busy.store(true, std::sync::atomic::Ordering::SeqCst);
+        *lock.lock().unwrap_or_else(|e| e.into_inner()) = Some((id, module, reports));
+        wake.notify_one();
+    }
+
+    fn busy(&self) -> bool {
+        self.busy.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Pictures sent and the time they took, per screen: (count, microseconds), read by `Perf`.
+static PICTURES_SENT: [(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64); 2] =
+    [(std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)), (std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0))];
+
+fn picture_failed() -> &'static Mutex<HashSet<String>> {
+    static FAILED: std::sync::OnceLock<Mutex<HashSet<String>>> = std::sync::OnceLock::new();
+    FAILED.get_or_init(Default::default)
+}
+
+/// Modules whose last picture failed (drawn and sent again).
+fn picture_failures() -> Vec<String> {
+    picture_failed().lock().unwrap_or_else(|e| e.into_inner()).drain().collect()
+}
+
+fn picture_sender(screen: Screen) -> &'static PictureSender {
+    static SENDERS: [std::sync::OnceLock<PictureSender>; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+    let i = screen as usize;
+    SENDERS[i].get_or_init(|| {
+        let slot: Arc<(Mutex<Option<Picture>>, std::sync::Condvar)> = Arc::new((Mutex::new(None), std::sync::Condvar::new()));
+        let mine = slot.clone();
+        let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let busy_flag = busy.clone();
+        let name = if i == 0 { "keys pictures" } else { "dial pictures" };
+        let spawned = std::thread::Builder::new().name(name.into()).spawn(move || {
+            let (lock, wake) = &*mine;
+            loop {
+                let next = {
+                    let mut waiting = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    while waiting.is_none() {
+                        waiting = wake.wait(waiting).unwrap_or_else(|e| e.into_inner());
+                    }
+                    waiting.take()
+                };
+                let Some((id, module, reports)) = next else { continue };
+                let started = Instant::now();
+                match module.send_all(&reports) {
+                    Ok(()) => {
+                        let (n, us) = &PICTURES_SENT[i];
+                        n.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        us.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        log::warn!("{name} {id}: {e}");
+                        picture_failed().lock().unwrap_or_else(|e| e.into_inner()).insert(id);
+                    }
+                }
+                // free again unless a newer picture came while this one went out
+                let waiting = lock.lock().unwrap_or_else(|e| e.into_inner());
+                if waiting.is_none() {
+                    busy_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+        });
+        if let Err(e) = spawned {
+            log::warn!("{name} thread: {e}");
+        }
+        PictureSender { slot, busy }
+    })
+}
+
+/// What the deck really got while things moved: pictures of the key panel and the dial, LED
+/// batches and how busy the engine thread was, written to the log every 10 s (owner, 2026-10-14:
+/// "jakiś stress test ... co tam zamula"). Quiet while nothing moves.
+struct Perf {
+    since: Instant,
+    panel: u32,
+    panel_time: Duration,
+    dial: u32,
+    dial_time: Duration,
+    leds: u32,
+    busy: Duration,
+}
+
+impl Perf {
+    fn new() -> Self {
+        Self { since: Instant::now(), panel: 0, panel_time: Duration::ZERO, dial: 0, dial_time: Duration::ZERO, leds: 0, busy: Duration::ZERO }
+    }
+
+    fn note(&mut self) {
+        let secs = self.since.elapsed().as_secs_f32();
+        if secs < 10.0 {
+            return;
+        }
+        let sent = |i: usize| {
+            let (n, us) = &PICTURES_SENT[i];
+            (n.swap(0, std::sync::atomic::Ordering::Relaxed), us.swap(0, std::sync::atomic::Ordering::Relaxed))
+        };
+        let (keys_sent, keys_us) = sent(0);
+        let (dial_sent, dial_us) = sent(1);
+        if self.panel + self.dial >= 30 {
+            let ms = |d: Duration, n: u32| if n == 0 { 0.0 } else { d.as_secs_f32() * 1000.0 / n as f32 };
+            let send_ms = |us: u64, n: u64| if n == 0 { 0.0 } else { us as f32 / 1000.0 / n as f32 };
+            log::info!(
+                "deck: keys {:.1}/s sent of {:.1} drawn ({:.1} ms to draw, {:.1} to send), dial {:.1}/s of {:.1} ({:.1} ms, {:.1}), LEDs {:.1}/s, engine busy {:.0} %",
+                keys_sent as f32 / secs,
+                self.panel as f32 / secs,
+                ms(self.panel_time, self.panel),
+                send_ms(keys_us, keys_sent),
+                dial_sent as f32 / secs,
+                self.dial as f32 / secs,
+                ms(self.dial_time, self.dial),
+                send_ms(dial_us, dial_sent),
+                self.leds as f32 / secs,
+                self.busy.as_secs_f32() * 100.0 / secs
+            );
+        }
+        *self = Self::new();
+    }
+}
+
+/// The knobs', faders' and base's LED reports go out on a thread of their own (2026-10-14: HubDeck's
+/// rainbow, sent every 100 ms on the engine thread, held the key panel back: 9 pictures a second
+/// on the Fun page instead of 15). In order, nothing dropped: each batch is the change from the one
+/// before. Those modules are not the keys or the dial, so their reports go alongside the pictures.
+struct LedSender {
+    tx: crossbeam_channel::Sender<(String, Arc<mh_device::Module>, Vec<report::Report>)>,
+    failed: Arc<Mutex<HashSet<String>>>,
+}
+
+impl LedSender {
+    fn send(&self, batch: (String, Arc<mh_device::Module>, Vec<report::Report>)) {
+        let _ = self.tx.send(batch);
+    }
+}
+
+fn led_sender() -> &'static LedSender {
+    static SENDER: std::sync::OnceLock<LedSender> = std::sync::OnceLock::new();
+    SENDER.get_or_init(|| {
+        let (tx, rx) = crossbeam_channel::unbounded::<(String, Arc<mh_device::Module>, Vec<report::Report>)>();
+        let failed = Arc::new(Mutex::new(HashSet::new()));
+        let failures = failed.clone();
+        let spawned = std::thread::Builder::new().name("leds".into()).spawn(move || {
+            for (id, module, reports) in rx {
+                if let Err(e) = module.send_all(&reports) {
+                    log::warn!("leds {id}: {e}");
+                    failures.lock().unwrap_or_else(|e| e.into_inner()).insert(id);
+                }
+            }
+        });
+        if let Err(e) = spawned {
+            log::warn!("LED thread: {e}");
+        }
+        LedSender { tx, failed }
+    })
+}
+
+/// Modules whose LED reports failed since the last look.
+fn led_failures() -> Vec<String> {
+    led_sender().failed.lock().unwrap_or_else(|e| e.into_inner()).drain().collect()
+}
+
 /// When each step of a multi-action runs: every delay counts from the step before it.
 fn schedule_steps(start: Instant, params: &serde_json::Value) -> Vec<(Instant, Binding, String)> {
     schedule_steps_list(start, actions::steps(params))
@@ -1129,6 +1345,13 @@ struct Worker {
     pet: pet::Pet,
     /// When Mochi was last drawn while resting.
     pet_frame: Instant,
+    /// Mochi's resting frames as sent, by the hash of their picture: its rest is a loop
+    /// (`pet::LOOP`), so after one round the dial only sends (at most `PET_FRAMES_KEPT`).
+    pet_jpegs: HashMap<u64, Vec<u8>>,
+    /// When the dial's picture last went to the window ([`DIAL_MIRROR_EVERY`]).
+    dial_mirror_at: Instant,
+    /// When the key panel's picture last went to the window.
+    keys_mirror_at: Instant,
     /// The metric a system monitor was turned to, by control.
     monitor_pick: HashMap<String, monitor::Metric>,
     /// The texts of the clocks and timers on screen, so they redraw only when one changes.
@@ -1163,6 +1386,13 @@ struct Worker {
     /// The screensaver runs (idle minutes passed; the first touch ends it).
     saver_on: bool,
     saver_frame: Instant,
+    /// The next effect a "Screensaver: Next" key shows.
+    saver_next: usize,
+    /// A moving key panel has a frame not drawn yet (USB was busy or it came too soon).
+    keys_waiting: bool,
+    keys_moved: Instant,
+    /// What the deck really gets while things move, noted in the log every 10 s.
+    perf: Perf,
     fleet_sweep: Instant,
     /// LED colors set by plugins and the local API: `knobs.1`, `faders.0`, `base`.
     plugin_leds: HashMap<String, Rgb>,
@@ -1197,12 +1427,27 @@ impl Worker {
     fn run(mut self, rx: Receiver<Msg>) {
         volume::init_thread();
         let mut last_dial = Instant::now() - DIAL_FRAME;
+        let mut busy_from: Option<Instant> = None;
         loop {
+            if let Some(b) = busy_from.take() {
+                self.perf.busy += b.elapsed();
+            }
+            self.perf.note();
+            let failed = picture_failures();
+            if !failed.is_empty() {
+                for id in &failed {
+                    self.sent.remove(id);
+                }
+                self.redraw_keys();
+                self.dial_dirty = true;
+            }
             let tick = if self.arcade.is_some() { Duration::from_millis(25) } else { Duration::from_millis(40) };
             // wake for the next frame of an animation on screen, not up to a whole tick later
             let now = Instant::now();
             let wait = self.frames.values().map(|(_, ends)| ends.saturating_duration_since(now)).min().map_or(tick, |d| d.clamp(Duration::from_millis(10), tick));
-            let first = match rx.recv_timeout(wait) {
+            let first = rx.recv_timeout(wait);
+            busy_from = Some(Instant::now());
+            let first = match first {
                 Ok(m) => Some(m),
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return,
@@ -1378,6 +1623,10 @@ impl Worker {
             return;
         }
         if self.saver_on {
+            // the release of the key that asked for a preview is not a touch that ends it
+            if matches!(event, InputEvent::Press(false)) {
+                return;
+            }
             // the first touch only ends the screensaver (a preview too)
             self.lock().saver_preview = None;
             self.saver_on = false;
@@ -1690,6 +1939,19 @@ impl Worker {
                 if let Some(cmd) = out.pet {
                     self.pet.apply(cmd, Instant::now());
                     self.dial_dirty = true;
+                }
+                if out.pet_dial {
+                    self.toggle_pet_dial();
+                }
+                if let Some(effect) = out.saver {
+                    let effect = if saver::EFFECTS.contains(&effect.as_str()) {
+                        effect
+                    } else {
+                        let next = saver::EFFECTS[self.saver_next % saver::EFFECTS.len()];
+                        self.saver_next += 1;
+                        next.to_string()
+                    };
+                    self.lock().saver_preview = Some((effect, Instant::now() + Duration::from_secs(12)));
                 }
                 if let Some(cmd) = out.weather {
                     let control = id.split(':').next().unwrap_or(id).to_string();
@@ -2027,8 +2289,13 @@ impl Worker {
                 self.sent.remove(&m.id);
                 continue;
             }
-            let quality = (compare == Some(CompareVariant::C)).then_some(100);
+            // moving pictures (GIF frames, the screensaver) go lighter: a panel at quality 98 was
+            // ~60 KB and took ~60 ms to send on Windows, so the Fun page ran at 7 pictures a second
+            // (measured 2026-10-14); at rest the keys keep the full quality
+            let moving = self.saver_on || looks.iter().any(|l| l.image.as_deref().is_some_and(|i| i.contains('#')));
+            let quality = (compare == Some(CompareVariant::C)).then_some(100).or(moving.then_some(MOVING_QUALITY));
             // one full-panel image: ~11 ms over USB and all keys change at once
+            let mut tiles: Option<Vec<render::Tile>> = None;
             let svg = match (&panel_content, calibrating) {
                 (_, true) => render::calibration_svg(&geometry),
                 _ if game_panel.is_some() => render::panel_body_svg(game_panel.as_deref().unwrap_or(""), rotation),
@@ -2040,23 +2307,31 @@ impl Worker {
                     };
                     render::panel_content_svg(content, rotation, &self.clock_shown, &history)
                 }
-                (None, false) => render::panel_svg(&looks, rotation, &geometry),
+                // the keys as tiles: a key that did not change is not drawn again
+                (None, false) => {
+                    let t = render::panel_tiles(&looks, rotation, &geometry);
+                    let sig = t.iter().map(|t| t.svg.as_str()).collect::<String>();
+                    tiles = Some(t);
+                    sig
+                }
             };
             let svg = if quality.is_some() { format!("{svg}<!--q100-->") } else { svg };
             if self.sent.get(&m.id) == Some(&svg) {
                 continue;
             }
-            let send_started = Instant::now();
-            let result = self.renderer.jpeg_with(&svg, quality).and_then(|jpeg| {
-                let t = Instant::now();
-                let r = module.send_all(&report::panel_image(&jpeg, module.output_len)).map_err(|e| e.to_string());
-                log::debug!("panel: {} B sent in {:?}", jpeg.len(), t.elapsed());
-                r
-            });
-            log::debug!("panel total {:?}", send_started.elapsed());
-            match result {
-                Ok(()) => {
+            let drawing = Instant::now();
+            let jpeg = match &tiles {
+                Some(t) => self.renderer.panel_jpeg(t, quality),
+                None => self.renderer.jpeg_with(&svg, quality),
+            };
+            self.perf.panel += 1;
+            self.perf.panel_time += drawing.elapsed();
+            match jpeg {
+                // sent on the keys' own thread, so the dial and the next frame do not wait for USB
+                Ok(jpeg) => {
+                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
                     self.sent.insert(m.id.clone(), svg);
+                    self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
                 }
                 Err(e) => log::warn!("draw keys: {e}"),
             }
@@ -2205,7 +2480,10 @@ impl Worker {
                 let fresh = timer::Timer::new(timer::total_of(p));
                 let t = self.timers.get(control).unwrap_or(&fresh);
                 let caption = binding.look.label.clone().filter(|l| !l.trim().is_empty());
-                Some(LiveFace { main: t.label(now), second: caption, ring: Some(t.fraction(now)), done: t.finished(now) && t.running() })
+                // not started yet: no ring, so a press shows at once (owner, 2026-10-14: "25:00" stayed the
+                // same for the first second and the press felt a second late)
+                let fresh_now = !t.running() && t.remaining(now) == t.total;
+                Some(LiveFace { main: t.label(now), second: caption, ring: (!fresh_now).then(|| t.fraction(now)), done: t.finished(now) && t.running() })
             }
             _ => None,
         }
@@ -2771,11 +3049,23 @@ impl Worker {
         if matches!(profile.panel, Some(profile::PanelContent::Clock)) && self.clock_shown != clock_now() {
             keys_due = true;
         }
-        // Mochi: every dial frame while it moves (a hop, hearts, a bite), ~12 a second while it only
-        // breathes (owner, 2026-10-14: four a second looked slow; keep 12, make the frame cheaper)
+        // moving keys: at most KEYS_MOVING_EVERY apart and never while the last picture is still
+        // going out (2026-10-14: 31.8 drawn a second, 21 sent, a third of the drawing thrown away)
+        if keys_due || self.keys_waiting {
+            if picture_sender(Screen::Keys).busy() || now.duration_since(self.keys_moved) < KEYS_MOVING_EVERY {
+                keys_due = false;
+                self.keys_waiting = true;
+            } else {
+                keys_due = true;
+                self.keys_waiting = false;
+                self.keys_moved = now;
+            }
+        }
+        // Mochi: a dial frame every tick, ~25 a second (owner, 2026-10-14: 12 was too few, without
+        // doubling the CPU): the moments are drawn live, the resting loop once (`pet_jpegs`)
         if profile.controls.get("dial").is_some_and(|b| b.action == pet::ACTION) {
             let moving = self.pet.moment.is_some_and(|(_, at)| now.duration_since(at) < Duration::from_millis(2400));
-            if moving || now.duration_since(self.pet_frame) >= Duration::from_millis(80) {
+            if moving || now.duration_since(self.pet_frame) >= Duration::from_millis(30) {
                 self.pet_frame = now;
                 dial_due = true;
             }
@@ -2866,6 +3156,10 @@ impl Worker {
     /// Knob and fader LEDs from the profile (colors, levels) and the base edge light. Only
     /// changes are sent; a module whose controls have no color keeps its own rainbow.
     fn update_leds(&mut self) {
+        // a module whose LED reports failed on the LED thread gets all of them again
+        for id in led_failures() {
+            self.leds_sent.remove(&id);
+        }
         // the values the local API reads (`GET /api/controls`)
         self.lock().levels = self.levels.clone();
         let snapshot = self.deck.snapshot();
@@ -2952,22 +3246,20 @@ impl Worker {
                 None => reports.extend(report::led_mode(kind, LedTarget::All, LedMode::Rainbow, false)),
                 Some(lights) => reports.extend(leds_reports(kind, lights, before.flatten().as_ref())),
             }
-            match module.send_all(&reports) {
-                Ok(()) => {
-                    let view = wanted.as_ref().map(|l| {
-                        let mut v = leds::view(l);
-                        for (led, r) in v.iter_mut().zip(&replaced) {
-                            if *r {
-                                *led = leds::LedView { color: String::new(), effect: "hubRainbow" };
-                            }
-                        }
-                        v
-                    });
-                    self.leds_sent.insert(m.id.clone(), wanted);
-                    shown.push((m.id.clone(), view));
+            // sent on the LED thread, in order (the reports are the change from what went before)
+            led_sender().send((m.id.clone(), module, reports));
+            self.perf.leds += 1;
+            let view = wanted.as_ref().map(|l| {
+                let mut v = leds::view(l);
+                for (led, r) in v.iter_mut().zip(&replaced) {
+                    if *r {
+                        *led = leds::LedView { color: String::new(), effect: "hubRainbow" };
+                    }
                 }
-                Err(e) => log::warn!("leds {}: {e}", m.id),
-            }
+                v
+            });
+            self.leds_sent.insert(m.id.clone(), wanted);
+            shown.push((m.id.clone(), view));
         }
         self.rainbow_running = rainbow_now;
         // the window hears only real changes (HubDeck's rainbow turning is not one: it follows the clock)
@@ -3091,6 +3383,79 @@ impl Worker {
         self.update_leds();
     }
 
+    /// A key puts Mochi on the dial of the profile on screen, or takes it off and gives the dial
+    /// back what it had (kept in `pet.json` by profile; owner, 2026-10-14: a Mochi switch on the
+    /// Fun page).
+    fn toggle_pet_dial(&mut self) {
+        const GESTURES: [&str; 3] = ["dial", "dial:double", "dial:hold"];
+        let profile = {
+            let s = self.lock();
+            s.active.clone().and_then(|id| s.store.profiles.get(&id).cloned())
+        };
+        let Some(mut p) = profile else { return };
+        if p.controls.get("dial").is_some_and(|b| b.action == pet::ACTION) {
+            for g in GESTURES {
+                p.controls.remove(g);
+            }
+            if let Some(serde_json::Value::Object(before)) = self.pet.needs.dials.remove(&p.id) {
+                for (g, b) in before {
+                    if let Ok(b) = serde_json::from_value(b) {
+                        p.controls.insert(g, b);
+                    }
+                }
+            }
+        } else {
+            let Some(face) = gallery::faces().into_iter().find(|f| f.id == "pet") else { return };
+            let kept: serde_json::Map<String, serde_json::Value> = GESTURES.iter().filter_map(|g| p.controls.get(*g).map(|b| (g.to_string(), serde_json::json!(b)))).collect();
+            self.pet.needs.dials.insert(p.id.clone(), serde_json::Value::Object(kept));
+            for g in GESTURES {
+                p.controls.remove(g);
+            }
+            p.controls.insert("dial".into(), face.binding.clone());
+            for (g, b) in face.extra {
+                p.controls.insert(g.to_string(), b);
+            }
+        }
+        self.pet.save();
+        let saved = self.lock().store.save_profile(p).is_ok();
+        if saved {
+            let state = self.lock().state();
+            publish_state(&self.app, state);
+        }
+        self.dial_dirty = true;
+    }
+
+    /// The dial's picture to the window too, so its drawing shows what the hardware shows: kept
+    /// for when the window opens, sent while it is open, at most every [`DIAL_MIRROR_EVERY`].
+    fn mirror_dial(&mut self, profile: Option<&str>, module: &str, jpeg: &[u8]) {
+        if self.dial_mirror_at.elapsed() < DIAL_MIRROR_EVERY {
+            return;
+        }
+        self.dial_mirror_at = Instant::now();
+        use base64::Engine as _;
+        let frame = serde_json::json!({"profile": profile, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg)});
+        if self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) {
+            let _ = self.app.emit("engine://dial-frame", frame.clone());
+        }
+        *DIAL_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+    }
+
+    /// The key panel's picture to the window, with where each key's window sits in it, so the
+    /// drawing shows what the keys show (live values, covers, clocks); like [`Self::mirror_dial`].
+    fn mirror_keys(&mut self, profile: Option<&str>, page: Option<&str>, module: &str, jpeg: &[u8], geometry: &render::PanelGeometry) {
+        if self.keys_mirror_at.elapsed() < DIAL_MIRROR_EVERY {
+            return;
+        }
+        self.keys_mirror_at = Instant::now();
+        use base64::Engine as _;
+        let rects: Vec<[f32; 4]> = (0..15).map(|i| geometry.key_rect(i)).map(|(x, y, w, h)| [x, y, w, h]).collect();
+        let frame = serde_json::json!({"profile": profile, "page": page, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg), "rects": rects});
+        if self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) {
+            let _ = self.app.emit("engine://keys-frame", frame.clone());
+        }
+        *KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+    }
+
     fn redraw_dial(&mut self) {
         let snapshot = self.deck.snapshot();
         let user = self.app.state::<Placements>().all();
@@ -3099,6 +3464,8 @@ impl Worker {
             let Some(module) = self.deck.module(&m.id) else { continue };
             let rotation = self.content_rotation(m.kind, m.slot.as_deref(), snapshot.turn, &user);
             let stored = profile.as_ref().and_then(|p| p.controls.get("dial"));
+            // the dial's Now playing names its music app: its song shows and its player is steered
+            media::prefer(stored.filter(|b| b.action == actions::NOW_PLAYING).map_or("", |b| actions::param_str(&b.params, "player")));
             // the dial gallery draws the look it is on, as that look's own setting would
             let shown = stored.filter(|b| b.action == gallery::ACTION).map(|_| gallery::at(self.gallery));
             let binding = shown.as_ref().map(|f| &f.binding).or(stored);
@@ -3127,6 +3494,7 @@ impl Worker {
             let value = self.feedback.as_ref().map(|(f, _)| (f.value, f.caption.as_str()));
             let calibration = self.lock().calibration.clone();
             let game = self.arcade.as_ref().map(|a| a.screen(Instant::now()).dial);
+            let mut pet_rest = false;
             let svg = match (calibration, game) {
                 (None, Some(body)) => render::dial_body_svg(&body, rotation),
                 (Some(c), _) => {
@@ -3148,12 +3516,9 @@ impl Worker {
                     render::dial_svg(&look, Some((v.map(|v| v / 100.0), metric.name())), rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == pet::ACTION) => {
-                    let b = binding.expect("checked");
-                    let polish = self.lock().store.settings.language.starts_with("pl");
-                    let name = actions::param_str(&b.params, "name").trim();
-                    let name = if name.is_empty() { "Mochi" } else { name };
                     let mood = self.pet.mood(self.locked, chrono::Timelike::hour(&chrono::Local::now()));
-                    pet::dial_svg(&self.pet, mood, name, polish, saver::clock(), Instant::now(), rotation)
+                    pet_rest = self.pet.moment.is_none_or(|(_, at)| at.elapsed() >= Duration::from_millis(2400));
+                    pet::dial_svg(&self.pet, mood, pet::loop_clock(), Instant::now(), rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::POMODORO) => {
                     let b = binding.expect("checked");
@@ -3224,9 +3589,34 @@ impl Worker {
             if self.sent.get(&m.id) == Some(&svg) {
                 continue;
             }
-            match self.renderer.jpeg(&svg).and_then(|jpeg| module.send_all(&report::dial_image(&jpeg, module.output_len)).map_err(|e| e.to_string())) {
-                Ok(()) => {
+            let dial_started = Instant::now();
+            let jpeg = if pet_rest {
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    svg.hash(&mut h);
+                    h.finish()
+                };
+                match self.pet_jpegs.get(&key) {
+                    Some(jpeg) => Ok(jpeg.clone()),
+                    None => self.renderer.jpeg(&svg).inspect(|jpeg| {
+                        // a new mood, name or turn makes another loop: start over rather than grow
+                        if self.pet_jpegs.len() >= PET_FRAMES_KEPT {
+                            self.pet_jpegs.clear();
+                        }
+                        self.pet_jpegs.insert(key, jpeg.clone());
+                    }),
+                }
+            } else {
+                self.renderer.jpeg(&svg)
+            };
+            self.perf.dial += 1;
+            self.perf.dial_time += dial_started.elapsed();
+            match jpeg {
+                Ok(jpeg) => {
+                    picture_sender(Screen::Dial).send(m.id.clone(), module.clone(), report::dial_image(&jpeg, module.output_len));
                     self.sent.insert(m.id.clone(), svg);
+                    self.mirror_dial(profile.as_ref().map(|p| p.id.as_str()), &m.id, &jpeg);
                 }
                 Err(e) => log::warn!("draw dial: {e}"),
             }

@@ -28,6 +28,9 @@ pub struct BuilderOption {
     pub binding: Binding,
     /// The dial's screen as the deck draws it (dial options only).
     pub svg: Option<String>,
+    /// The double press and hold that go with it, by `double` / `hold` (none: the control's own go).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub extra: std::collections::BTreeMap<String, Binding>,
 }
 
 fn look(label: &str, icon: &str, hue: f32) -> Look {
@@ -39,7 +42,45 @@ fn binding(action: &str, params: Value, look: Look) -> Binding {
 }
 
 fn opt(id: &str, name: &str, does: &str, source: &str, binding: Binding, svg: Option<String>) -> BuilderOption {
-    BuilderOption { id: id.into(), group: String::new(), name: name.into(), does: does.into(), source: source.into(), setup: false, binding, svg }
+    BuilderOption { id: id.into(), group: String::new(), name: name.into(), does: does.into(), source: source.into(), setup: false, binding, svg, extra: Default::default() }
+}
+
+/// A look of the dial gallery as an option, with what each gesture does and the double press and
+/// hold that go with it (owner, 2026-10-14: the creator's cards had none of the new looks).
+fn face_opt(previews: &[gallery::Preview], id: &str, name: &str, source: &str) -> Option<BuilderOption> {
+    let p = previews.iter().find(|p| p.face.id == id)?;
+    let does = p
+        .face
+        .gestures
+        .iter()
+        .map(|g| {
+            let what = match g.kind {
+                "turn" => "Turn",
+                "press" => "press",
+                "double" => "double press",
+                _ => "hold",
+            };
+            format!("{what}: {}", gesture_words(g.what))
+        })
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let mut o = opt(id, name, &does, source, p.face.binding.clone(), Some(p.svg.clone()));
+    o.extra = gestures_of(&p.face);
+    Some(o)
+}
+
+/// "Play / pause" reads "play / pause" after a colon; "CPU, memory" stays.
+fn gesture_words(what: &str) -> String {
+    let mut c = what.chars();
+    match (c.next(), c.next()) {
+        (Some(a), Some(b)) if a.is_uppercase() && b.is_lowercase() => a.to_lowercase().chain(what.chars().skip(1)).collect(),
+        _ => what.to_string(),
+    }
+}
+
+/// A gallery look's double press and hold, by `double` / `hold`.
+fn gestures_of(face: &gallery::Face) -> std::collections::BTreeMap<String, Binding> {
+    face.extra.iter().map(|(g, b)| (g.trim_start_matches("dial:").to_string(), b.clone())).collect()
 }
 
 const MUSIC: &str = "Music";
@@ -47,6 +88,7 @@ const WORK: &str = "Work and focus";
 const GLANCE: &str = "At a glance";
 const CONTROL: &str = "One dial, many jobs";
 const LOOKS: &str = "Looks";
+const FUN: &str = "Fun";
 
 /// The same option under a theme.
 fn under(group: &str, mut o: BuilderOption) -> BuilderOption {
@@ -84,6 +126,8 @@ fn song_svg(look: &Look, title: &str, line: &str, ring: Option<f32>) -> String {
 pub fn dial_options() -> Vec<BuilderOption> {
     let faces = gallery::previews();
     let face_svg = |id: &str| faces.iter().find(|p| p.face.id == id).map(|p| p.svg.clone());
+    // the songs on a double press and a hold, as on the gallery's Now playing
+    let song_gestures = faces.iter().find(|p| p.face.id == "nowPlaying").map(|p| gestures_of(&p.face)).unwrap_or_default();
     let mut out = Vec::new();
 
     // music: a plugin made for this when installed (Spotify's playback dial with the cover), then built-in
@@ -111,12 +155,15 @@ pub fn dial_options() -> Vec<BuilderOption> {
         opt(
             "nowPlayingSeek",
             "What's playing",
-            "Turn: move in the song · press: play or pause",
+            "Turn: move in the song · press: play or pause · double press: next song · hold: previous song",
             if cfg!(target_os = "macos") { "Built in: Spotify and Music" } else { BUILT_IN },
             binding(actions::NOW_PLAYING, json!({"turn": "seek"}), np.clone()),
             Some(song_svg(&np, "Song title", "Artist", None)),
         ),
     ));
+    if let Some(o) = out.last_mut() {
+        o.extra = song_gestures.clone();
+    }
     out.push(under(
         MUSIC,
         opt(
@@ -171,6 +218,7 @@ pub fn dial_options() -> Vec<BuilderOption> {
             Some(render::time_dial_svg(&Look { icon: None, ..history }, "↶  ↷", Some("Undo · redo"), None, 0)),
         ),
     ));
+    out.extend(face_opt(&faces, "pomodoro", "Pomodoro", BUILT_IN).map(|o| under(WORK, o)));
     let focus = look("Focus", "timer", house::hue::LIVE);
     out.push(under(
         WORK,
@@ -211,44 +259,10 @@ pub fn dial_options() -> Vec<BuilderOption> {
         ),
     ));
 
-    // at a glance
-    out.push(under(
-        GLANCE,
-        opt(
-            "clock",
-            "Clock and date",
-            "Shows the time and the day",
-            BUILT_IN,
-            binding(actions::CLOCK, json!({"show": "timeDate", "hours": "24"}), look("", "clock", house::hue::LIVE)),
-            face_svg("clock"),
-        ),
-    ));
-    let weather = look("Weather", "sun", house::hue::LIVE);
-    out.push(under(
-        GLANCE,
-        BuilderOption {
-            setup: true,
-            ..opt(
-                "weather",
-                "Weather outside",
-                "The temperature now where you are",
-                "Built in, pick your city",
-                binding(live::ACTION, json!({"source": "weather", "place": ""}), weather.clone()),
-                Some(render::time_dial_svg(&Look { icon: None, ..weather }, "14°", Some("Warsaw, cloudy"), None, 0)),
-            )
-        },
-    ));
-    out.push(under(
-        GLANCE,
-        opt(
-            "cpu",
-            "Computer load",
-            "CPU load as a ring · press: open the activity monitor",
-            BUILT_IN,
-            binding(actions::MONITOR, json!({"metric": "cpu"}), look("CPU", "zap", house::hue::LIVE)),
-            face_svg("cpu"),
-        ),
-    ));
+    // at a glance: the gallery's looks, each with its double press and hold
+    out.extend(face_opt(&faces, "clock", "Clock, date and a stopwatch", BUILT_IN).map(|o| under(GLANCE, o)));
+    out.extend(face_opt(&faces, "weather", "Weather outside", "Built in, the city from your time zone").map(|o| under(GLANCE, o)));
+    out.extend(face_opt(&faces, "cpu", "Computer load", BUILT_IN).map(|o| under(GLANCE, o)));
 
     // one dial, many jobs
     let modes = look("Modes", "layers", house::hue::NAV);
@@ -271,17 +285,7 @@ pub fn dial_options() -> Vec<BuilderOption> {
             Some(render::time_dial_svg(&Look { icon: None, ..modes }, "Volume", Some("press: Scroll · Zoom"), None, 0)),
         ),
     ));
-    out.push(under(
-        CONTROL,
-        opt(
-            "volume",
-            "Volume, big",
-            "Turn: system volume · press: mute",
-            BUILT_IN,
-            binding("core.volume", json!({"target": "system", "step": 2}), look("Volume", "volume-2", house::hue::SOUND)),
-            face_svg("volume"),
-        ),
-    ));
+    out.extend(face_opt(&faces, "volume", "Volume, big", BUILT_IN).map(|o| under(CONTROL, o)));
     out.push(under(
         CONTROL,
         opt(
@@ -293,6 +297,9 @@ pub fn dial_options() -> Vec<BuilderOption> {
             face_svg("profile"),
         ),
     ));
+
+    // fun: Mochi, the pet that lives on the dial
+    out.extend(face_opt(&faces, "pet", "Mochi, a pet on your dial", BUILT_IN).map(|o| under(FUN, o)));
 
     // looks: the animations, still a real dial underneath
     for (id, name) in [("aurora", "Aurora, turn for volume"), ("orbit", "Orbit, press to play")] {
@@ -453,5 +460,21 @@ mod tests {
             assert!(!o.does.is_empty() && !o.source.is_empty());
         }
         assert!(dial_options().iter().all(|o| o.svg.as_deref().is_some_and(|s| s.starts_with("<svg"))), "every dial option has a picture");
+    }
+
+    #[test]
+    fn the_dial_cards_have_the_new_looks_with_their_gestures() {
+        let all = dial_options();
+        for id in ["pomodoro", "weather", "pet", "clock", "cpu", "volume", "nowPlayingSeek"] {
+            let o = all.iter().find(|o| o.id == id).unwrap_or_else(|| panic!("no {id}"));
+            assert!(o.extra.contains_key("hold"), "{id}: a hold of its own");
+            for (g, b) in &o.extra {
+                assert!(actions::catalog().iter().any(|a| a.id == b.action), "{id} {g}: {}", b.action);
+            }
+        }
+        let pet = all.iter().find(|o| o.id == "pet").unwrap();
+        assert_eq!((pet.group.as_str(), pet.does.as_str()), (FUN, "Turn: play · press: pet it · double press: feed it · hold: bed / wake up"));
+        assert!(!all.iter().find(|o| o.id == "weather").unwrap().setup, "the city comes from the time zone");
+        assert_eq!(gesture_words("CPU, memory"), "CPU, memory");
     }
 }

@@ -101,6 +101,13 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
         ("POST", ["profiles", id, "pages", page, "delete"]) => engine().and_then(|e| delete_page(&e, id, page)),
         ("POST", ["profiles", id, "activate"]) => engine().and_then(|e| e.activate(id).map(|_| json!({"ok": true})).map_err(not_found)),
         ("POST", ["profiles", id, "try"]) => engine().and_then(|e| e.try_profile(Some(id)).map(|_| json!({"ok": true, "showing": id})).map_err(not_found)),
+        // throw a draft away (only drafts: the user's own profiles are never deleted here)
+        ("POST", ["drafts", id, "discard"]) => engine().and_then(|e| {
+            if !e.lock().store.settings.drafts.iter().any(|d| d == id) {
+                return Err(not_found(format!("no draft {id}")));
+            }
+            e.settle_draft(id, false).map(|_| json!({"ok": true})).map_err(bad)
+        }),
         ("POST", ["try", "end"]) => engine().and_then(|e| e.try_profile(None).map(|_| json!({"ok": true})).map_err(not_found)),
         ("GET", ["lights"]) => engine().map(|e| json!(e.lock().store.settings.lights)),
         ("POST", ["lights"]) => engine().and_then(|e| set_lights(&e, &body_json(body)?)),

@@ -20,6 +20,14 @@ pub struct Automation {
     pub cdp_port: u16,
 }
 
+/// The film mode of the test mode (`HUBDECK_FILM_DECK=1` with `HUBDECK_AUTOMATION`): the README film
+/// (scripts/film/) needs the window driven by a script AND the real deck, with its own clean data
+/// (owner, 2026-10-15: "nie widziałem, żeby tam pokazywało jakieś klikanie, przełączanie"). The
+/// window is on screen and the real deck is used, so the running HubDeck must be quit first.
+pub fn real_deck() -> bool {
+    get().is_some() && std::env::var_os("HUBDECK_FILM_DECK").is_some_and(|v| !v.is_empty())
+}
+
 /// The test mode, if this process was started in it.
 pub fn get() -> Option<&'static Automation> {
     static MODE: OnceLock<Option<Automation>> = OnceLock::new();

@@ -90,6 +90,8 @@ pub struct Now<'a> {
     pub today: String,
     pub busy: bool,
     pub attached: &'a [String],
+    /// Kinds the user has arranged before (placements): never news, attached now or not.
+    pub remembered: &'a [String],
     /// Programs some profile (or draft) is linked to.
     pub linked: &'a [String],
     /// (program, hours, days) from `usage.json`, most first.
@@ -124,6 +126,14 @@ impl DeckUse {
 fn choose(f: &mut File, now: &Now) -> Option<Nudge> {
     // the first time: the kinds attached now are known already, not news
     let seen = f.seen_kinds.get_or_insert_with(|| now.attached.to_vec());
+    // a kind the user arranged before is known even if it was not attached at the first look
+    // (owner, 2026-10-14: "the keys are attached for the first time", months after; the first look
+    // came while the keys were still connecting)
+    for k in now.remembered {
+        if !seen.contains(k) {
+            seen.push(k.clone());
+        }
+    }
     let new_kind = now.attached.iter().find(|k| !seen.contains(k)).cloned();
     if f.off || now.busy {
         return None;
@@ -176,6 +186,10 @@ fn choose(f: &mut File, now: &Now) -> Option<Nudge> {
 /// The window asks now and then (when the Assistant tab shows, and every few minutes).
 #[tauri::command]
 pub async fn nudge_get(app: AppHandle) -> Option<Nudge> {
+    // the modules connect in the first seconds: no judging what is attached before that
+    if super::saver::clock() < 20.0 {
+        return None;
+    }
     let tour_deck = {
         let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
         read().tour_deck.map(|(id, _)| id)
@@ -194,11 +208,12 @@ pub async fn nudge_get(app: AppHandle) -> Option<Nudge> {
         });
         (st.in_call || s.trying.is_some(), linked, st.foreground, deck)
     };
-    let attached = super::api::module_kinds(&app).attached;
+    let kinds = super::api::module_kinds(&app);
+    let (attached, remembered): (Vec<String>, Vec<String>) = (kinds.attached.clone(), kinds.owned.iter().filter(|k| !kinds.attached.contains(k)).cloned().collect());
     tauri::async_runtime::spawn_blocking(move || {
         let busy = busy || (!foreground.is_empty() && super::starter::is_game(&foreground, ""));
         let name_of = |exe: &str| super::assistant::app_name(exe);
-        let now = Now { today: day(0), busy, attached: &attached, linked: &linked, used: super::usage::top(30), name_of: &name_of, deck };
+        let now = Now { today: day(0), busy, attached: &attached, remembered: &remembered, linked: &linked, used: super::usage::top(30), name_of: &name_of, deck };
         let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut f = read();
         let n = choose(&mut f, &now);
@@ -249,6 +264,13 @@ pub fn tour_kept(profile: &str) {
 }
 
 /// Suggestions on or off (the Assistant tab).
+/// A deck from the tour was kept (Get started shows the tour as done then).
+#[tauri::command]
+pub fn tour_done() -> bool {
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    read().tour_deck.is_some()
+}
+
 #[tauri::command]
 pub fn nudge_enable(on: bool) {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -267,7 +289,7 @@ mod tests {
     use super::*;
 
     fn now<'a>(today: &str, busy: bool, attached: &'a [String], linked: &'a [String], used: Vec<(String, f32, u32)>) -> Now<'a> {
-        Now { today: today.into(), busy, attached, linked, used, name_of: &|e: &str| e.trim_end_matches(".exe").to_string(), deck: None }
+        Now { today: today.into(), busy, attached, remembered: &[], linked, used, name_of: &|e: &str| e.trim_end_matches(".exe").to_string(), deck: None }
     }
 
     #[test]
@@ -318,5 +340,16 @@ mod tests {
         let more = vec!["keys".to_string(), "faders".to_string()];
         let n = choose(&mut f, &now("2026-10-13", false, &more, &[], vec![])).expect("faders are new");
         assert_eq!(n.subject, "module:faders");
+    }
+
+    #[test]
+    fn a_kind_arranged_before_is_not_news() {
+        // the first look came while the keys were still connecting; they were arranged long ago
+        let mut f = File::default();
+        let early = vec!["dial".to_string()];
+        assert!(choose(&mut f, &now("2026-10-12", false, &early, &[], vec![])).is_none());
+        let all = vec!["dial".to_string(), "keys".to_string()];
+        let remembered = vec!["keys".to_string()];
+        assert!(choose(&mut f, &Now { remembered: &remembered, ..now("2026-10-13", false, &all, &[], vec![]) }).is_none(), "the keys are known");
     }
 }

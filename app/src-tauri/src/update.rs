@@ -51,7 +51,15 @@ pub async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
     let update = find(&app).await?.ok_or("no newer version")?;
     log::info!("installing HubDeck {}", update.version);
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    // the installer ends this HubDeck (on Windows from inside download_and_install): the guard
+    // must not start the old one again
+    crate::guard::leaving();
+    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+        if let (Ok(data), Ok(logs)) = (app.path().app_data_dir(), app.path().app_log_dir()) {
+            crate::guard::spawn(&data, &logs);
+        }
+        return Err(e.to_string());
+    }
     app.restart()
 }
 

@@ -13,6 +13,10 @@ pub enum Target {
     Others(Vec<String>),
 }
 
+/// The end of the error for an app that has no sound open now (WASAPI lists only apps with an
+/// audio session): the dial says so quietly instead of a red banner (owner, 2026-10-14).
+pub const SILENT: &str = "is not playing any sound right now";
+
 /// The programs (exe names) that are recording from the default microphone right now.
 pub fn mic_users() -> Vec<String> {
     platform::mic_users()
@@ -272,7 +276,7 @@ mod platform {
                 }
             }
             if out.is_empty() {
-                return Err(format!("{app} is not playing any sound right now"));
+                return Err(format!("{app} {}", super::SILENT));
             }
             Ok(out)
         }

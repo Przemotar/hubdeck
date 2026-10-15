@@ -5,8 +5,9 @@
 
 /// The effects (`Settings > Screens > Screensaver`).
 pub const EFFECTS: [&str; 3] = ["rain", "stars", "waves"];
-/// A frame every this often while it runs (the whole panel is one image).
-pub const FRAME_MS: u64 = 200;
+/// A frame every this often while it runs (the whole panel is one image): ~15 a second (owner,
+/// 2026-10-14: five a second looked choppy).
+pub const FRAME_MS: u64 = 66;
 
 /// Seconds since the screensaver's clock started (the effects move with it).
 pub fn clock() -> f32 {
