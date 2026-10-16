@@ -62,8 +62,8 @@ where each one sits and how it is turned. One base at a time for now.
   and apps and walks you through it on the hardware. No AI needed.
 - **Profiles that follow the app in front**, with per-app volume, mute, media with cover art, OBS,
   Home Assistant, monitor brightness and system stats.
-- **About 200 Stream Deck plugins** run as they are (Spotify, Discord, OBS, Hue and more), one click
-  from a catalog.
+- **Stream Deck plugins** run in HubDeck: a one-click catalog of about 200 open-source ones
+  (Settings > Plugins). Tried so far: Essentials for Spotify; tell us when one does not work.
 - **Safe by design.** Firmware is never written; dangerous commands are refused in code. Nothing
   leaves your computer unless you turn it on ([PRIVACY.md](PRIVACY.md)).
 - **Light.** About 3 % of one CPU core and 40 MB of memory in the tray with a clock and meters on the keys; 9 % and 62 MB with 22 animations on the deck (Windows, measured before the release).
@@ -160,8 +160,8 @@ registration), a shared profiles gallery, more than one base.
 
 **Plugins made for Stream Deck**
 - Install a `.streamDeckPlugin`, or pick one from a catalog of about 200 open-source plugins
-  (Settings > Plugins), and its actions join "What should it do?": Discord, Spotify, OBS, Home Assistant,
-  Philips Hue, Govee, VS Code and more. Keys are a 5x3
+  (Settings > Plugins: Discord, Spotify, OBS, Home Assistant, Philips Hue, Govee, VS Code and more),
+  and its actions join "What should it do?". Tried so far: Essentials for Spotify. Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the panel on the right.
   Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
   installed; HubDeck says so when one does. How it works and what to expect:
