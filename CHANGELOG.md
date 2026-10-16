@@ -12,7 +12,7 @@ The first public version.
   monitor brightness, system monitor, clock and timer, sounds; OBS, Streamlabs, Spotify, Home
   Assistant, MIDI, Claude Code sessions; your own apps through a small HTTP contract.
 - Plugins made for Stream Deck run in HubDeck (keys as a 5x3 keypad, the dial and knobs as dials,
-  their settings pages in the inspector); a catalog of about 200 open-source plugins to install
+  their settings pages in the panel on the right); a catalog of about 200 open-source plugins to install
   with one click (Settings > Plugins).
 - A tour that needs no AI: one question about what you do most, then a deck made at once for
   your modules and your apps, shown on the hardware and walked through part by part (the control

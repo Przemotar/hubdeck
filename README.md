@@ -71,8 +71,8 @@ where each one sits and how it is turned. One base at a time for now.
 
 Before and while building HubDeck we read what owners of the MasterHUB and of other decks (Stream
 Deck, Loupedeck, Logitech MX Creative Console, Razer Stream Controller) say goes wrong: reviews,
-vendor forums, GitHub issues and about 1,200 Reddit posts of 2025-2026. The full list, with every
-source, is in [docs/PAIN-POINTS.md](docs/PAIN-POINTS.md). The ones that shaped HubDeck most:
+vendor forums, GitHub issues and about 1,200 Reddit posts of 2025-2026. The ones that shaped HubDeck
+most, with their sources:
 
 | What owners say | What HubDeck does |
 |---|---|
@@ -161,7 +161,7 @@ registration), a shared profiles gallery, more than one base.
 - Install a `.streamDeckPlugin`, or pick one from a catalog of about 200 open-source plugins
   (Settings > Plugins), and its actions join "What should it do?": Discord, Spotify, OBS, Home Assistant,
   Philips Hue, Govee, VS Code and more. Keys are a 5x3
-  keypad, the dial and knobs are dials, the plugin's own settings page shows in the inspector.
+  keypad, the dial and knobs are dials, the plugin's own settings page shows in the panel on the right.
   Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
   installed; HubDeck says so when one does. How it works and what to expect:
   [docs/STREAMDECK-PLUGINS.md](docs/STREAMDECK-PLUGINS.md).
