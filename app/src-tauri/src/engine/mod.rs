@@ -3550,6 +3550,10 @@ impl Worker {
                 p.controls.remove(g);
             }
             p.controls.insert("dial".into(), face.binding.clone());
+            // it comes onto the dial happy and full (owner's 2a, 2026-10-16), not as it was left
+            self.pet.needs.joy = 1.0;
+            self.pet.needs.fullness = 1.0;
+            self.pet.needs.asleep = false;
             for (g, b) in face.extra {
                 p.controls.insert(g.to_string(), b);
             }

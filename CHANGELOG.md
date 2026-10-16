@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+- Mochi, the dial pet, says what it wants: a thought bubble with a cookie when it is hungry, a
+  heart when it is sad, a moon late at night, and next to it a fingertip that shows the gesture
+  (one tap to pet it, two to feed it, hold to put it to bed). No words over it.
+- Mochi gets sad after about 8.5 hours alone instead of 3.5, and comes onto the dial happy and full.
+
+Mac owners: this version, like 0.1.0, has not run on a Mac yet. If you have one, please say how it
+goes in [Discussions](https://github.com/Przemotar/hubdeck/discussions/1).
+
 ## 0.1.0 (preview)
 
 The first public version.

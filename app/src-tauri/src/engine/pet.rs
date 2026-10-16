@@ -50,7 +50,8 @@ fn now_secs() -> u64 {
 
 /// Fullness goes from full to empty in about 8 hours, joy in about 5; both rest while it sleeps.
 const FULL_HOURS: f32 = 8.0;
-const JOY_HOURS: f32 = 5.0;
+/// Sad after about 8.5 hours alone (owner's 2a, 2026-10-16: at 5 it was sad every time he looked).
+const JOY_HOURS: f32 = 12.0;
 
 impl Needs {
     /// Time passes (`now` in seconds since 1970).
@@ -355,6 +356,61 @@ pub fn dial_svg(pet: &Pet, mood: Mood, t: f32, now: Instant, rotation: i32) -> S
             }
         }
     }
+    // what it wants, in a thought bubble with a picture and no words (owner, 2026-10-16: "nie
+    // wiedziałem czemu był smutny i nie ma napisane co trzeba zrobić"; no text over it, his pick
+    // of 2026-10-14): a cookie when hungry (double press), a heart when sad (press), a moon late
+    // at night (hold); gone while a touch plays and once it has what it wanted
+    if moment.is_none() {
+        let icon = match mood {
+            Mood::Hungry => Some(r##"<circle r="12" fill="url(#pck)"/><circle cx="-4.5" cy="-3" r="2" fill="#6b3a12"/><circle cx="4.5" cy="3.5" r="2" fill="#6b3a12"/><circle cx="1.5" cy="-6" r="1.5" fill="#6b3a12"/><circle cx="-3" cy="5" r="1.5" fill="#6b3a12"/>"##.to_string()),
+            Mood::Sad => Some(format!(r#"<path d="{HEART}" fill="url(#php)" transform="translate(0 -2) scale(1.15)"/>"#)),
+            Mood::Sleepy => Some(r##"<circle r="11" fill="#ffd76a"/><circle cx="6" cy="-4" r="10" fill="#f4f1ff"/>"##.to_string()),
+            _ => None,
+        };
+        if let Some(icon) = icon {
+            let bob = (t * w(3.0)).sin() * 2.0;
+            b += &format!(
+                r##"<g transform="translate(0 {bob:.1})"><circle cx="160" cy="96" r="4.5" fill="#f4f1ff" opacity=".9"/><circle cx="170" cy="84" r="7" fill="#f4f1ff" opacity=".92"/><circle cx="186" cy="60" r="24" fill="#f4f1ff" opacity=".95"/><g transform="translate(186 60)">{icon}</g></g>"##
+            );
+            // and how to give it: a fingertip that taps once (press), twice (double press) or
+            // stays down while a ring fills (hold), every 2.1 s (owner, 2026-10-16: "może powinna
+            // być animacja gestu pokazana?"); on the loop's grid, so the resting frames still repeat
+            let cycle = LOOP / 8.0;
+            let p = (t % cycle) / cycle;
+            let (fx, fy) = (206.0_f32, 108.0_f32);
+            let mut g = String::new();
+            let tap = |start: f32, g: &mut String| {
+                let q = (p - start) / 0.22;
+                if (0.0..1.0).contains(&q) {
+                    *g += &format!(r##"<circle cx="{fx}" cy="{fy}" r="{:.1}" fill="none" stroke="#f4f1ff" stroke-width="2.6" opacity="{:.2}"/>"##, 9.0 + q * 11.0, 1.0 - q);
+                }
+            };
+            let down = match mood {
+                Mood::Sad => {
+                    tap(0.1, &mut g);
+                    (0.06..0.16).contains(&p)
+                }
+                Mood::Hungry => {
+                    tap(0.1, &mut g);
+                    tap(0.3, &mut g);
+                    (0.06..0.14).contains(&p) || (0.26..0.34).contains(&p)
+                }
+                _ => {
+                    // hold: the ring fills while the fingertip stays down, then lets go
+                    let q = ((p - 0.08) / 0.6).clamp(0.0, 1.0);
+                    if p > 0.08 && p < 0.78 {
+                        let a = q * std::f32::consts::TAU;
+                        let (ex, ey) = (fx + 13.0 * a.sin(), fy - 13.0 * a.cos());
+                        let large = if a > std::f32::consts::PI { 1 } else { 0 };
+                        g += &format!(r##"<path d="M{fx} {:.1} A13 13 0 {large} 1 {ex:.2} {ey:.2}" fill="none" stroke="#f4f1ff" stroke-width="3" stroke-linecap="round"/>"##, fy - 13.0);
+                    }
+                    p > 0.08 && p < 0.78
+                }
+            };
+            g += &format!(r##"<circle cx="{fx}" cy="{fy}" r="{:.1}" fill="#f4f1ff" opacity=".95"/>"##, if down { 6.0 } else { 7.5 });
+            b += &format!(r#"<g transform="translate(0 {bob:.1})">{g}</g>"#);
+        }
+    }
     if asleep {
         for i in 0..3 {
             let p = (t * (8.0 / LOOP) + i as f32 / 3.0) % 1.0;
@@ -380,10 +436,62 @@ mod tests {
     fn mochi_gets_hungry_and_sad_over_hours_but_not_asleep() {
         let mut n = Needs { fullness: 1.0, joy: 1.0, asleep: false, at: 0, ..Needs::default() };
         n.age(4 * 3600);
-        assert!((n.fullness - 0.5).abs() < 0.01 && (n.joy - 0.2).abs() < 0.01);
+        assert!((n.fullness - 0.5).abs() < 0.01 && (n.joy - 2.0 / 3.0).abs() < 0.01);
         let mut s = Needs { fullness: 1.0, joy: 1.0, asleep: true, at: 0, ..Needs::default() };
         s.age(10 * 3600);
         assert_eq!((s.fullness, s.joy), (1.0, 1.0), "asleep, nothing runs down");
+    }
+
+    /// What it wants and the gesture, at moments of the 2.1 s gesture cycle:
+    /// `HUBDECK_OUT=<png> cargo test -p hubdeck mochi_gestures -- --ignored`.
+    #[test]
+    #[ignore]
+    fn mochi_gestures() {
+        use resvg::{tiny_skia, usvg};
+        let now = Instant::now();
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let mut out = String::from(r##"<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="800"><rect width="100%" height="100%" fill="#101016"/>"##);
+        for (row, mood) in [Mood::Sad, Mood::Hungry, Mood::Sleepy].into_iter().enumerate() {
+            for (col, p) in [0.03_f32, 0.15, 0.33, 0.55].into_iter().enumerate() {
+                let svg = dial_svg(&pet, mood, p * LOOP / 8.0, now, 0);
+                let (x, y) = (20 + col * 255, 20 + row * 260);
+                out += &format!(
+                    r#"<svg x="{x}" y="{y}" width="240" height="240">{}</svg>"#,
+                    svg.trim_start_matches(r#"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">"#).trim_end_matches("</svg>")
+                );
+            }
+        }
+        out += "</svg>";
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+        let tree = usvg::Tree::from_str(&out, &opt).unwrap();
+        let size = tree.size().to_int_size();
+        let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+        pixmap.save_png(std::env::var("HUBDECK_OUT").unwrap_or_else(|_| "mochi-gestures.png".into())).unwrap();
+    }
+
+    /// One gesture cycle per mood as PNG frames, 15 a second, for an animated preview:
+    /// `HUBDECK_OUT=<dir> cargo test -p hubdeck mochi_gesture_frames -- --ignored`.
+    #[test]
+    #[ignore]
+    fn mochi_gesture_frames() {
+        use resvg::{tiny_skia, usvg};
+        let dir = std::path::PathBuf::from(std::env::var("HUBDECK_OUT").unwrap_or_else(|_| "mochi-frames".into()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let now = Instant::now();
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+        for (name, mood) in [("sad", Mood::Sad), ("hungry", Mood::Hungry), ("sleepy", Mood::Sleepy)] {
+            for f in 0..32 {
+                let svg = dial_svg(&pet, mood, f as f32 * (LOOP / 8.0) / 32.0, now, 0);
+                let tree = usvg::Tree::from_str(&svg, &opt).unwrap();
+                let mut pixmap = tiny_skia::Pixmap::new(240, 240).unwrap();
+                resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+                pixmap.save_png(dir.join(format!("{name}-{f:02}.png"))).unwrap();
+            }
+        }
     }
 
     /// Every mood and moment in one picture: `HUBDECK_OUT=<png> cargo test -p hubdeck mochi_sheet -- --ignored`.
