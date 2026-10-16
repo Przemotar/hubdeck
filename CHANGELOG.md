@@ -2,13 +2,11 @@
 
 ## 0.1.1
 
-- Mochi, the dial pet, says what it wants: a thought bubble with a cookie when it is hungry, a
-  heart when it is sad, a moon late at night, and next to it a fingertip that shows the gesture
-  (one tap to pet it, two to feed it, hold to put it to bed). No words over it.
-- Mochi gets sad after about 8.5 hours alone instead of 3.5, and comes onto the dial happy and full.
-
-Mac owners: this version, like 0.1.0, has not run on a Mac yet. If you have one, please say how it
-goes in [Discussions](https://github.com/Przemotar/hubdeck/discussions/1).
+- Updates reach you: HubDeck looks for a new version at start and every 6 hours while it runs,
+  shows it in the window when you open it (with What's new and Install and restart), and puts
+  "Update to HubDeck x.y.z..." at the top of the tray menu. In 0.1.0 the notice could be missed;
+  Settings > Updates > Check now always works.
+- Mochi, the dial pet, shows what it wants and which gesture gives it.
 
 ## 0.1.0 (preview)
 

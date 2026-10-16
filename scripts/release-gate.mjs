@@ -12,7 +12,7 @@
 //      --window-seconds (150); its page's smoothness and the WebView2 memory
 //
 //   node scripts/release-gate.mjs [--profile <name or id>, default: a draft with every GIF and Mochi] [--minutes 5] [--every 5] [--restarts 3]
-//                                 [--skip audit,sizes,soak,restarts,window] [--window-seconds 150]
+//                                 [--skip audit,sizes,readme,soak,restarts,window] [--window-seconds 150]
 //
 // The soak only shows the profile (a try, like the assistant's Try): the user's home and active
 // profile come back at the end. Nothing takes the focus: the app is started with --hidden.
@@ -386,6 +386,15 @@ if (!win && !mac) {
 console.log(`release gate on ${win ? "Windows" : "macOS"}, ${new Date().toLocaleString()}`);
 if (!skip.has("audit")) audits();
 if (!skip.has("sizes")) sizes();
+if (!skip.has("readme")) {
+  // the public README (owner's pick 2a, 2026-10-16): run on the export in ../hubdeck
+  try {
+    execFileSync("node", [path.join(root, "scripts", "readme-check.mjs")], { stdio: "inherit" });
+    report("readme", true, "links, render, words and screenshots checked");
+  } catch {
+    report("readme", false, "see the lines above (node scripts/readme-check.mjs)");
+  }
+}
 if (!skip.has("soak")) await soak().catch((e) => report("soak", false, e.message));
 if (!skip.has("restarts")) await restartLoop().catch((e) => report("restarts", false, e.message));
 if (!skip.has("window")) await windowStage().catch((e) => report("window", false, e.message));
