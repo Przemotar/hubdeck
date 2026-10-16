@@ -32,6 +32,13 @@
 > "Cooler Master" and "MasterHUB" are trademarks of their owner and are used here only to say
 > which hardware this software works with.
 
+## Quick start
+
+1. [Download for Windows](https://github.com/Przemotar/hubdeck/releases/latest/download/HubDeck-windows-x64-setup.exe) or [for macOS](https://github.com/Przemotar/hubdeck/releases/latest/download/HubDeck-macos.dmg) and install it ([step by step](#install)).
+2. Quit the official MasterHUB app: two apps cannot drive the deck at once.
+3. Open HubDeck from the tray and click **Show me on my deck**: one question, and in about five
+   minutes your deck is set up for your modules and apps. No account and no AI needed.
+
 ## Supported modules
 
 | Module | Windows 10/11 | macOS 12+ |
