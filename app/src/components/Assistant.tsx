@@ -1046,6 +1046,7 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
           <div className="as-intro">
             <h3 className="as-lets">{tourDone ? t("assistant.yourDeck") : t("assistant.letsSet")}</h3>
             {onTour &&
+              tourDone !== null &&
               (tourDone ? (
                 <button className="as-row" onClick={onTour}>
                   <span className="as-row-lead">

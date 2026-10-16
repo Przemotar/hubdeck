@@ -53,6 +53,23 @@ export const Logo = () => (
 
 export type LeftTab = "profiles" | "assistant";
 
+/** Suggestions whose dot was seen (per viewer, a convenience: lost storage only brings a dot back). */
+function nudgeSeen(subject: string): boolean {
+  try {
+    return (JSON.parse(localStorage.getItem("hubdeck.nudgeSeen") ?? "[]") as string[]).includes(subject);
+  } catch {
+    return false;
+  }
+}
+function markNudgeSeen(subject: string) {
+  try {
+    const seen = JSON.parse(localStorage.getItem("hubdeck.nudgeSeen") ?? "[]") as string[];
+    localStorage.setItem("hubdeck.nudgeSeen", JSON.stringify([...seen.filter((s) => s !== subject), subject].slice(-50)));
+  } catch {
+    // not remembered: the dot may come back once
+  }
+}
+
 /**
  * The left column: Get started (the assistant) and the profiles list as two tabs. Actions are chosen
  * only in the right panel, where the control is known (owner's pick 1a, 2026-10-16, variant A).
@@ -64,6 +81,14 @@ export function LeftPanel({ view, tab, onTab, onOpenProfile, onNewProfile, onBui
   const setUp = useSetUp(view);
   // HubDeck's own suggestion (an app without a deck): a dot on the Assistant tab, looked at now and then
   const nudge = useNudge();
+  // the dot goes once the tab was looked at with that suggestion in it, as badges do
+  const [, seenNow] = useState(0);
+  useEffect(() => {
+    if (tab === "assistant" && nudge && !nudgeSeen(nudge.subject)) {
+      markNudgeSeen(nudge.subject);
+      seenNow((n) => n + 1);
+    }
+  }, [tab, nudge]);
   useEffect(() => {
     refreshNudge();
     const timer = setInterval(refreshNudge, 15 * 60 * 1000);
@@ -76,7 +101,7 @@ export function LeftPanel({ view, tab, onTab, onOpenProfile, onNewProfile, onBui
       <div className={`lib-tabs seg full${setUp ? " is-set-up" : ""}`} role="tablist">
         <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
           {t("assistant.tab")}
-          {nudge && tab !== "assistant" && <span className="tab-dot" aria-label={t("nudge.ask")} />}
+          {nudge && tab !== "assistant" && !nudgeSeen(nudge.subject) && <span className="tab-dot" aria-label={t("nudge.ask")} />}
         </button>
         <button role="tab" data-guide="profiles" aria-selected={tab === "profiles"} className={`tab${tab === "profiles" ? " is-active" : ""}`} onClick={() => onTab("profiles")}>
           {t("profiles.title")}
@@ -1064,39 +1089,60 @@ export function EdgePanel({ view, onClose, onAll }: { view: EngineView; onClose:
   const profile = view.profile;
   const [draft, setDraft] = useState<Profile | null>(profile);
   const [message, setMessage] = useState<string | null>(null);
+  // the style every profile follows, named in the first choice (owner's pick 2a, 2026-10-16: a
+  // profile color that did nothing under Rainbow was confusing; one choice that works at once)
+  const [style, setStyle] = useState<string | null>(null);
   useEffect(() => setDraft(profile), [profile?.id]);
+  useEffect(() => {
+    api.lights().then((l) => setStyle(l.style), () => setStyle(null));
+  }, []);
   if (!profile || !draft) return null;
   const commit = (next: Profile) => {
     setDraft(next);
     api.saveProfile(next).catch((e) => setMessage(String(e)));
+  };
+  const mode = !draft.edge ? "follow" : draft.edgeEffect ? "effect" : "color";
+  const styleName = style === "rainbow" ? t("lights.rainbow") : style === "color" ? t("lights.oneColor") : style === "profile" ? t("lights.profileColor") : style === "off" ? t("lights.off") : "";
+  const pick = (next: "follow" | "color" | "effect") => {
+    if (next === "follow") commit({ ...draft, edge: undefined, edgeEffect: undefined, edgeSpeed: undefined });
+    else if (next === "color") commit({ ...draft, edge: draft.edge ?? draft.color ?? "#8b7cf6", edgeEffect: undefined, edgeSpeed: undefined });
+    else commit({ ...draft, edge: draft.edge ?? draft.color ?? "#8b7cf6", edgeEffect: draft.edgeEffect ?? "breathing", edgeSpeed: draft.edgeSpeed ?? 50 });
   };
   return (
     <aside className="inspector sectioned side-panel edge-panel">
       <PanelHead title={t("edge.title")} crumb={draft.name} icon="sun" onClose={onClose} />
       <section className="sec">
         <h3 className="sec-title">{t("profile.edgeTitle")}</h3>
-        <div className="row between">
-          <label className="check">
-            <input type="checkbox" checked={!!draft.edge} onChange={(e) => commit({ ...draft, edge: e.target.checked ? draft.color ?? "#8b7cf6" : undefined })} />
-            {t("profile.edge")}
-          </label>
-          {draft.edge && (
+        <div className="seg full edge-modes" role="radiogroup" aria-label={t("profile.edgeTitle")}>
+          {(["follow", "color", "effect"] as const).map((m) => (
+            <button key={m} role="radio" aria-checked={mode === m} className={`tab${mode === m ? " is-active" : ""}`} onClick={() => pick(m)}>
+              {t(`edge.mode.${m}` as Key)}
+            </button>
+          ))}
+        </div>
+        {mode === "follow" && (
+          <>
+            <p className="help">{styleName ? t("edge.followStyle", { style: styleName }) : t("edge.followHelp")}</p>
+            {style === "profile" && (
+              <div className="row between">
+                <span className="label">{t("profile.color")}</span>
+                <label className="color">
+                  <input type="color" value={draft.color ?? "#8b7cf6"} aria-label={t("profile.color")} onChange={(e) => setDraft({ ...draft, color: e.target.value })} onBlur={() => commit(draft)} />
+                </label>
+              </div>
+            )}
+          </>
+        )}
+        {mode !== "follow" && draft.edge && (
+          <div className="row between">
+            <span className="label">{t("look.color")}</span>
             <label className="color">
               <input type="color" value={draft.edge} aria-label={t("look.color")} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} onBlur={() => commit(draft)} />
               <span className="mono">{draft.edge.toUpperCase()}</span>
             </label>
-          )}
-        </div>
-        {draft.edge ? <EffectFields idPrefix="edge" effect={draft.edgeEffect} speed={draft.edgeSpeed} onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect, edgeSpeed })} /> : <p className="help">{t("edge.followHelp")}</p>}
-      </section>
-      <section className="sec">
-        <div className="row between">
-          <span className="label">{t("profile.color")}</span>
-          <label className="color">
-            <input type="color" value={draft.color ?? "#8b7cf6"} aria-label={t("profile.color")} onChange={(e) => setDraft({ ...draft, color: e.target.value })} onBlur={() => commit(draft)} />
-          </label>
-        </div>
-        <p className="help">{t("profile.colorHelp")}</p>
+          </div>
+        )}
+        {mode === "effect" && <EffectFields idPrefix="edge" effect={draft.edgeEffect} speed={draft.edgeSpeed} onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect: edgeEffect ?? "breathing", edgeSpeed })} />}
       </section>
       <section className="sec end">
         <button className="tool align-start" onClick={onAll}>

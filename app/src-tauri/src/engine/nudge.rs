@@ -179,6 +179,15 @@ fn choose(f: &mut File, now: &Now) -> Option<Nudge> {
     };
     if let Some(n) = &nudge {
         f.today = Some((now.today.clone(), n.subject.clone(), false));
+        // a kind is news on one day only: a module that drops off USB and comes back (a loose
+        // contact) is not "attached for the first time" every day (owner, 2026-10-16: the dot on
+        // Get started never went away)
+        if n.kind == "module"
+            && let Some(seen) = f.seen_kinds.as_mut()
+            && !seen.contains(&n.exe)
+        {
+            seen.push(n.exe.clone());
+        }
     }
     nudge
 }

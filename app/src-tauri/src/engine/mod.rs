@@ -2340,7 +2340,9 @@ impl Worker {
                                 }
                                 // a clock or timer: its text, big; a timer that ran out turns red
                                 (None, Some(face)) => {
-                                    let base = if face.done { b.look_for(Some(true)) } else { look };
+                                    // and blinks, twice a second, until a press (owner, 2026-10-16: it
+                                    // should say more strongly that it ran out)
+                                    let base = if face.done && Self::blink_on() { b.look_for(Some(true)) } else { look };
                                     let label = match face.second {
                                         Some(s) => format!("{}\n{s}", face.main),
                                         None => face.main,
@@ -2620,6 +2622,11 @@ impl Worker {
             }
             _ => None,
         }
+    }
+
+    /// The half second a ringing timer shows its alarm look.
+    fn blink_on() -> bool {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(true, |d| (d.as_millis() / 500) % 2 == 0)
     }
 
     /// A key bound to "Now playing" shows the cover and the title.
@@ -3231,6 +3238,10 @@ impl Worker {
                 sig.push_str(&control);
                 sig.push('=');
                 sig.push_str(&face.main);
+                if face.done {
+                    // a timer that ran out blinks: each half second is a new picture
+                    sig.push(if Self::blink_on() { '+' } else { '-' });
+                }
                 sig.push(';');
                 dial_live |= i.is_none();
                 if b.action == actions::TIMER && self.timers.get(&control).is_some_and(|t| t.finished(now) && t.running() && !t.rang) {
@@ -3306,7 +3317,13 @@ impl Worker {
             mic_muted: self.states.get("mic").copied().unwrap_or(false),
             on_air: on("obs:record") || on("obs:stream") || on("sl:record") || on("sl:stream"),
             agent_waiting: self.fleet.pulsing() || states::any_waiting(&self.values),
-            timer_done: self.timers.values().any(|t| t.running() && t.finished(Instant::now())),
+            // the edge only for a timer that ran out where it cannot be seen (another page or
+            // profile): one on the deck blinks itself (owner's pick 1a, 2026-10-16)
+            timer_done: {
+                let page = self.lock().page.clone();
+                let seen = |c: &str| c == "dial" || (0..15).any(|i| control_id(page.as_deref(), &format!("keys.{i}")) == c);
+                self.timers.iter().any(|(c, t)| t.running() && t.finished(Instant::now()) && !seen(c))
+            },
             in_call: self.in_call.is_some(),
         };
         let game = self.arcade.as_ref().map(|a| a.screen(Instant::now()));

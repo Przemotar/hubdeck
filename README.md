@@ -5,7 +5,8 @@
 <h1 align="center">HubDeck</h1>
 
 <p align="center">
-  <b>The free, open-source app for the Cooler Master MasterHUB modular deck.</b><br>
+  <b>The free, open-source app for the Cooler Master MasterHUB modular deck</b>,<br>
+  an alternative to the official MasterHUB software.<br>
   Windows and macOS. No account, no cloud, no telemetry.
 </p>
 
