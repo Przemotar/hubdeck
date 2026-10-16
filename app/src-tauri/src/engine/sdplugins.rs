@@ -94,9 +94,21 @@ fn platform() -> &'static str {
     if cfg!(windows) { "windows" } else { "mac" }
 }
 
-/// Is this folder's manifest a Stream Deck one (`UUID` and `Actions`)?
+/// This machine as OpenAction's `CodePaths` names it.
+fn target_triple() -> &'static str {
+    match (cfg!(windows), cfg!(target_arch = "aarch64")) {
+        (true, true) => "aarch64-pc-windows-msvc",
+        (true, false) => "x86_64-pc-windows-msvc",
+        (false, true) => "aarch64-apple-darwin",
+        (false, false) => "x86_64-apple-darwin",
+    }
+}
+
+/// Is this folder's manifest a Stream Deck one (`Actions` and a program: `UUID`, `CodePath`, the
+/// per-system `CodePathWin` / `CodePathMac`, or OpenAction's `CodePaths` by target; the catalog's
+/// OpenAction plugins give only the last ones, plugin check 2026-10-16)?
 pub fn is_sd_manifest(v: &Value) -> bool {
-    v.get("Actions").is_some() && (v.get("UUID").is_some() || v.get("CodePath").is_some())
+    v.get("Actions").is_some() && ["UUID", "CodePath", "CodePathWin", "CodePathMac", "CodePaths"].iter().any(|k| v.get(*k).is_some())
 }
 
 /// A file inside the plugin folder; never outside it: only plain names (no `..`, no drive or root,
@@ -203,9 +215,12 @@ pub fn read(v: &Value, dir: &Path) -> Result<SdManifest, String> {
     if uuid.is_empty() {
         return Err("no UUID".into());
     }
+    // OpenAction's `CodePaths` by target first (the native build for this machine), then
+    // Stream Deck's per-system and plain entries
+    let by_target = v.get("CodePaths").and_then(|c| c.get(target_triple())).and_then(Value::as_str).unwrap_or("").to_string();
     let code_path = match platform() {
-        "mac" => [s("CodePathMac"), s("CodePath")],
-        _ => [s("CodePathWin"), s("CodePath")],
+        "mac" => [by_target, s("CodePathMac"), s("CodePath")],
+        _ => [by_target, s("CodePathWin"), s("CodePath")],
     }
     .into_iter()
     .find(|c| !c.is_empty())
@@ -842,11 +857,36 @@ pub fn download(url: &str) -> Result<Vec<u8>, String> {
     res.body_mut().with_config().limit(300 * 1024 * 1024).read_to_vec().map_err(|e| format!("download failed: {e}"))
 }
 
+/// JSON bytes without the UTF-8 byte order mark that Windows tools write (Flight Tracker's
+/// manifest, 2026-10-17): serde_json refuses it.
+pub fn without_bom(bytes: &[u8]) -> &[u8] {
+    bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes)
+}
+
+/// The `.streamDeckPlugin` inside a zip that holds only that file (DevOps for StreamDeck releases
+/// `<uuid>.streamDeckPlugin.zip`, 2026-10-17); any other file as it is.
+fn unwrap_zipped(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    use std::io::Read as _;
+    let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return bytes.into() };
+    let names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/"))).collect();
+    if names.iter().any(|n| n.split('/').any(|p| p.ends_with(".sdPlugin"))) {
+        return bytes.into();
+    }
+    let inner: Vec<&String> = names.iter().filter(|n| n.to_lowercase().ends_with(".streamdeckplugin")).collect();
+    let [inner] = inner[..] else { return bytes.into() };
+    let mut data = Vec::new();
+    match zip.by_name(inner).map(|mut f| f.read_to_end(&mut data)) {
+        Ok(Ok(_)) => data.into(),
+        _ => bytes.into(),
+    }
+}
+
 /// The plugin uuid a `.streamDeckPlugin` file holds (its `<uuid>.sdPlugin` folder).
 pub fn install_root(bytes: &[u8]) -> Result<String, String> {
+    let bytes = &*unwrap_zipped(bytes);
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("not a Stream Deck plugin file: {e}"))?;
     (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/")))
         .find_map(|n| n.split('/').find(|p| p.ends_with(".sdPlugin")).map(|p| p.trim_end_matches(".sdPlugin").to_string()))
         .ok_or_else(|| "no <uuid>.sdPlugin folder inside".to_string())
 }
@@ -855,9 +895,11 @@ pub fn install_root(bytes: &[u8]) -> Result<String, String> {
 /// returns the plugin's uuid. An installed version is replaced.
 pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
     use std::io::Read as _;
+    let bytes = &*unwrap_zipped(bytes);
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("not a Stream Deck plugin file: {e}"))?;
+    // a zip made on Windows may separate folders with backslashes (Weather, 2026-10-16)
     let root = (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/")))
         .find_map(|n| n.split('/').find(|p| p.ends_with(".sdPlugin")).map(str::to_string))
         .ok_or("no <uuid>.sdPlugin folder inside")?;
     let target = plugins_dir.join(&root);
@@ -865,11 +907,16 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
     let _ = std::fs::remove_dir_all(&tmp);
     for i in 0..zip.len() {
         let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
-        let Some(name) = f.enclosed_name() else { continue };
-        let Ok(rel) = name.strip_prefix(name.iter().take_while(|c| !c.to_string_lossy().ends_with(".sdPlugin")).collect::<PathBuf>()) else { continue };
-        let Ok(rel) = rel.strip_prefix(&root) else { continue };
-        let out = tmp.join(rel);
-        if f.is_dir() {
+        // the path after `<uuid>.sdPlugin/`, as plain parts: nothing may climb out (`..`, a drive)
+        let name = f.name().replace('\\', "/");
+        let parts: Vec<&str> = name.split('/').filter(|p| !p.is_empty()).collect();
+        let Some(at) = parts.iter().position(|p| *p == root) else { continue };
+        let rel = &parts[at + 1..];
+        if rel.iter().any(|p| *p == ".." || *p == "." || p.contains(':')) {
+            continue;
+        }
+        let out = rel.iter().fold(tmp.clone(), |acc, p| acc.join(p));
+        if f.is_dir() || name.ends_with('/') {
             std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
             continue;
         }
@@ -883,10 +930,26 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
             let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o777));
         }
     }
-    let manifest: Value = std::fs::read(tmp.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or("the plugin has no readable manifest.json")?;
+    let raw = std::fs::read(tmp.join("manifest.json")).unwrap_or_default();
+    let Some(manifest) = serde_json::from_slice::<Value>(without_bom(&raw)).ok() else {
+        let _ = std::fs::remove_dir_all(&tmp);
+        // files that start with "ELGATO" are encrypted for Elgato's app (RME TotalMix 5.5.1, 2026-10-17)
+        return Err(if raw.starts_with(b"ELGATO") { "this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it" } else { "the plugin has no readable manifest.json" }.into());
+    };
     if !is_sd_manifest(&manifest) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err("not a Stream Deck plugin manifest".into());
+    }
+    // an OpenAction device plugin drives hardware of its own and has nothing for the deck (Touchy-Pad)
+    if manifest.get("DeviceNamespace").is_some() && manifest["Actions"].as_array().is_some_and(Vec::is_empty) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err("this plugin adds a device of its own to OpenDeck and has no actions for the deck".into());
+    }
+    // made for other systems only (Volume Controller is Linux only): say so, not "broken"
+    let systems: Vec<String> = manifest.get("OS").and_then(Value::as_array).map(|a| a.iter().filter_map(|o| o["Platform"].as_str().map(str::to_string)).collect()).unwrap_or_default();
+    if !systems.is_empty() && !systems.iter().any(|p| p == platform()) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!("this plugin is made for {} only", systems.join(", ")));
     }
     let _ = std::fs::remove_dir_all(&target);
     std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
@@ -896,6 +959,71 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn openaction_manifests_and_windows_zips_install() {
+        // CodePaths by target, no CodePath, no UUID (the catalog's OpenAction plugins)
+        let m = serde_json::json!({"Name": "System Information", "Actions": [{"UUID": "x.cpu"}], "CodePaths": {"x86_64-pc-windows-msvc": "a.exe", "aarch64-apple-darwin": "a-arm", "x86_64-apple-darwin": "a-mac"}, "CodePathWin": "w.exe", "CodePathMac": "m"});
+        assert!(is_sd_manifest(&m));
+        let dir = std::env::temp_dir().join("x.sys.sdPlugin");
+        let sd = read(&m, &dir).unwrap();
+        assert_eq!(sd.uuid, "x.sys", "the folder names it");
+        assert_eq!(sd.code_path, m["CodePaths"][target_triple()].as_str().unwrap(), "the native build for this machine");
+        // a zip made on Windows: folders with backslashes, and a plugin for Linux only says so
+        let zip = |manifest: &Value| {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            {
+                let mut z = zip::ZipWriter::new(&mut buf);
+                let o = zip::write::SimpleFileOptions::default();
+                z.start_file(r"x.w.sdPlugin\manifest.json", o).unwrap();
+                std::io::Write::write_all(&mut z, manifest.to_string().as_bytes()).unwrap();
+                z.start_file(r"x.w.sdPlugin\bin\..\..\evil.txt", o).unwrap();
+                z.finish().unwrap();
+            }
+            buf.into_inner()
+        };
+        let plugins = std::env::temp_dir().join(format!("hubdeck-sd-test-{}", std::process::id()));
+        std::fs::create_dir_all(&plugins).unwrap();
+        let ok = serde_json::json!({"Actions": [], "CodePath": "a.js"});
+        assert_eq!(install(&zip(&ok), &plugins).unwrap(), "x.w");
+        assert!(plugins.join("x.w.sdPlugin").join("manifest.json").exists());
+        assert!(!plugins.join("evil.txt").exists() && !std::env::temp_dir().join("evil.txt").exists(), "nothing climbs out");
+        let linux = serde_json::json!({"Actions": [], "CodePath": "a", "OS": [{"Platform": "linux"}]});
+        assert_eq!(install(&zip(&linux), &plugins).unwrap_err(), "this plugin is made for linux only");
+        let device = serde_json::json!({"Actions": [], "CodePath": "a", "DeviceNamespace": "tp"});
+        assert!(install(&zip(&device), &plugins).unwrap_err().contains("device of its own"));
+        // a .streamDeckPlugin zipped once more (DevOps for StreamDeck)
+        let wrapped = {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            {
+                let mut z = zip::ZipWriter::new(&mut buf);
+                let o = zip::write::SimpleFileOptions::default();
+                z.start_file(".gitkeep", o).unwrap();
+                z.start_file("x.w.streamDeckPlugin", o).unwrap();
+                std::io::Write::write_all(&mut z, &zip(&ok)).unwrap();
+                z.finish().unwrap();
+            }
+            buf.into_inner()
+        };
+        assert_eq!(install_root(&wrapped).unwrap(), "x.w");
+        assert_eq!(install(&wrapped, &plugins).unwrap(), "x.w");
+        assert_eq!(without_bom(b"\xEF\xBB\xBF{}"), b"{}", "Flight Tracker's manifest");
+        assert_eq!(without_bom(b"{}"), b"{}");
+        // Elgato's encrypted files
+        let encrypted = {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            {
+                let mut z = zip::ZipWriter::new(&mut buf);
+                z.start_file("x.e.sdPlugin/manifest.json", zip::write::SimpleFileOptions::default()).unwrap();
+                std::io::Write::write_all(&mut z, b"ELGATO\x01\x00\xb0^").unwrap();
+                z.finish().unwrap();
+            }
+            buf.into_inner()
+        };
+        assert!(install(&encrypted, &plugins).unwrap_err().contains("encrypted"));
+        assert!(!plugins.join(".x.e.sdPlugin.part").exists(), "nothing left behind");
+        let _ = std::fs::remove_dir_all(&plugins);
+    }
 
     fn manifest() -> Value {
         json!({

@@ -149,6 +149,81 @@ struct Plugin {
     token: String,
 }
 
+/// A plugin's running program. On Windows it and everything it starts sit in a job object that
+/// ends them all when this is dropped, or when HubDeck itself ends however it ends: a killed or
+/// crashed HubDeck left Flight Tracker running, and stopping ScriptDeck ended its `cmd.exe` but
+/// not the PowerShell under it (2026-10-17). Chrome and VS Code keep their helpers the same way.
+struct Running {
+    child: Child,
+    #[cfg(windows)]
+    _job: Option<job::Job>,
+}
+
+impl Running {
+    fn new(child: Child) -> Self {
+        #[cfg(windows)]
+        let _job = job::contain(&child);
+        Self {
+            child,
+            #[cfg(windows)]
+            _job,
+        }
+    }
+}
+
+impl std::ops::Deref for Running {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+
+impl std::ops::DerefMut for Running {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+
+#[cfg(windows)]
+mod job {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
+    };
+
+    pub struct Job(HANDLE);
+
+    // SAFETY: a job handle is a kernel handle, usable from any thread; only Drop closes it.
+    unsafe impl Send for Job {}
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            // SAFETY: the handle came from CreateJobObjectW and is closed once, here.
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    /// A job that ends the child's process tree when the last handle to it closes.
+    pub fn contain(child: &std::process::Child) -> Option<Job> {
+        // SAFETY: plain Win32 calls on a fresh job and the child's own process handle, which
+        // `child` keeps open for the call; the info struct outlives the call.
+        unsafe {
+            let job = Job(CreateJobObjectW(None, None).ok()?);
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(job.0, JobObjectExtendedLimitInformation, &info as *const _ as *const _, std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32).ok()?;
+            if let Err(e) = AssignProcessToJobObject(job.0, HANDLE(child.as_raw_handle())) {
+                log::warn!("plugin process {} not in a job: {e}", child.id());
+                return None;
+            }
+            Some(job)
+        }
+    }
+}
+
 struct Host {
     /// Installed plugins; Stream Deck plugins installed from the window join while HubDeck runs.
     plugins: RwLock<Vec<Plugin>>,
@@ -156,7 +231,7 @@ struct Host {
     /// plugin id -> messages to its connection.
     outbox: Mutex<HashMap<String, Sender<String>>>,
     /// plugin id -> its running program.
-    children: Mutex<HashMap<String, Child>>,
+    children: Mutex<HashMap<String, Running>>,
     /// plugin id -> (restarts so far, what happened last), for the plugins page.
     status: Mutex<HashMap<String, (u32, String)>>,
     port: u16,
@@ -238,7 +313,7 @@ pub fn discover(dir: &Path) -> Vec<(Manifest, PathBuf)> {
         if e.file_name().to_string_lossy().starts_with('.') {
             continue;
         }
-        let read = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string())).and_then(|v| {
+        let read = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<Value>(super::sdplugins::without_bom(&b)).map_err(|e| e.to_string())).and_then(|v| {
             if super::sdplugins::is_sd_manifest(&v) {
                 super::sdplugins::read(&v, &e.path()).map(super::sdplugins::to_manifest)
             } else {
@@ -332,7 +407,7 @@ fn launch(p: &Plugin, port: u16) {
         Ok(child) => {
             log::info!("plugin {} {} started", p.manifest.id, p.manifest.version);
             entry.1 = "running".into();
-            host.children.lock().unwrap_or_else(|e| e.into_inner()).insert(p.manifest.id.clone(), child);
+            host.children.lock().unwrap_or_else(|e| e.into_inner()).insert(p.manifest.id.clone(), Running::new(child));
         }
         Err(e) => {
             log::warn!("plugin {}: cannot start {:?}: {e}", p.manifest.id, p.manifest.command);
@@ -362,7 +437,7 @@ fn launch_sd(p: &Plugin, sd: &super::sdplugins::SdManifest, port: u16) {
             log::info!("Stream Deck plugin {} {} started{}", p.manifest.id, p.manifest.version, if child.is_none() { " (HTML)" } else { "" });
             entry.1 = "running".into();
             if let Some(child) = child {
-                host.children.lock().unwrap_or_else(|e| e.into_inner()).insert(p.manifest.id.clone(), child);
+                host.children.lock().unwrap_or_else(|e| e.into_inner()).insert(p.manifest.id.clone(), Running::new(child));
             }
         }
         Err(e) => {
@@ -564,7 +639,7 @@ pub fn install_sd(bytes: &[u8]) -> Result<String, String> {
     }
     let id = super::sdplugins::install(bytes, &host.dir)?;
     let dir = host.dir.join(format!("{id}.sdPlugin"));
-    let v: Value = std::fs::read(dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or("no manifest")?;
+    let v: Value = std::fs::read(dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(super::sdplugins::without_bom(&b)).ok()).ok_or("no manifest")?;
     let manifest = super::sdplugins::to_manifest(super::sdplugins::read(&v, &dir)?);
     let plugin = Plugin { manifest, dir, token: random_token() };
     {
@@ -609,12 +684,22 @@ fn serve(listener: TcpListener, engine: Sender<Msg>) {
     }
 }
 
+/// A message's JSON text: plugins send it as a text frame, some as a binary one (ScriptDeck's
+/// PowerShell, 2026-10-17), and Elgato's app reads both.
+fn json_text(m: &Message) -> Option<&str> {
+    match m {
+        Message::Text(t) => Some(t.as_str()),
+        Message::Binary(b) => std::str::from_utf8(b).ok(),
+        _ => None,
+    }
+}
+
 fn connection(stream: TcpStream, engine: Sender<Msg>) -> Result<(), String> {
     let mut ws: WebSocket<TcpStream> = tungstenite::accept(stream).map_err(|e| e.to_string())?;
     let host = HOST.get().ok_or("no host")?;
-    let first = match ws.read().map_err(|e| e.to_string())? {
-        Message::Text(t) => serde_json::from_str::<Value>(&t).map_err(|e| e.to_string())?,
-        _ => return Err("expected a register message".into()),
+    let first = match json_text(&ws.read().map_err(|e| e.to_string())?) {
+        Some(t) => serde_json::from_str::<Value>(t).map_err(|e| e.to_string())?,
+        None => return Err("expected a register message".into()),
     };
     // a Stream Deck plugin or one of its settings pages
     if first["event"] == "registerPropertyInspector" {
@@ -663,8 +748,9 @@ fn connection(stream: TcpStream, engine: Sender<Msg>) -> Result<(), String> {
             ws.send(Message::text(out)).map_err(|e| e.to_string())?;
         }
         match ws.read() {
-            Ok(Message::Text(t)) => {
-                if let (Ok(v), Some(dir)) = (serde_json::from_str::<Value>(&t), &sd_dir) {
+            Ok(m @ (Message::Text(_) | Message::Binary(_))) => {
+                let t = json_text(&m).unwrap_or_default();
+                if let (Ok(v), Some(dir)) = (serde_json::from_str::<Value>(t), &sd_dir) {
                     for out in super::sdplugins::incoming(&who, dir, &v) {
                         match out {
                             super::sdplugins::Incoming::Engine(m) => {
@@ -675,7 +761,7 @@ fn connection(stream: TcpStream, engine: Sender<Msg>) -> Result<(), String> {
                             super::sdplugins::Incoming::Nothing => {}
                         }
                     }
-                } else if let Ok(v) = serde_json::from_str::<Value>(&t) {
+                } else if let Ok(v) = serde_json::from_str::<Value>(t) {
                     if v["event"] == "getState" {
                         let _ = engine.send(Msg::ApiStateRequest(who.clone()));
                     } else {
@@ -729,8 +815,8 @@ fn inspector_connection(mut ws: WebSocket<TcpStream>, uuid: &str, engine: Sender
             break Err(e);
         }
         match ws.read() {
-            Ok(Message::Text(t)) => {
-                let Ok(v) = serde_json::from_str::<Value>(&t) else { continue };
+            Ok(m @ (Message::Text(_) | Message::Binary(_))) => {
+                let Ok(v) = serde_json::from_str::<Value>(json_text(&m).unwrap_or_default()) else { continue };
                 for (target, m) in super::sdplugins::from_inspector(&plugin, &action, &context, &v) {
                     match target {
                         super::sdplugins::Target::Plugin => send_raw(&plugin, &m),

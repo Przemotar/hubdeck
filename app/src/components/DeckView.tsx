@@ -880,6 +880,23 @@ interface Drag {
 const NO_LOOKS: Record<string, Look> = {};
 
 /** What `profile_check` flags in a profile (a missing program, sound, picture, device), by control id. */
+/** How long after a start "Connecting to your deck" shows before "No MasterHUB found" (a restart
+ * takes every module back in about 6 s). */
+const CONNECTING_MS = 15000;
+
+/** True while the hub has been looking for less than `CONNECTING_MS`; turns false by itself. */
+function useConnecting(lookingMs: number | null | undefined): boolean {
+  const left = lookingMs == null ? 0 : CONNECTING_MS - lookingMs;
+  const [over, setOver] = useState(false);
+  useEffect(() => {
+    setOver(left <= 0);
+    if (left <= 0) return;
+    const timer = window.setTimeout(() => setOver(true), left);
+    return () => window.clearTimeout(timer);
+  }, [left]);
+  return left > 0 && !over;
+}
+
 function useIssues(profile: Profile | null | undefined): Record<string, string> {
   const [issues, setIssues] = useState<Record<string, string>>({});
   const signature = profile ? profile.id + JSON.stringify(profile.controls) : "";
@@ -925,14 +942,16 @@ export function DeckView(props: DeckViewProps) {
   const leds = useLeds();
   const placed = placeModules(live.deck.modules, saved);
   const hasBase = live.deck.modules.some((m) => m.kind === "base");
+  // the first seconds after a start the hub is still taking the deck: "Connecting", then "No MasterHUB"
+  const connecting = useConnecting(live.deck.lookingMs);
 
   const shelf = arranging ? null : <Shelf {...props} id={id} dropOn={dropOn} setDropOn={setDropOn} issues={issues} />;
   if (!hasBase && placed.length === 0) {
     return (
       <div className="dk">
         <div className="deck-empty">
-          <p>{t("deck.noneTitle")}</p>
-          <p className="muted">{t("deck.none")}</p>
+          <p>{t(connecting ? "deck.connectingTitle" : "deck.noneTitle")}</p>
+          <p className="muted">{t(connecting ? "deck.connecting" : "deck.none")}</p>
         </div>
         {shelf}
       </div>

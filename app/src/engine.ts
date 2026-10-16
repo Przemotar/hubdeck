@@ -63,6 +63,16 @@ export interface Mode {
   params: Record<string, unknown>;
 }
 
+/** A timer that ran out (`engine::Ringing`). */
+export interface Ringing {
+  profile: string;
+  profileName: string;
+  /** `keys.3`, `<page>/keys.3` or `dial`. */
+  control: string;
+  label: string | null;
+  page: string | null;
+}
+
 export interface Page {
   id: string;
   name: string;
@@ -320,6 +330,8 @@ export interface EngineState {
   trying?: string | null;
   /** Comparing drafts on the deck: [which one, of how many]. */
   comparing?: [number, number] | null;
+  /** Timers that ran out, wherever they are (another page or profile); the window can stop them. */
+  ringing?: Ringing[];
   /** A call is on and the deck stays on its profile. */
   inCall?: boolean;
   /** During a call the deck shows the call app's profile. */
@@ -401,6 +413,8 @@ export interface CatalogPlugin {
   repository: string;
   icon: string;
   aiAssisted: boolean;
+  /** Checked in HubDeck on these systems ("Windows", "Windows, macOS"); null = not tried yet. */
+  tried?: string | null;
 }
 
 export interface PluginInfo {
@@ -608,6 +622,7 @@ export const api = {
   autoSeen: () => invoke("auto_seen"),
   crashReport: () => invoke<CrashReport | null>("crash_report"),
   crashSeen: () => invoke("crash_seen"),
+  timerStop: (profile: string, control: string) => invoke("timer_stop", { profile, control }),
   appsSeen: () => invoke("apps_seen"),
   callSwitchSet: (on: boolean) => invoke("call_switch_set", { on }),
   reducedMotionSet: (on: boolean) => invoke("reduced_motion_set", { on }),

@@ -51,6 +51,9 @@ pub struct DeckSnapshot {
     /// attached, so a window opened later showed every cap in the middle until it moved
     /// (owner, 2026-10-15).
     pub faders: BTreeMap<String, u8>,
+    /// While no module is attached yet: how long ago the hub began looking (ms). A restart takes
+    /// the deck back in about 6 s; until then the window says "Connecting", not "No MasterHUB".
+    pub looking_ms: Option<u64>,
 }
 
 /// The sensor only tells one upright position (vertical) from the rest (`PROTOCOL.md`); the rest
@@ -119,6 +122,8 @@ struct Inner {
     unresponsive: BTreeMap<String, ()>,
     paused: bool,
     faders: BTreeMap<String, u8>,
+    /// When the hub last began looking for modules (start, resume).
+    looking_since: Option<Instant>,
 }
 
 impl Inner {
@@ -143,6 +148,7 @@ impl Inner {
             unresponsive: self.unresponsive.keys().cloned().collect(),
             paused: self.paused,
             faders: self.faders.clone(),
+            looking_ms: self.looking_since.filter(|_| self.modules.is_empty()).map(|t| t.elapsed().as_millis() as u64),
         }
     }
 }
@@ -350,11 +356,16 @@ impl Deck {
     }
 
     fn run(&self, app: AppHandle) {
+        self.lock().looking_since = Some(Instant::now());
         settle_after_last_release(&app);
+        let mut first = true;
         while !self.stop.load(Ordering::SeqCst) {
             if self.held() {
                 std::thread::sleep(Duration::from_millis(50));
                 continue;
+            }
+            if !std::mem::take(&mut first) {
+                self.lock().looking_since = Some(Instant::now());
             }
             let hub = match Hub::start() {
                 Ok(hub) => Arc::new(hub),

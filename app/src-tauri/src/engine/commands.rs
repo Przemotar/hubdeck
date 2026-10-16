@@ -19,6 +19,12 @@ pub fn engine_state(engine: State<'_, Engine>) -> EngineState {
     engine.lock().state()
 }
 
+/// Stop a timer that ran out, wherever it is (the window's "Timer ran out" bar).
+#[tauri::command]
+pub fn timer_stop(engine: State<'_, Engine>, profile: String, control: String) {
+    engine.stop_timer(profile, control);
+}
+
 /// Draw every key and the dial again, e.g. after the identify marks of arrange mode.
 #[tauri::command]
 pub fn engine_redraw(engine: State<'_, Engine>) {

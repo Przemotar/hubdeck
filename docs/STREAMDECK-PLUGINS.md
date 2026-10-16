@@ -106,6 +106,28 @@ Deck + so encoder actions are offered.
 
 ## Tried
 
+On Windows (2026-10-16/17), on a test copy with `node scripts/ui/plugin-check.mjs <catalog ids>`:
+each plugin installed from the catalog, started, connected and drew a key it was put on. Not every
+action was pressed, and plugins that talk to an app or a service (Home Assistant, Philips Hue,
+Twitch, GoXLR...) were not connected to one. These carry "tried in HubDeck" in the catalog
+(`TRIED` in `sdcatalog.rs`).
+
+| Result | Plugins |
+|---|---|
+| Start, connect and draw (26) | Essentials for Spotify (also on the Mac), Discord, System Information, Weather, Home Assistant, Flight Tracker, Google Meet, Twitchat, Audio Output Switch, HWiNFO, Philips Hue, CPU, IFTTT, DevOps for StreamDeck, Mic Mute Toggle, WSProxy, YouTube Music Desktop, JetBrains IDE, Discord Volume Mixer, GoXLR Utility, Open Hardware Sensor, API Request, ScriptDeck, Uptime Kuma, HWiNFO Reader, Sound Deck |
+| Made for another system, say so (5) | VS Code, KMLink, Xcode, OSA Script (macOS only); Volume Controller (Linux only) |
+| Cannot run outside Elgato's app (1) | RME TotalMix FX 5.5.1: its files are encrypted for Elgato's Stream Deck app |
+| Not a plugin for the deck (1) | Touchy-Pad: drives a touch device of its own in OpenDeck, no actions |
+
+Fixed on the way (2026-10-17): a `.streamDeckPlugin` zipped once more (DevOps), a manifest with a
+UTF-8 byte order mark (Flight Tracker), a plugin with pre-releases only (Flight Tracker), a release
+with one file per system (ScriptDeck: the Windows PowerShell build, not the PowerShell 7 one), and
+messages sent as binary WebSocket frames (ScriptDeck). System Information holds 42-50 % of one core
+for a whole minute (measured every 10 s on the test copy, 2026-10-17), while Discord on the same
+OpenAction library stays at 0 % and the plugin's own loop only refreshes CPU and memory once a
+second; HubDeck sends it nothing that loops back. Cause not found yet; Settings > Plugins names a
+plugin over 20 %.
+
 | Plugin | System | Result |
 |---|---|---|
 | Essentials for Spotify 1.2.0.0 (Node, ntanis-dev) | macOS, 2026-10-13 | Installs, its icons on keys and in the window, its setup page opens through `openUrl`, global settings kept; play/pause and next work on the owner's deck. After its first setup it showed "no device" until the plugin was restarted (HubDeck restarted only the plugin); to look into: whether Stream Deck sends something after `setGlobalSettings` that this plugin waits for. Needs the user's own Spotify app (developer.spotify.com) and Premium. |

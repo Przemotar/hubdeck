@@ -332,6 +332,7 @@ pub fn run() {
             output::set_leds,
             engine::commands::engine_state,
             engine::commands::engine_redraw,
+            engine::commands::timer_stop,
             engine::commands::render_compare,
             engine::commands::calibration_start,
             engine::commands::calibration_set,

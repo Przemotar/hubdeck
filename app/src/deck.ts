@@ -27,6 +27,8 @@ export interface DeckSnapshot {
   paused: boolean;
   /** Where each fader stands now, by `controlKey`. */
   faders?: Record<string, number>;
+  /** While no module is attached yet: ms since the hub began looking (start, resume). */
+  lookingMs?: number | null;
 }
 
 /** Mirrors `UiEvent` in src-tauri/src/deck.rs. */

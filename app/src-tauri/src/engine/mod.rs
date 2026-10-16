@@ -194,6 +194,11 @@ pub enum Msg {
     },
     /// A local API client asked for the engine state.
     ApiStateRequest(String),
+    /// The window's Stop on a timer that ran out (profile, control).
+    StopTimer {
+        profile: String,
+        control: String,
+    },
     /// The session was locked or unlocked (Windows: Win+L, the lock screen after resume).
     #[cfg_attr(not(windows), allow(dead_code))]
     Locked(bool),
@@ -341,6 +346,8 @@ pub struct EngineState {
     pub trying: Option<String>,
     /// Comparing drafts on the deck: (which one, of how many).
     pub comparing: Option<(usize, usize)>,
+    /// Timers that ran out (the window names them and can stop them).
+    pub ringing: Vec<Ringing>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -405,6 +412,22 @@ pub(crate) struct Shared {
     /// A control the tour points at on the hardware (`keys.5`, `knobs.2`, `dial`): it blinks (holds
     /// still with reduced motion) from the first instant until the second, or until it is touched.
     pub highlight: Option<(String, Instant, Instant)>,
+    /// Timers that ran out and wait for a press (or the window's Stop).
+    pub ringing: Vec<Ringing>,
+}
+
+/// A timer that ran out, wherever it is (another page or profile), for the window.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ringing {
+    pub profile: String,
+    pub profile_name: String,
+    /// `keys.3`, `page-2/keys.3` or `dial`.
+    pub control: String,
+    /// The key's own caption, if it has one.
+    pub label: Option<String>,
+    /// The key page it is on; None = the main page (or the dial).
+    pub page: Option<String>,
 }
 
 /// A question on the deck: the options on the first keys, the question on the dial.
@@ -474,6 +497,7 @@ impl Shared {
             call_switch: self.store.settings.call_switch,
             auto_profiles: self.store.settings.auto_profiles,
             reduced_motion: self.store.settings.reduced_motion,
+            ringing: self.ringing.clone(),
         }
     }
 }
@@ -557,6 +581,7 @@ impl Engine {
             saver_preview: None,
             tour_dry_run: false,
             highlight: None,
+            ringing: Vec::new(),
         }));
         let (tx, rx) = unbounded();
         let engine = Self { data_dir: data_dir.to_path_buf(), tx: tx.clone(), shared: shared.clone(), app: app.clone() };
@@ -677,6 +702,11 @@ impl Engine {
 
     /// Tell the engine thread to redraw and the window about the new state.
     /// A question or a status for the deck changed.
+    /// Stop a timer that ran out (the window's Stop).
+    pub fn stop_timer(&self, profile: String, control: String) {
+        let _ = self.tx.send(Msg::StopTimer { profile, control });
+    }
+
     pub fn deck_ui(&self) {
         let _ = self.tx.send(Msg::DeckUi);
     }
@@ -1387,8 +1417,9 @@ struct Worker {
     frames: HashMap<String, (usize, Instant)>,
     /// The time the panel clock shows, so it redraws once a minute.
     clock_shown: String,
-    /// Countdown timers per control (`keys.3`, `dial`; gestures of a key share its timer).
-    timers: HashMap<String, timer::Timer>,
+    /// Countdown timers per profile and control (`keys.3`, `dial`; gestures of a key share its
+    /// timer): the same key on another profile is another timer.
+    timers: HashMap<(String, String), timer::Timer>,
     /// A clock's view, hours and stopwatch on a control (its gestures), by control.
     clocks: HashMap<String, timer::ClockState>,
     /// A pomodoro's phase and rounds, by control.
@@ -1563,6 +1594,7 @@ impl Worker {
                         self.redraw_keys();
                         self.dial_dirty = true;
                     }
+                    Msg::StopTimer { profile, control } => self.stop_timer(profile, control),
                     Msg::Notify { rgb, seconds } => {
                         self.notify_until = Some(Instant::now() + Duration::from_secs(seconds.clamp(1, 120)));
                         self.set_lighting(exec::Lighting { target: "base".into(), effect: Some(leds::Override { mode: LedMode::Breathing, rgb, speed: 85 }) });
@@ -2012,7 +2044,8 @@ impl Worker {
                     let control = id.split(':').next().unwrap_or(id).to_string();
                     let total = timer::total_of(&binding.params);
                     let now = Instant::now();
-                    let t = self.timers.entry(control).or_insert_with(|| timer::Timer::new(total));
+                    let profile_id = self.lock().active.clone().unwrap_or_default();
+                    let t = self.timers.entry((profile_id, control)).or_insert_with(|| timer::Timer::new(total));
                     if !t.running() && t.total != total && !matches!(cmd, timer::TimerCmd::Adjust(_)) && t.remaining(now) == t.total {
                         // its length was changed in the editor since
                         *t = timer::Timer::new(total);
@@ -2613,7 +2646,8 @@ impl Worker {
             }
             actions::TIMER => {
                 let fresh = timer::Timer::new(timer::total_of(p));
-                let t = self.timers.get(control).unwrap_or(&fresh);
+                let active = self.lock().active.clone().unwrap_or_default();
+                let t = self.timers.get(&(active, control.to_string())).unwrap_or(&fresh);
                 let caption = binding.look.label.clone().filter(|l| !l.trim().is_empty());
                 // not started yet: no ring, so a press shows at once (owner, 2026-10-14: "25:00" stayed the
                 // same for the first second and the press felt a second late)
@@ -3231,7 +3265,7 @@ impl Worker {
         }
         let mut sig = String::new();
         let mut dial_live = false;
-        let mut finished: Vec<String> = Vec::new();
+        let mut finished: Vec<(String, String)> = Vec::new();
         for (i, control) in (0..15).map(|i| (Some(i), control_id(page.as_deref(), &format!("keys.{i}")))).chain(std::iter::once((None, "dial".to_string()))) {
             let Some(b) = profile.controls.get(&control) else { continue };
             if let Some(face) = self.live_face(&control, b, now) {
@@ -3244,15 +3278,16 @@ impl Worker {
                 }
                 sig.push(';');
                 dial_live |= i.is_none();
-                if b.action == actions::TIMER && self.timers.get(&control).is_some_and(|t| t.finished(now) && t.running() && !t.rang) {
-                    finished.push(control.clone());
+                let key = (profile.id.clone(), control.clone());
+                if b.action == actions::TIMER && self.timers.get(&key).is_some_and(|t| t.finished(now) && t.running() && !t.rang) {
+                    finished.push(key);
                 }
             }
         }
-        // a timer on another page rings too
-        for (control, t) in &self.timers {
-            if t.running() && t.finished(now) && !t.rang && !finished.contains(control) && profile.controls.get(control).is_some_and(|b| b.action == actions::TIMER) {
-                finished.push(control.clone());
+        // a timer on another page or profile rings too
+        for (key, t) in &self.timers {
+            if t.running() && t.finished(now) && !t.rang && !finished.contains(key) {
+                finished.push(key.clone());
             }
         }
         // a pomodoro whose phase ran out rings and waits on the next phase
@@ -3266,16 +3301,22 @@ impl Worker {
                 timer::ring();
             }
         }
-        for control in finished {
-            let sound = profile.controls.get(&control).is_none_or(|b| actions::param_str(&b.params, "sound") != "off");
-            if let Some(t) = self.timers.get_mut(&control) {
+        for key in finished {
+            let binding = self.lock().store.profiles.get(&key.0).and_then(|p| p.controls.get(&key.1).cloned());
+            // the key no longer holds a timer (changed in the editor): it stays quiet
+            let Some(binding) = binding.filter(|b| b.action == actions::TIMER) else {
+                self.timers.remove(&key);
+                continue;
+            };
+            if let Some(t) = self.timers.get_mut(&key) {
                 t.rang = true;
             }
             self.update_leds();
-            if sound {
+            if actions::param_str(&binding.params, "sound") != "off" {
                 timer::ring();
             }
         }
+        self.publish_ringing(now);
         if sig != self.live_sig {
             self.live_sig = sig;
             keys_due = true;
@@ -3287,6 +3328,50 @@ impl Worker {
         if dial_due {
             self.dial_dirty = true;
         }
+    }
+
+    /// The timers that ran out, for the window (which one rings, with Stop): written to the shared
+    /// state and sent to the window only when the list changes.
+    fn publish_ringing(&mut self, now: Instant) {
+        let mut ringing: Vec<Ringing> = {
+            let s = self.lock();
+            self.timers
+                .iter()
+                .filter(|(_, t)| t.running() && t.finished(now))
+                .filter_map(|((pid, control), _)| {
+                    let p = s.store.profiles.get(pid)?;
+                    let b = p.controls.get(control).filter(|b| b.action == actions::TIMER)?;
+                    Some(Ringing {
+                        profile: pid.clone(),
+                        profile_name: p.name.clone(),
+                        control: control.clone(),
+                        label: b.look.label.clone().filter(|l| !l.trim().is_empty()),
+                        page: control.split_once('/').map(|(page, _)| page.to_string()),
+                    })
+                })
+                .collect()
+        };
+        ringing.sort_by(|a, b| (&a.profile, &a.control).cmp(&(&b.profile, &b.control)));
+        let state = {
+            let mut s = self.lock();
+            if s.ringing == ringing {
+                return;
+            }
+            s.ringing = ringing;
+            s.state()
+        };
+        publish_state(&self.app, state);
+    }
+
+    /// The window's Stop on a timer that ran out: back to its full time, not running.
+    fn stop_timer(&mut self, profile: String, control: String) {
+        if let Some(t) = self.timers.get_mut(&(profile, control)) {
+            t.apply(timer::TimerCmd::Reset, Instant::now());
+        }
+        self.live_sig.clear();
+        self.live_dirty = true;
+        self.update_leds();
+        self.publish_ringing(Instant::now());
     }
 
     /// The image reference to draw for a look: an animated GIF's current frame (`name#3`).
@@ -3320,9 +3405,12 @@ impl Worker {
             // the edge only for a timer that ran out where it cannot be seen (another page or
             // profile): one on the deck blinks itself (owner's pick 1a, 2026-10-16)
             timer_done: {
-                let page = self.lock().page.clone();
-                let seen = |c: &str| c == "dial" || (0..15).any(|i| control_id(page.as_deref(), &format!("keys.{i}")) == c);
-                self.timers.iter().any(|(c, t)| t.running() && t.finished(Instant::now()) && !seen(c))
+                let (active, page) = {
+                    let s = self.lock();
+                    (s.active.clone().unwrap_or_default(), s.page.clone())
+                };
+                let seen = |(p, c): &(String, String)| *p == active && (c == "dial" || (0..15).any(|i| control_id(page.as_deref(), &format!("keys.{i}")) == *c));
+                self.timers.iter().any(|(k, t)| t.running() && t.finished(Instant::now()) && !seen(k))
             },
             in_call: self.in_call.is_some(),
         };

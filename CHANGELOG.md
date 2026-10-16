@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.2
+
+- Stream Deck plugins from the catalog: of 33 popular ones checked, 26 now start and draw on
+  Windows, and the catalog marks them "tried in HubDeck". Fixed on the way: plugins with a build
+  per target, zips made on Windows or zipped twice, manifests with a byte order mark, plugins
+  with pre-releases only, releases with one file per system (the Windows build is picked), and
+  plugins that send binary messages. A plugin made for another system, encrypted for Elgato's
+  app, or one that drives a device of its own says why it cannot run.
+- Plugins end with HubDeck on Windows, also when HubDeck crashes, and stopping a plugin ends
+  everything it started.
+- A timer that ran out blinks red on its key; one on another page or profile shows in the window
+  with Stop. The same key on two profiles holds two timers.
+- Lights of this profile: one choice at the top (like every profile, one color, its own effect).
+- "Connecting to your deck..." for the first seconds after HubDeck starts, instead of "No
+  MasterHUB found".
+
 ## 0.1.1
 
 - Updates reach you: HubDeck looks for a new version at start and every 6 hours while it runs,

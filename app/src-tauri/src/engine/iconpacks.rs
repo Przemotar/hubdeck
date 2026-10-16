@@ -195,14 +195,14 @@ fn parse(files: &BTreeMap<String, Vec<u8>>) -> Result<Parsed<'_>, String> {
     };
     let installed = if let Some(list) = files.get(&format!("{root}icons.json")) {
         // Stream Deck: icons.json lists the pictures in icons/
-        let sd: SdManifest = serde_json::from_slice(manifest).map_err(|e| format!("the Stream Deck manifest is not readable: {e}"))?;
-        let list: Vec<SdIcon> = serde_json::from_slice(list).map_err(|e| format!("icons.json is not readable: {e}"))?;
+        let sd: SdManifest = serde_json::from_slice(super::sdplugins::without_bom(manifest)).map_err(|e| format!("the Stream Deck manifest is not readable: {e}"))?;
+        let list: Vec<SdIcon> = serde_json::from_slice(super::sdplugins::without_bom(list)).map_err(|e| format!("icons.json is not readable: {e}"))?;
         for icon in list {
             take(&format!("icons/{}", icon.path.trim_start_matches("icons/")), icon.name, icon.tags);
         }
         Installed { name: sd.name, author: sd.author, version: sd.version, license: String::new(), source: "streamdeck".into(), icons }
     } else {
-        let m: Manifest = serde_json::from_slice(manifest).map_err(|e| format!("manifest.json is not readable: {e}"))?;
+        let m: Manifest = serde_json::from_slice(super::sdplugins::without_bom(manifest)).map_err(|e| format!("manifest.json is not readable: {e}"))?;
         match m.icons {
             Some(list) => {
                 for icon in list {

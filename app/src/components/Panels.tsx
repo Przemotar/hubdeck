@@ -1878,6 +1878,31 @@ function CrashBanner() {
   );
 }
 
+/** A timer that ran out says where it is and stops from here (a timer on another page or profile
+ * only lights the base's edge; owner, 2026-10-16). */
+function RingingBanner({ view }: { view: EngineView }) {
+  useLanguage();
+  const ringing = view.state?.ringing ?? [];
+  return (
+    <>
+      {ringing.map((r) => {
+        const name = r.label ?? t("ringing.timer");
+        const page = r.page && view.profile?.id === r.profile ? (view.profile.pages?.find((p) => p.id === r.page)?.name ?? r.page) : r.page;
+        const where = r.profile !== view.state?.active ? t("ringing.onProfile", { profile: r.profileName }) : page ? t("ringing.onPage", { page }) : "";
+        return (
+          <div key={`${r.profile}/${r.control}`} className="banner is-warn" role="alert">
+            <Icon name="timer" />
+            <span className="grow">{t("ringing.text", { name, where })}</span>
+            <button className="tool small primary" onClick={() => api.timerStop(r.profile, r.control).catch(() => {})}>
+              {t("ringing.stop")}
+            </button>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function UpdateBanner() {
   useLanguage();
   const [info, dismiss] = useUpdateAvailable();
@@ -3007,6 +3032,7 @@ function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInsta
                       <div className="help">{p.description}</div>
                       <div className="meta">
                         <span>{t("plugins.byAuthor", { author: p.author })}</span>
+                        {p.tried && <span className="is-ok">{t("plugins.tried", { systems: p.tried })}</span>}
                         {p.aiAssisted && <span>{t("plugins.aiAssisted")}</span>}
                         <button className="link" onClick={() => api.openLink(p.repository).catch(() => {})}>
                           {t("plugins.source")}
@@ -3188,6 +3214,7 @@ export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live
   return (
     <>
       <UpdateBanner />
+      <RingingBanner view={view} />
       <CrashBanner />
       <AccessibilityBanner />
       {made.length > 0 && (
