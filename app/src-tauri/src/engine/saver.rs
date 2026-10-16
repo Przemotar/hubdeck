@@ -1,7 +1,7 @@
 //! The screensaver (roadmap phase 12 G; the assistant's advice the owner passed on, 2026-10-12):
 //! after some idle minutes a calm effect across all 15 keys, drawn here from the clock (no
 //! pictures), gone at the first touch, which only wakes the deck. Mood when you are away, nothing
-//! moving while you work.
+//! moving while you work. The window draws the same effects itself (src/saver.ts): keep the two alike.
 
 /// The effects (`Settings > Screens > Screensaver`).
 pub const EFFECTS: [&str; 3] = ["rain", "stars", "waves"];
@@ -100,6 +100,13 @@ pub fn body(effect: &str, t: f32, color: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rnd_matches_the_window() {
+        // the window draws the screensaver itself (src/saver.ts, pinned there too)
+        let got: Vec<f32> = [(0, 1), (3, 1), (97, 4), (69, 9), (1234, 11)].iter().map(|&(i, s)| rnd(i, s)).collect();
+        assert_eq!(got, [0.9995, 0.7379, 0.492, 0.1734, 0.0383]);
+    }
 
     #[test]
     fn every_effect_draws_and_moves() {

@@ -32,6 +32,8 @@ enum Cmd {
     Request(Request),
     /// Entities shown on screen; their states are polled.
     Watch(Vec<String>),
+    /// Read every entity for the window's lists (`names`).
+    List,
     Settings {
         url: String,
         token: Option<String>,
@@ -55,6 +57,28 @@ fn send(cmd: Cmd) {
 
 pub fn request(r: Request) {
     send(Cmd::Request(r));
+}
+
+/// Ask for the entity lists (the window opened a Home Assistant field).
+pub fn list() {
+    send(Cmd::List);
+}
+
+/// The entities in `/api/states`, by the lists the window offers: `ha.any` (everything),
+/// `ha.light`, `ha.scene` (scenes and scripts); the label is the entity's name in Home Assistant.
+pub fn entity_lists(states: &Value) -> Vec<(&'static str, Vec<super::names::Name>)> {
+    let all: Vec<super::names::Name> = states
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| {
+            let id = s["entity_id"].as_str()?;
+            let name = s["attributes"]["friendly_name"].as_str().unwrap_or(id);
+            Some(super::names::Name { value: id.to_string(), label: if name == id { id.to_string() } else { format!("{name} ({id})") } })
+        })
+        .collect();
+    let of = |domains: &[&str]| all.iter().filter(|n| domains.contains(&domain(&n.value))).cloned().collect::<Vec<_>>();
+    vec![("ha.light", of(&["light"])), ("ha.scene", of(&["scene", "script"])), ("ha.any", all.clone())]
 }
 
 pub fn watch(entities: Vec<String>) {
@@ -133,6 +157,18 @@ fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Rece
                 url = u;
                 token = t;
                 known.clear();
+                super::names::forget("ha.");
+            }
+            Ok(Cmd::List) => {
+                let Some(tok) = token.clone() else { continue };
+                let response = agent.get(format!("{}/api/states", url.trim_end_matches('/'))).header("Authorization", format!("Bearer {tok}")).call();
+                if let Ok(mut response) = response
+                    && let Ok(v) = response.body_mut().read_json::<Value>()
+                {
+                    for (kind, names) in entity_lists(&v) {
+                        super::names::set(kind, names);
+                    }
+                }
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return,
@@ -175,5 +211,22 @@ mod tests {
         assert_eq!(service_call(&Request::Service { service: "climate.set_temperature".into(), data: json!({"temperature": 21}) }).unwrap().0, "climate/set_temperature");
         assert!(service_call(&Request::Service { service: "nodot".into(), data: Value::Null }).is_err());
         assert!(is_on("on") && is_on("open") && !is_on("off") && !is_on("unavailable"));
+    }
+
+    #[test]
+    fn entity_lists_from_the_states_reply() {
+        // GET /api/states: an array of {entity_id, state, attributes: {friendly_name}}
+        let states = json!([
+            {"entity_id": "light.desk", "state": "on", "attributes": {"friendly_name": "Desk lamp"}},
+            {"entity_id": "scene.movie", "state": "scening", "attributes": {}},
+            {"entity_id": "script.good_night", "state": "off", "attributes": {"friendly_name": "Good night"}},
+            {"entity_id": "switch.kettle", "state": "off", "attributes": {"friendly_name": "Kettle"}}
+        ]);
+        let lists = entity_lists(&states);
+        let get = |k: &str| lists.iter().find(|(kind, _)| *kind == k).unwrap().1.clone();
+        assert_eq!(get("ha.light"), [super::super::names::Name { value: "light.desk".into(), label: "Desk lamp (light.desk)".into() }]);
+        assert_eq!(get("ha.scene").iter().map(|n| n.value.as_str()).collect::<Vec<_>>(), ["scene.movie", "script.good_night"]);
+        assert_eq!(get("ha.scene")[0].label, "scene.movie");
+        assert_eq!(get("ha.any").len(), 4);
     }
 }

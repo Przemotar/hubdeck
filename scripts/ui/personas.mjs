@@ -24,7 +24,16 @@ const ps = (...args) => execFileSync("powershell", ["-NoProfile", "-File", path.
 
 /** The persona's data folder: no profiles of the owner, its own apps, games and time in front. */
 function prepare(p) {
-  fs.rmSync(dir, { recursive: true, force: true });
+  // the copy before may still be letting its WebView2 folder go
+  for (let i = 0; ; i++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      break;
+    } catch (e) {
+      if (i >= 20) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
   fs.mkdirSync(path.join(dir, "profiles"), { recursive: true });
   const settings = JSON.parse(fs.readFileSync(path.join(real, "settings.json"), "utf8"));
   Object.assign(settings, { drafts: [], pinned: false });
@@ -60,17 +69,21 @@ async function run(p) {
     }
     if (!page) throw new Error("the test copy's window did not come up");
     page.setDefaultTimeout(30000);
-    await page.locator(".lib-tabs .tab").nth(2).waitFor();
+    // the Get started tab (Profiles comes first once the deck is set up, session 14)
+    const started = page.locator(".lib-tabs [role=\"tab\"]", { hasText: /Get started|Na start/ });
+    await started.waitFor();
     if (p.message.startsWith("Zaskocz")) {
       await page.evaluate(() => localStorage.setItem("hubdeck.language", "pl"));
       await page.reload();
     }
-    await page.locator(".lib-tabs .tab").nth(2).click();
+    await started.click();
     // the talk starts from "I know what I want" (the big button is the tour, which needs no AI)
     await page.fill("#as-know", p.message);
     await page.locator(".as-intro .row .tool").click();
     await page.locator(".as-consent").waitFor();
-    await page.fill("#as-first", p.message);
+    // the short consent shows the message from the card (session 11); a textarea only when it was empty
+    const first = page.locator(".as-consent textarea");
+    if (await first.count()) await first.fill(p.message);
     const t0 = Date.now();
     const at = {};
     const mark = (k) => (at[k] ??= Math.round((Date.now() - t0) / 100) / 10);

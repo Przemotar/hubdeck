@@ -98,7 +98,7 @@ Deck + so encoder actions are offered.
    commands above; settings stored per control in the profile.
 2. Install: open a `.streamDeckPlugin` (or drop it on the window), list plugins found from the
    Stream Deck app with Use; Node found or fetched with consent.
-3. Actions: plugin actions in the action library (icon and name from the manifest); their keys
+3. Actions: plugin actions under "What should it do?" (icon and name from the manifest); their keys
    drawn from `setImage` / `setTitle`; the dial from `setFeedback` layouts.
 4. Property inspector in the inspector (iframe).
 5. Verify with a handful of open-source plugins on both systems; record which work in

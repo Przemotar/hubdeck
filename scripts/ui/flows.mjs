@@ -98,10 +98,20 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(400);
     return (await visible(page, '.dk-ctl')) && !(await visible(page, '.tour-page'));
   });
+  await step(page, `${label}: with nothing selected the actions are listed and one dragged lands on a key`, async () => {
+    if (!(await visible(page, '.inspector .chooser-browse'))) return 'no action list with nothing selected';
+    const ctl = page.locator('.dk-ctl');
+    await page.locator('#action-search').fill('microphone');
+    await page.locator('.chooser-item', { has: page.locator('.nm', { hasText: /^Microphone mute$/ }) }).dragTo(ctl.nth(9));
+    await page.waitForTimeout(400);
+    await ctl.nth(9).click();
+    await page.waitForTimeout(250);
+    return (await page.locator('#action-name').getAttribute('data-action')) === 'core.mic' || 'key 10 is not Microphone mute';
+  });
   await step(page, `${label}: a key click opens its editor`, async () => {
     await page.locator('.dk-ctl').first().click();
     await page.waitForTimeout(300);
-    return visible(page, '#action');
+    return visible(page, '.inspector .action-card, .inspector .chooser:not(:has(.chooser-browse))');
   });
   await step(page, `${label}: Settings is a page of its own`, async () => {
     await page.getByRole('button', { name: /^Settings$/ }).first().click();
@@ -121,8 +131,8 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(300);
     return (await visible(page, '.dk-ctl')) && !(await visible(page, '.settings-page'));
   });
-  await step(page, `${label}: the left tabs switch (Profiles, Get started, Actions)`, async () => {
-    for (const tab of ['Profiles', 'Get started', 'Actions']) {
+  await step(page, `${label}: the left tabs switch (Profiles, Get started)`, async () => {
+    for (const tab of ['Profiles', 'Get started']) {
       await page.locator('.lib-tabs [role="tab"]', { hasText: tab }).click();
       await page.waitForTimeout(200);
       const sel = await page.locator('.lib-tabs [role="tab"][aria-selected="true"]').innerText();
@@ -134,14 +144,26 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     const ctl = page.locator('.dk-ctl');
     await ctl.nth(Math.min(5, (await ctl.count()) - 1)).click();
     await page.waitForTimeout(250);
-    return visible(page, '#action');
+    return visible(page, '.inspector .action-card, .inspector .chooser:not(:has(.chooser-browse))');
+  });
+  await step(page, `${label}: an action dragged from What should it do? lands on another key`, async () => {
+    const ctl = page.locator('.dk-ctl');
+    await ctl.nth(2).click();
+    await page.waitForTimeout(250);
+    if (!(await visible(page, '.inspector .chooser'))) await page.locator('.inspector .action-card button', { hasText: 'Change' }).click();
+    await page.waitForTimeout(250);
+    await page.locator('.chooser-tile', { has: page.locator('.nm', { hasText: /^Hotkey$/ }) }).dragTo(ctl.nth(7));
+    await page.waitForTimeout(400);
+    await ctl.nth(7).click();
+    await page.waitForTimeout(250);
+    return (await page.locator('#action-name').getAttribute('data-action')) === 'core.hotkey' || 'key 8 is not a Hotkey';
   });
   await step(page, `${label}: Settings while a key is picked, then back to the same editor`, async () => {
     await page.getByRole('button', { name: /^Settings$/ }).first().click();
     await page.waitForTimeout(200);
     await page.getByRole('button', { name: /Back to the deck/ }).click();
     await page.waitForTimeout(250);
-    return visible(page, '#action');
+    return visible(page, '.inspector .action-card, .inspector .chooser:not(:has(.chooser-browse))');
   });
   await step(page, `${label}: Build it yourself, step by step opens its page, a card can be tried, Back returns`, async () => {
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Get started' }).click();
@@ -156,7 +178,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     if (!(await page.locator('.builder-step.is-current', { hasText: 'Knob 1' }).isVisible())) return 'Pick did not move on to the knobs';
     await page.getByRole('button', { name: /Back to the deck/ }).click();
     await page.waitForTimeout(300);
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
     return (await visible(page, '.deck-area')) && !(await visible(page, '.builder-page'));
   });
   await step(page, `${label}: the tour: one question, the parts with Keep, the finale, the end, Exit back to the deck`, async () => {
@@ -181,7 +203,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     if (!(await visible(page, '.tour-end'))) return 'no end page';
     await page.getByRole('button', { name: /^Exit/ }).click();
     await page.waitForTimeout(300);
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
     return (await visible(page, '.deck-area')) && !(await visible(page, '.tour-page'));
   });
   // the tour to its end page, from the Get started tab
@@ -199,20 +221,20 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.getByRole('button', { name: 'See my deck' }).click();
     await page.waitForTimeout(300);
   };
-  await step(page, `${label}: Use as my home deck shows where things are once, in 5 steps with a place lit each`, async () => {
+  await step(page, `${label}: Use as my home profile shows where things are once, in 4 steps with a place lit each`, async () => {
     await page.evaluate(() => localStorage.removeItem('hubdeck.guideSeen'));
     await tourToEnd();
-    await page.getByRole('button', { name: /Use as my home deck/ }).click();
+    await page.getByRole('button', { name: /Use as my home profile/ }).click();
     await page.waitForTimeout(500);
-    for (let i = 1; i <= 5; i++) {
-      if (!(await page.locator('.guide-step', { hasText: `${i} of 5` }).isVisible())) return `no step ${i}`;
+    for (let i = 1; i <= 4; i++) {
+      if (!(await page.locator('.guide-step', { hasText: `${i} of 4` }).isVisible())) return `no step ${i}`;
       if (!(await visible(page, '.guide-spot'))) return `step ${i} lights nothing`;
       await page.locator('.guide-card button.primary').click();
       await page.waitForTimeout(150);
     }
     if (await visible(page, '.guide')) return 'Done did not close it';
     await tourToEnd();
-    await page.getByRole('button', { name: /Use as my home deck/ }).click();
+    await page.getByRole('button', { name: /Use as my home profile/ }).click();
     await page.waitForTimeout(400);
     return !(await visible(page, '.guide')) && (await visible(page, '.deck-area'));
   });
@@ -238,7 +260,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(700);
     const again = (await visible(page, '.as-body > .as-msg.is-user')) && !(await visible(page, '.as-consent'));
     await page.locator('.as-head .icon-btn').click();
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
     return again || 'asked again';
   });
   await step(page, `${label}: Ready for your apps lists its profiles, off, and a switch turns one on`, async () => {
@@ -251,7 +273,7 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.waitForTimeout(300);
     const on = await sw.isChecked();
     await sw.click();
-    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Actions' }).click();
+    await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
     return on || 'the switch did not turn on';
   });
   await step(page, `${label}: Settings toggles closed from the top bar too`, async () => {

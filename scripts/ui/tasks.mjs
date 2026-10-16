@@ -81,7 +81,16 @@ function tracker(page) {
   return t;
 }
 
-const lib = (page, name) => page.locator('.library-item', { has: page.locator('.nm', { hasText: new RegExp(`^${name}$`) }) });
+// actions are chosen in the right panel only (owner's pick 1a, 2026-10-16): "What should it
+// do?" is open on an empty control, behind Change on a set one; the first picks for the kind of
+// control are one click, anything else is typed into its search
+const libItem = async (page, t, name) => {
+  if (!(await page.locator('.inspector .chooser').isVisible())) await t.click(page.locator('.inspector .action-card button', { hasText: 'Change' }));
+  const tile = page.locator('.chooser-tile', { has: page.locator('.nm', { hasText: new RegExp(`^${name}$`) }) });
+  if (await tile.count()) return tile;
+  await t.type(page.locator('#action-search'), name);
+  return page.locator('.chooser-item', { has: page.locator('.nm', { hasText: new RegExp(`^${name}$`) }) });
+};
 const key = (page, i) => page.locator('.dk-ctl').nth(i);
 const KNOB = 16; // the first knob in the demo's drawing (after the 15 keys and the rollers)
 
@@ -90,8 +99,9 @@ const TASKS = [
     name: 'A key opens an app (Spotify)',
     run: async (page, t) => {
       await t.click(key(page, 2));
-      await t.click(lib(page, 'Open app, file or website'));
-      await t.click(page.getByRole('button', { name: 'Pick an app' }));
+      await t.click(await libItem(page, t, 'Open'));
+      // an empty app field opens its list by itself
+      if (!(await page.getByPlaceholder('Search apps').isVisible())) await t.click(page.getByRole('button', { name: 'Pick an app' }));
       await t.click(page.locator('.inspector button', { hasText: /^Spotify$/ }));
       return /spotify/i.test(await page.locator('#param-target').inputValue());
     },
@@ -100,7 +110,7 @@ const TASKS = [
     name: 'A key presses a shortcut (Copy)',
     run: async (page, t) => {
       await t.click(key(page, 3));
-      await t.click(lib(page, 'Hotkey'));
+      await t.click(await libItem(page, t, 'Hotkey'));
       await t.pick('select:has(option:text-is("Common shortcut..."))', { index: 1 });
       return /C$/.test(await page.locator('input[placeholder^="e.g. Ctrl"]').inputValue());
     },
@@ -109,18 +119,20 @@ const TASKS = [
     name: "A knob sets one app's volume (Spotify)",
     run: async (page, t) => {
       await t.click(key(page, KNOB));
-      await t.click(lib(page, 'Volume'));
+      await t.click(await libItem(page, t, 'Volume'));
       await t.pick('#param-target', { label: 'One app' });
-      await t.type(page.locator('#param-app'), 'spotify.exe');
-      return (await page.locator('#param-app').inputValue()) === 'spotify.exe';
+      // the app is picked from a list (open now, used recently, installed), not typed
+      if (!(await page.getByPlaceholder('Search apps').isVisible())) await t.click(page.locator('#param-app'));
+      await t.click(page.locator('.menu-row', { hasText: /^Spotify/ }).first());
+      return /Spotify/.test(await page.locator('#param-app').innerText());
     },
   },
   {
     name: 'A key mutes the microphone',
     run: async (page, t) => {
       await t.click(key(page, 4));
-      await t.click(lib(page, 'Microphone mute'));
-      return (await page.locator('#action').inputValue()) === 'core.mic';
+      await t.click(await libItem(page, t, 'Microphone mute'));
+      return (await page.locator('#action-name').getAttribute('data-action')) === 'core.mic';
     },
   },
   {
@@ -137,7 +149,7 @@ const TASKS = [
     name: 'A deck for an app that comes by itself (Discord)',
     run: async (page, t) => {
       const before = await page.locator('.topbar .profile-chip, header button').count();
-      await t.click(page.getByRole('button', { name: 'New deck' }));
+      await t.click(page.getByRole('button', { name: 'New profile' }));
       await t.click(page.getByRole('button', { name: /For an app or game/ }));
       await t.click(page.getByRole('button', { name: /^Discord/ }).last());
       return (await page.locator('header button').count()) >= before;
@@ -146,8 +158,9 @@ const TASKS = [
   {
     name: 'The edge light in one color',
     run: async (page, t) => {
-      // the Edge chip under the deck opens Lights and screens (owner's pick 5a)
+      // the Edge chip opens this profile's lights; every profile's are one click on (owner's pick 3a, 2026-10-16)
       await t.click(page.locator('button.dk-chip', { hasText: 'Edge' }));
+      await t.click(page.getByRole('button', { name: 'Lights for every profile' }));
       await t.pick(`select[aria-label="Light style"], .settings-content select`, 'color');
       const ok = await page.locator('.settings-content input[type=color]').first().isVisible();
       await page.getByRole('button', { name: /Back to the deck/ }).click();
@@ -161,7 +174,7 @@ const TASKS = [
       await t.type(page.locator('.tab-input'), 'Games', true);
       await t.click(page.locator('.page-bar .tab', { hasText: 'Main' }));
       await t.click(key(page, 6));
-      await t.click(lib(page, 'Go to page'));
+      await t.click(await libItem(page, t, 'Go to page'));
       const select = page.locator('#param-page');
       if (await select.count()) await t.pick('#param-page', { label: 'Games' });
       return true;

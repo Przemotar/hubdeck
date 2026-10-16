@@ -6,7 +6,11 @@
 //! hears from the computer keeps sending. Quit HubDeck first on macOS (it opens modules
 //! exclusively); on Windows it can run alongside.
 //!
-//!     cargo run -p mh-device --example rollers -- [seconds] [--keepalive 1000]
+//!     cargo run -p mh-device --example rollers -- [seconds] [--keepalive 1000] [--send 02:30:32] [--knobs]
+//!
+//! `--send` writes one output report (hex bytes, padded to 64 B) after the start, through the
+//! forbidden-command check: does a module that heard from the computer start sending?
+//! `--knobs` reads the knobs module instead (same M0 firmware family, works on the Mac).
 //!
 //! Turn both rollers both ways while it runs. Expected: `01 2a ...` reports (PROTOCOL.md, tag
 //! 0x2A: `01 02 r1 r2`, 0 up, 1 down, ff none).
@@ -21,10 +25,11 @@ fn main() {
     let seconds: u64 = args.iter().find_map(|a| a.parse().ok()).unwrap_or(20);
     let keepalive = args.iter().position(|a| a == "--keepalive").and_then(|i| args.get(i + 1)).and_then(|v| v.parse::<u64>().ok()).map(Duration::from_millis);
     let api = HidApi::new().expect("hidapi");
-    let kind = ModuleKind::Rollers;
+    let send: Option<Vec<u8>> = args.iter().position(|a| a == "--send").and_then(|i| args.get(i + 1)).map(|v| v.split(':').map(|b| u8::from_str_radix(b, 16).expect("hex byte")).collect());
+    let kind = if args.iter().any(|a| a == "--knobs") { ModuleKind::Knobs } else { ModuleKind::Rollers };
     let found: Vec<_> = api.device_list().filter(|d| d.vendor_id() == VENDOR_ID && d.product_id() == kind.product_id()).collect();
     if found.is_empty() {
-        println!("no rollers module found (product id {:04x})", kind.product_id());
+        println!("no {} module found (product id {:04x})", kind.name(), kind.product_id());
         return;
     }
     for d in &found {
@@ -48,7 +53,20 @@ fn main() {
     };
     read_firmware("start");
     power_state();
-    println!("reading for {seconds} s{}; turn both rollers both ways", keepalive.map_or(String::new(), |k| format!(", a firmware read every {} ms", k.as_millis())));
+    if let Some(bytes) = &send {
+        if mh_protocol::safety::is_forbidden(bytes) {
+            println!("refused: {bytes:02x?} is a forbidden command");
+            return;
+        }
+        let mut out = bytes.clone();
+        out.resize(64, 0);
+        match dev.write(&out) {
+            Ok(n) => println!("sent {:02x?} ({n} B)", &bytes[..]),
+            Err(e) => println!("send failed: {e}"),
+        }
+    }
+    let every = keepalive.map_or(String::new(), |k| format!(", a firmware read every {} ms", k.as_millis()));
+    println!("reading for {seconds} s{every}; turn the {} both ways", kind.name());
     let started = Instant::now();
     let (mut last_alive, mut last_power) = (Instant::now(), Instant::now());
     let mut reports = 0u32;

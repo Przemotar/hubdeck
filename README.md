@@ -24,13 +24,27 @@
   <a href="#faq">FAQ</a>
 </p>
 
-![HubDeck in 23 seconds: a key pressed on the deck gets an action picked in the window, the dial changes its face, ready decks switch with a click](docs/images/hubdeck-film.gif)
+![HubDeck: the deck drawn live with its LED colors, a key selected and what it does on the right](docs/images/hubdeck-main.png)
 
-![HubDeck: the deck drawn live with its LED colors, the action library and the key editor](docs/images/hubdeck-main.png)
+![HubDeck in 23 seconds: a key pressed on the deck gets an action picked in the window, the dial changes its face, ready decks switch with a click](docs/images/hubdeck-film.gif)
 
 > HubDeck is an independent project. It is not made, endorsed or supported by Cooler Master.
 > "Cooler Master" and "MasterHUB" are trademarks of their owner and are used here only to say
 > which hardware this software works with.
+
+## Supported modules
+
+| Module | Windows 10/11 | macOS 12+ |
+|---|---|---|
+| Base with the edge light | ✓ | ✓ |
+| 15 LCD keys | ✓ | ✓ |
+| Dial with its round screen | ✓ | ✓ |
+| 3 knobs | ✓ | ✓ |
+| 5 faders | ✓ | ✓ |
+| 2 rollers | ✓ | ✓ |
+
+Checked module by module on real hardware. Attach and take off modules while HubDeck runs; it finds
+where each one sits and how it is turned. One base at a time for now.
 
 ## Highlights
 
@@ -44,7 +58,25 @@
   from a catalog.
 - **Safe by design.** Firmware is never written; dangerous commands are refused in code. Nothing
   leaves your computer unless you turn it on ([PRIVACY.md](PRIVACY.md)).
-- **Light.** About 1 % of one CPU core and 45 MB of memory in the tray.
+- **Light.** About 3 % of one CPU core and 40 MB of memory in the tray with a clock and meters on the keys; 9 % and 62 MB with 22 animations on the deck (Windows, measured before the release).
+
+## Built from what deck owners complain about
+
+Before and while building HubDeck we read what owners of the MasterHUB and of other decks (Stream
+Deck, Loupedeck, Logitech MX Creative Console, Razer Stream Controller) say goes wrong: reviews,
+vendor forums, GitHub issues and about 1,200 Reddit posts of 2025-2026. The full list, with every
+source, is in [docs/PAIN-POINTS.md](docs/PAIN-POINTS.md). The ones that shaped HubDeck most:
+
+| What owners say | What HubDeck does |
+|---|---|
+| "Nearly every update ... breaks almost everything"; people roll back by hand ([r/elgato](https://redd.it/1tg0k8o), [r/elgato](https://redd.it/1vhfyp9)) | Nothing installs until you click Install, with the changes shown first; **Go back to the version before** in Settings, signed like any update, your profiles backed up first |
+| A press does nothing, or arrives seconds later, and you cannot tell which ([r/elgato](https://redd.it/1tin7ed)) | Every press **frames the key at once**; an action that failed leaves a **red corner** and the window says why |
+| Official integrations broken for weeks: OBS, weather, Spotify ([r/elgato](https://redd.it/1tu968o), [r/elgato](https://redd.it/1u7j0sq)) | OBS, Streamlabs, now playing, weather and Home Assistant are **built in**; Stream Deck plugins run beside them, restarted when they crash, stoppable by hand |
+| Forced accounts, a store, an ad in paid software ([r/elgato](https://redd.it/1vei16t), [r/elgato](https://redd.it/1ueyj99)) | **No account, no store, no ads, no telemetry.** Open source |
+| The vendor walks away and the hardware becomes a brick ([r/Loupedeck](https://redd.it/1ux25ju), the MasterHUB itself) | MIT or Apache-2.0, the protocol documented in [PROTOCOL.md](PROTOCOL.md): anyone can keep it going |
+| "What do I use it for if I don't stream?" (the most discussed non-hardware thread, [r/elgato](https://redd.it/1wh69jh)) | A tour builds a deck for your modules and apps in minutes; **ideas from other deck owners**, taken from that thread, are one click away |
+| Companion apps that take 2-4 GB of memory ([Logitech reviews](https://www.target.com/p/logitech-mx-creative-console-9-customizable-buttons-with-lcd-screens-graphite/-/A-1006718799)) | Measured before every release: 9.4 % of one CPU core and 62 MB with 22 animations on the deck, memory flat over 5 minutes (Windows) |
+| "Commands did not save properly", a setup lost ([APH Networks](https://aphnetworks.com/reviews/cooler-master-masterhub/2)) | Every change saved at once and written safely; daily backups with Restore |
 
 ## Install
 
@@ -71,6 +103,10 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
 ### Known issues
 
+- macOS: this version's window was last tried on a Mac before its rebuild (2026-10-15); the macOS
+  build comes from CI and has not yet run on a Mac. Please report what you see.
+- The window shows the deck's animations (GIFs, the screensaver) at about 8 frames a second; the
+  deck itself plays them at 15 or more.
 - macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
   to restart that module by itself, and taking it off the base and putting it back always helps.
 - macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
@@ -82,7 +118,10 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
 ## What it does
 
-Everything in detail. Coming next: Twitch actions (built, waiting for the app's Twitch
+<details>
+<summary><b>Everything in detail</b> (modules, profiles, actions, plugins, the tour and the assistant, integrations, lights, looks, ready-made profiles, safety)</summary>
+
+Coming next: Twitch actions (built, waiting for the app's Twitch
 registration), a shared profiles gallery, more than one base.
 
 **Deck and modules**
@@ -108,12 +147,12 @@ registration), a shared profiles gallery, more than one base.
   keys, and a mode that games can read), type text, scroll.
 - System, per-app, "app in front" and microphone volume (per app on macOS 14.2 or later); microphone mute for every app; switch the
   speakers or microphone; play sounds (a small soundboard).
-- Media control, now playing with cover art, seek in 12 players; monitor brightness (DDC/CI);
+- Multimedia (play, pause, tracks), now playing with cover art, seek in 12 players; monitor brightness (DDC/CI);
   system monitor (CPU, memory, GPU, temperatures, on macOS too); clock and timer; deck brightness.
 
 **Plugins made for Stream Deck**
 - Install a `.streamDeckPlugin`, or pick one from a catalog of about 200 open-source plugins
-  (Settings > Plugins), and its actions join the library: Discord, Spotify, OBS, Home Assistant,
+  (Settings > Plugins), and its actions join "What should it do?": Discord, Spotify, OBS, Home Assistant,
   Philips Hue, Govee, VS Code and more. Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the inspector.
   Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
@@ -170,13 +209,16 @@ registration), a shared profiles gallery, more than one base.
 - No account, no cloud, no telemetry. HubDeck goes online only for the update check (on by default,
   Settings > Updates), album covers of what plays, and what you turn on; the full list is in
   [PRIVACY.md](PRIVACY.md).
-- About 1 % of one CPU core and 45 MB of memory while it waits in the tray (measured on the
-  release build with the deck attached); the window exists only while it is open.
+- About 3 % of one CPU core and 40 MB of memory while it waits in the tray (measured on the
+  release build with the deck attached, a clock and meters on the keys); the window exists only
+  while it is open.
 - If HubDeck ever stops unexpectedly, a small guard hands the deck back to its firmware and starts
-  HubDeck again; the window then says when it happened and lets you copy the details for a bug
-  report (nothing is sent).
+  HubDeck again; the window then says when it happened, and *Report this crash* opens a bug
+  report with the details filled in (nothing is sent until you send it).
 - Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
   flashes); English and Polish.
+
+</details>
 
 ## Screenshots
 
@@ -185,9 +227,10 @@ lights up on the deck.
 
 ![The tour: a deck made at once and walked through part by part](docs/images/hubdeck-tour.png)
 
-**Settings**: one page with sections; Lights and screens, Connections, Plugins, Backups, Updates.
+**Plugins**: about 200 open-source Stream Deck plugins one click away; each shows its CPU and
+memory, and you can stop and start it by hand.
 
-![Settings](docs/images/hubdeck-settings.png)
+![Settings > Plugins](docs/images/hubdeck-settings.png)
 
 ## FAQ
 
@@ -261,8 +304,10 @@ More in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Feedback and contributing
 
-- Something does not work: [report a problem](https://github.com/Przemotar/hubdeck/issues/new?template=bug.yml)
-  (Settings > Help and about fills in your version and saves a diagnostics file to attach).
+- Something does not work: **Feedback > Report a problem** in HubDeck's top bar opens
+  [the form](https://github.com/Przemotar/hubdeck/issues/new?template=bug.yml) with your version,
+  system, modules and the last errors filled in (addresses, keys and paths left out); you see it
+  all before sending. After a crash, the window offers **Report this crash** the same way.
 - An idea: [suggest a feature](https://github.com/Przemotar/hubdeck/issues/new?template=feature.yml).
 - Questions, setups, profiles: [Discussions](https://github.com/Przemotar/hubdeck/discussions).
 - Anything you prefer not to post in public: przemotar+hubdeck@gmail.com

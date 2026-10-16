@@ -1,6 +1,6 @@
 // Where things are (owner's pick 2a, 2026-10-14): after "Use as my home deck" on the tour's end
 // page, five places in the window, one at a time: a dark veil with a cut-out around the place and
-// a small card beside it (step n of 5, a title, one sentence, Skip and Next/Done). Esc or Skip
+// a small card beside it (step n of 4, a title, one sentence, Skip and Next/Done). Esc or Skip
 // ends it; it shows once.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -9,7 +9,6 @@ import { t, useLanguage, type Key } from "../i18n";
 /** The places, in order: what to light up (the first one found) and what to say. */
 const STEPS: { target: string; title: Key; text: Key }[] = [
   { target: ".workspace > aside.inspector", title: "guide.inspector.title", text: "guide.inspector.text" },
-  { target: "[data-guide='library']", title: "guide.library.title", text: "guide.library.text" },
   { target: "[data-guide='newDeck']", title: "guide.newDeck.title", text: "guide.newDeck.text" },
   { target: "[data-guide='profiles']", title: "guide.profiles.title", text: "guide.profiles.text" },
   { target: "[data-guide='edge']", title: "guide.edge.title", text: "guide.edge.text" },

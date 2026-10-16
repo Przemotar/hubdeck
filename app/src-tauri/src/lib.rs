@@ -189,6 +189,43 @@ pub fn guard(args: &[String]) {
     guard::run(args);
 }
 
+/// One HubDeck on the real deck. The single-instance plugin lets a second start run on when it
+/// finds the first one's lock but not its message window (it only exits after handing the start
+/// over to that window), and on 2026-10-14 four copies ran on the deck at once, each with its own
+/// engine (flickering screensaver, the owner's "rozpierdol"). This lock is a file in the user's
+/// temp folder, held for the life of the process (the system lets it go when the process ends,
+/// also when it is killed); a copy that quits for a restart has 10 s to let it go.
+fn take_the_deck_lock() {
+    static HELD: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+    let path = std::env::temp_dir().join("hubdeck-deck.lock");
+    let file = match std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            log::warn!("deck lock {}: {e}; going on without it", path.display());
+            return;
+        }
+    };
+    let waited = std::time::Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(std::fs::TryLockError::WouldBlock) if waited.elapsed() < std::time::Duration::from_secs(10) => std::thread::sleep(std::time::Duration::from_millis(250)),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                log::warn!("another HubDeck has the deck (lock {}); this one quits", path.display());
+                std::process::exit(0);
+            }
+            Err(std::fs::TryLockError::Error(e)) => {
+                log::warn!("deck lock {}: {e}; going on without it", path.display());
+                return;
+            }
+        }
+    }
+    if waited.elapsed() > std::time::Duration::from_millis(300) {
+        log::info!("deck lock taken after {:?} (the copy before was quitting)", waited.elapsed());
+    }
+    let _ = HELD.set(file);
+}
+
 /// `hubdeck cli ...`: one command against the running app; the exit code for the shell.
 pub fn cli(args: &[String]) -> i32 {
     engine::cli::run(args)
@@ -217,6 +254,9 @@ pub fn run() {
             let _ = engine::exec::APP.set(app.handle().clone());
             log::info!("HubDeck {} starting", app.package_info().version);
             log_panics();
+            if testing.is_none() || automation::real_deck() {
+                take_the_deck_lock();
+            }
             let data_dir = match testing {
                 Some(a) => a.data_dir.clone(),
                 None => app.path().app_data_dir()?,
@@ -279,6 +319,8 @@ pub fn run() {
         // closing the window destroys it (and its web view); the deck keeps working, the tray
         // opens it again, Quit is in the tray menu (see RunEvent::ExitRequested below)
         .invoke_handler(tauri::generate_handler![
+            engine::commands::window_log,
+            engine::commands::names_list,
             deck_snapshot,
             deck_pause,
             base_turn_set,
@@ -338,8 +380,10 @@ pub fn run() {
             engine::starter::profile_for_app,
             engine::auto::auto_seen,
             guard::crash_report,
-            engine::dial_frame,
-            engine::keys_frame,
+            engine::mirror_listen,
+            engine::mirror_unlisten,
+            engine::saver_shown,
+            engine::commands::page_add_way,
             guard::crash_seen,
             engine::commands::profile_switch_in,
             engine::states::apps_seen,
@@ -359,8 +403,11 @@ pub fn run() {
             engine::iconpacks::iconpack_remove,
             engine::share::gallery_add,
             tray::diagnostics_save,
+            tray::diagnostics_brief,
             update::update_check,
             update::update_install,
+            update::update_previous,
+            update::update_rollback,
             update::update_settings_get,
             update::update_settings_set,
             engine::commands::spotify_status,
@@ -381,6 +428,8 @@ pub fn run() {
             engine::commands::midi_ports,
             engine::commands::audio_devices,
             engine::commands::plugins_list,
+            engine::commands::plugin_stop,
+            engine::commands::plugin_start,
             engine::commands::sd_install,
             engine::builder::builder_options,
             engine::builder::builder_draft,

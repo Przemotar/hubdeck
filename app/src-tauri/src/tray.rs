@@ -116,6 +116,13 @@ pub fn diagnostics_save(app: AppHandle) -> Result<(), String> {
     save_diagnostics(&app)
 }
 
+/// The short diagnostics for the bug form (Report a problem).
+#[tauri::command]
+pub fn diagnostics_brief(app: AppHandle) -> Result<String, String> {
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    Ok(crate::engine::diagnostics::brief(&dir.join("hubdeck.log"), &app.package_info().version.to_string(), &app.state::<Deck>().snapshot()))
+}
+
 /// Write the diagnostics file into the log folder and show it.
 fn save_diagnostics(app: &AppHandle) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;

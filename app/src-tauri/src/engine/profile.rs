@@ -58,6 +58,13 @@ pub struct Look {
     /// Set by the engine while drawing, never saved.
     #[serde(skip)]
     pub face: bool,
+    /// A thin light frame for a moment: the press arrived (owner's pick 1a, 2026-10-16; users of
+    /// other decks press again when nothing shows, `docs/PAIN-POINTS.md` RD2). Never saved.
+    #[serde(skip)]
+    pub pressed: bool,
+    /// A red corner: the last press of this key failed; the window says why. Never saved.
+    #[serde(skip)]
+    pub failed: bool,
 }
 
 fn saver_minutes() -> u32 {

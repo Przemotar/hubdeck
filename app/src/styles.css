@@ -236,6 +236,9 @@ button {
 
 /* ---------- top bar ---------- */
 .topbar {
+  /* its menus (Feedback, more profiles) open over the banners below it */
+  position: relative;
+  z-index: 30;
   height: 34px;
   flex: none;
   display: flex;
@@ -1123,6 +1126,22 @@ button.chip.is-active {
 /* multi-action steps, pages */
 .page-bar {
   justify-content: center;
+}
+/* a page nothing on the deck opens (owner's pick 1a, 2026-10-16) */
+.page-warn {
+  gap: 6px;
+  align-items: center;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--warnln);
+  border-radius: 999px;
+  background: var(--warnbg);
+  color: var(--warntx);
+  font-size: 12.5px;
+}
+.page-warn > svg {
+  color: var(--warn);
+  width: 14px;
+  height: 14px;
 }
 .steps {
   display: flex;
@@ -2156,6 +2175,30 @@ button.chip.is-active {
   height: 100%;
   object-fit: contain;
   border-radius: 5px;
+}
+
+/* an app chosen from a list, shown like a field: its icon, its name, a chevron */
+.app-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.app-choice > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-choice.is-empty > span {
+  color: var(--tx2, var(--tx));
+  opacity: 0.75;
+}
+.app-choice img {
+  border-radius: 4px;
 }
 
 .link-btn {
@@ -4810,4 +4853,272 @@ button.lib-foot:focus-visible span {
 }
 .as-throw-all {
   margin: 2px 0 6px;
+}
+
+/* "What should it do?": the one place an action is chosen (owner's pick 1a, 2026-10-16) */
+.chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.chooser-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.chooser-head .label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.chooser .sub-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.chooser .sub-label .n {
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.chooser-firsts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.chooser-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r);
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--ln2);
+  color: var(--tx);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+.chooser-tile span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chooser-tile:hover {
+  background: var(--hov);
+  box-shadow: inset 0 0 0 1px var(--accln);
+}
+.chooser-tile.is-current {
+  background: var(--accbg);
+  box-shadow: inset 0 0 0 1px var(--accln);
+}
+.chooser .chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chooser .chips-row .chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chooser-groups {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r);
+  box-shadow: inset 0 0 0 1px var(--ln);
+  overflow: hidden;
+}
+.chooser-group + .chooser-group {
+  border-top: 1px solid var(--ln);
+}
+.chooser-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chooser-group-head:hover {
+  background: var(--hov);
+}
+.chooser-group-head .nm {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chooser-group-head .n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--tx3);
+}
+.chooser-group-head > .i {
+  width: 14px;
+  height: 14px;
+  color: var(--tx3);
+}
+.chooser-list {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 4px 6px;
+}
+.chooser-item {
+  height: auto;
+  min-height: 30px;
+}
+.chooser-foot {
+  gap: 4px 14px;
+}
+.chooser-foot .link-btn .i {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.action-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--ln2);
+}
+.action-card .library-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.action-card .library-icon .i,
+.action-card .library-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.action-card .grow {
+  min-width: 0;
+}
+.action-card b {
+  display: block;
+  font-weight: 600;
+}
+.action-card small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--tx3);
+}
+.action-card small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* HubDeck's ideas inside the chooser read as one more section of it */
+.chooser > .field {
+  gap: 6px;
+}
+.chooser > .field > .label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.chooser > .field > .help {
+  display: none;
+}
+
+/* panels over the window (docs/FLOWS.md, difference 4): the editor on the right stays */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 8, 12, 0.5);
+}
+:root[data-theme="light"] .sheet-backdrop {
+  background: rgba(23, 23, 28, 0.28);
+}
+.sheet {
+  width: min(520px, 100%);
+  max-height: min(88vh, 900px);
+  display: flex;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg1);
+  box-shadow: var(--popsh);
+}
+.sheet > .inspector {
+  width: 100%;
+  max-height: inherit;
+  border-left: 0;
+}
+/* once set up, Profiles comes first (owner's pick 2a, 2026-10-16; docs/FLOWS.md difference 3) */
+.lib-tabs.is-set-up [data-guide="profiles"] {
+  order: -1;
+}
+.chooser-browse {
+  margin: -4px 0 0;
+  transition: color 0.2s;
+}
+.chooser-browse.is-nudged {
+  color: var(--acc2);
+}
+.chip .chip-note {
+  margin-left: 6px;
+  font-size: 10.5px;
+  color: var(--tx3);
+}
+.pill.is-warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+/* Help and feedback in the top bar (owner's pick 1a, 2026-10-16) */
+.help-menu .tool.icon-only {
+  padding-inline: 8px;
+}
+.help-menu .tool.icon-only svg {
+  width: 18px;
+  height: 18px;
+}
+.help-pop {
+  left: auto;
+  right: 0;
+  width: 340px;
+}
+.help-pop .menu-row > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted, #9a96a8);
+}
+.help-pop .help {
+  margin: 4px 10px 6px;
 }

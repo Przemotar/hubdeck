@@ -203,53 +203,6 @@ fn short(s: &str, max: usize) -> String {
     if s.chars().count() <= max { s.to_string() } else { format!("{}…", s.chars().take(max - 1).collect::<String>()) }
 }
 
-/// Bring the window of a session to the front: the first visible window whose title names the
-/// project folder (terminals show the folder or the session title). Returns false when none does.
-#[cfg(windows)]
-pub fn focus_project(project: &str) -> bool {
-    use windows::Win32::Foundation::{HWND, LPARAM};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
-    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow, ShowWindow};
-    use windows::core::BOOL;
-
-    struct Search {
-        needle: String,
-        found: Option<HWND>,
-    }
-    unsafe extern "system" fn each(hwnd: HWND, data: LPARAM) -> BOOL {
-        // SAFETY: `data` points at the `Search` below for the duration of EnumWindows.
-        let search = unsafe { &mut *(data.0 as *mut Search) };
-        let mut buf = [0u16; 512];
-        // SAFETY: plain Win32 queries on a window handle EnumWindows gave us.
-        let (visible, n) = unsafe { (IsWindowVisible(hwnd).as_bool(), GetWindowTextW(hwnd, &mut buf)) };
-        let title = String::from_utf16_lossy(&buf[..n.max(0) as usize]).to_lowercase();
-        if visible && !title.is_empty() && title.contains(&search.needle) && !title.contains("hubdeck") {
-            search.found = Some(hwnd);
-            return BOOL(0);
-        }
-        BOOL(1)
-    }
-    let mut search = Search { needle: project.to_lowercase(), found: None };
-    // SAFETY: the callback only reads window titles; `search` outlives the call.
-    unsafe {
-        let _ = EnumWindows(Some(each), LPARAM(&mut search as *mut Search as isize));
-        let Some(hwnd) = search.found else { return false };
-        if IsIconic(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-        }
-        // Windows lets a background process take the foreground only right after a key event
-        keybd_event(VK_MENU.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-        SetForegroundWindow(hwnd).as_bool()
-    }
-}
-
-#[cfg(not(windows))]
-pub fn focus_project(_project: &str) -> bool {
-    // TODO(macOS): find the terminal window by title through the Accessibility API
-    false
-}
-
 // ---------- the hook side: `hubdeck --claude-hook` ----------
 
 /// Where the app keeps `api-token` and `api-http-port` (Tauri's app data dir for `dev.hubdeck.app`).

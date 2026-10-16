@@ -172,9 +172,12 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   screens_get: () => ({ brightness: 100, blankAfterMinutes: 0, blankWhenLocked: true }),
   integrations_get: () => ({ obsUrl: "ws://127.0.0.1:4455", obsPasswordSet: true, haUrl: "http://homeassistant.local:8123", haTokenSet: true, streamlabsUrl: "ws://127.0.0.1:59650", streamlabsTokenSet: false }),
   plugins_list: () => [
-    { id: "com.example.weather", name: "Weather", version: "1.2.0", actions: 3, status: "running", connected: true, restarts: 0, permissions: ["network"], cpu: 0.4, memoryMb: 18 },
-    { id: "com.example.pomodoro", name: "Pomodoro", version: "0.9.1", actions: 2, status: "exited (code 1)", connected: false, restarts: 2, permissions: [], cpu: null, memoryMb: null },
+    { id: "com.example.weather", name: "Weather", version: "1.2.0", actions: 3, status: "running", connected: true, restarts: 0, permissions: ["network"], cpu: 0.4, memoryMb: 18, held: false },
+    { id: "com.example.meters", name: "Hardware meters", version: "2.0.3", actions: 6, status: "running", connected: true, restarts: 0, permissions: ["processes"], cpu: 34.5, memoryMb: 212, held: false },
+    { id: "com.example.pomodoro", name: "Pomodoro", version: "0.9.1", actions: 2, status: "exited (code 1)", connected: false, restarts: 2, permissions: [], cpu: null, memoryMb: null, held: false },
   ],
+  plugin_stop: () => null,
+  plugin_start: () => null,
   backups_list: () => [
     { id: "b3", when: "2026-10-11 09:12", reason: "daily", profiles: 7 },
     { id: "b2", when: "2026-10-10 22:40", reason: "before import", profiles: 6 },
@@ -208,9 +211,28 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     games: [],
   }),
   installed_picture: () => "",
+  // the lists connected services give (shapes as names_list answers); Twitch and Home Assistant
+  // are left "not connected" so both states show in the demo
+  names_list: ({ what, arg }) => {
+    const same = (xs: string[]) => xs.map((x) => ({ value: x, label: x }));
+    const lists: Record<string, { value: string; label: string }[]> = {
+      "obs.scene": same(["Starting soon", "Live", "Be right back", "Ending"]),
+      "obs.input": same(["Mic/Aux", "Desktop Audio", "Camera", "Game capture"]),
+      "obs.transition": same(["Cut", "Fade", "Stinger"]),
+      "obs.collection": same(["Main", "Podcast"]),
+      "obs.profile": same(["Untitled", "1080p60"]),
+      "obs.filter": arg === "Camera" ? same(["Color Correction", "Chroma Key"]) : [],
+      "streamlabs.scene": same(["Gameplay", "Just chatting"]),
+      "streamlabs.source": same(["Webcam", "Alerts", "Mic/Aux"]),
+      "streamlabs.audio": same(["Mic/Aux", "Desktop Audio"]),
+      "spotify.playlist": [{ value: "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M", label: "Today's Top Hits" }, { value: "spotify:playlist:1", label: "Focus" }],
+    };
+    return lists[what as string] ?? null;
+  },
   profile_pin: () => null,
   update_check: () => UPDATE,
   update_install: () => null,
+  update_previous: () => ({ version: "0.1.0", notes: "", date: null }),
   diagnostics_save: () => null,
   engine_redraw: () => null,
   apps_list: () => [
@@ -366,6 +388,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     if (!p) return null;
     const made = { id: `page-${Date.now().toString(36)}`, name: name as string };
     p.pages = [...(p.pages ?? []), made];
+    // as the engine does: the new page's bottom corners step back and on
+    p.controls[`${made.id}/keys.10`] = { action: "core.previousPage", params: {}, look: { label: "Previous", icon: "arrow-left" } } as Profile["controls"][string];
+    p.controls[`${made.id}/keys.14`] = { action: "core.nextPage", params: {}, look: { label: "Next", icon: "skip-forward" } } as Profile["controls"][string];
     changed();
     return made;
   },

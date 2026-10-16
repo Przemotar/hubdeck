@@ -15,7 +15,8 @@ use super::{Msg, secrets};
 
 /// Register exactly this as the app's redirect URI on developer.spotify.com.
 pub const REDIRECT: &str = "http://127.0.0.1:43123/callback";
-const SCOPES: &str = "user-library-read user-library-modify user-read-currently-playing user-read-playback-state playlist-modify-public playlist-modify-private";
+// playlist-read-private: the window lists the user's playlists (a sign-in from before asks again)
+const SCOPES: &str = "user-library-read user-library-modify user-read-currently-playing user-read-playback-state playlist-modify-public playlist-modify-private playlist-read-private";
 const API: &str = "https://api.spotify.com/v1";
 const POLL: Duration = Duration::from_secs(3);
 
@@ -24,6 +25,13 @@ pub enum Request {
     ToggleLike,
     RemoveFromPlaylist,
     AddToPlaylist(String),
+    /// The user's playlists for the window's list (`names`); quiet.
+    ListPlaylists,
+}
+
+/// The playlists in a `/me/playlists` reply: the name shown, its `spotify:playlist:` id kept.
+pub fn playlist_names(v: &Value) -> Vec<super::names::Name> {
+    v["items"].as_array().into_iter().flatten().filter_map(|p| Some(super::names::Name { value: format!("spotify:playlist:{}", p["id"].as_str()?), label: p["name"].as_str()?.to_string() })).collect()
 }
 
 enum Cmd {
@@ -236,6 +244,11 @@ impl Worker {
     }
 
     fn perform(&mut self, r: Request) -> Result<(), String> {
+        if r == Request::ListPlaylists {
+            let v = self.call("GET", "/me/playlists?limit=50", None)?;
+            super::names::set("spotify.playlist", playlist_names(&v));
+            return Ok(());
+        }
         let Playing { id, uri, playlist, name } = self.playing()?.ok_or("nothing is playing on Spotify")?;
         match r {
             Request::ToggleLike => {
@@ -258,6 +271,8 @@ impl Worker {
                 self.call("POST", &format!("/playlists/{target}/tracks"), Some(json!({"uris": [uri]})))?;
                 self.feedback(format!("Added {name}"));
             }
+            // answered above, before anything has to play
+            Request::ListPlaylists => {}
         }
         Ok(())
     }
@@ -279,7 +294,11 @@ impl Worker {
             let next = if self.watching { rx.recv_timeout(Duration::from_millis(500)) } else { rx.recv().map_err(|_| crossbeam_channel::RecvTimeoutError::Disconnected) };
             match next {
                 Ok(Cmd::Request(r)) => {
-                    if let Err(e) = self.perform(r) {
+                    // a list the window asked for fails quietly: the field stays typed
+                    let quiet = r == Request::ListPlaylists;
+                    if let Err(e) = self.perform(r)
+                        && !quiet
+                    {
                         self.error(e);
                     }
                 }
@@ -302,6 +321,16 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn playlists_from_the_reply_keep_their_ids() {
+        // GET /v1/me/playlists: {"items": [{"id", "name", ...}]}
+        let v = json!({"items": [{"id": "37i9dQZF1DXcBWIGoYBM5M", "name": "Today's Top Hits"}, {"name": "no id"}]});
+        let names = playlist_names(&v);
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].label, "Today's Top Hits");
+        assert_eq!(playlist_id(&names[0].value).as_deref(), Some("37i9dQZF1DXcBWIGoYBM5M"));
+    }
 
     #[test]
     fn playlist_ids_from_links_and_uris() {

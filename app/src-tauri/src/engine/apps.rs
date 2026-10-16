@@ -27,6 +27,9 @@ pub struct AppInfo {
     /// Has a window open now.
     #[serde(default, skip_deserializing)]
     pub running: bool,
+    /// Sends sound out now (macOS; for the volume's app list).
+    #[serde(default, skip_deserializing)]
+    pub playing: bool,
     /// The program's icon as a small PNG data URI.
     #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
@@ -70,7 +73,7 @@ pub fn seen(exe: &str, path: &str, title: &str) {
         if let Some(i) = pos {
             list.remove(i);
         }
-        list.insert(0, AppInfo { exe: exe.into(), path: path.into(), title: title.into(), last_seen: now, running: false, icon: None, name: None });
+        list.insert(0, AppInfo { exe: exe.into(), path: path.into(), title: title.into(), last_seen: now, running: false, playing: false, icon: None, name: None });
         list.truncate(MAX_RECENT);
         new.then(|| list.clone())
     });
@@ -116,7 +119,9 @@ pub fn list() -> Vec<AppInfo> {
         out.push(r);
     }
     out.dedup_by(|a, b| a.exe.eq_ignore_ascii_case(&b.exe));
+    let playing = super::volume::playing();
     for a in out.iter_mut() {
+        a.playing = playing.iter().any(|p| p.eq_ignore_ascii_case(&a.exe));
         a.icon = icon(&a.path);
         a.name = friendly_name(&a.path);
     }
@@ -279,13 +284,53 @@ mod platform {
             if super::ignored(&exe) || out.iter().any(|a| a.exe.eq_ignore_ascii_case(&exe)) {
                 continue;
             }
-            out.push(AppInfo { exe, path, title, last_seen: 0, running: true, icon: None, name: None });
+            out.push(AppInfo { exe, path, title, last_seen: 0, running: true, playing: false, icon: None, name: None });
         }
         out
     }
 }
 
-#[cfg(not(windows))]
+/// macOS: the apps in the Dock now (regular apps, not agents or helpers), named as the app in
+/// front is (`Spotify.app`). Without it the window's app lists offered only apps seen in front.
+#[cfg(target_os = "macos")]
+mod platform {
+    use objc2_app_kit::{NSApplicationActivationPolicy, NSWorkspace};
+
+    use super::AppInfo;
+
+    pub fn running() -> Vec<AppInfo> {
+        // HubDeck itself is not offered: its bundle holds the running program
+        let own = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+        // its own pool: AppKit's objects are autoreleased and a Rust thread has none (2026-10-14)
+        objc2::rc::autoreleasepool(|_| {
+            let mut out: Vec<AppInfo> = Vec::new();
+            for app in NSWorkspace::sharedWorkspace().runningApplications().iter() {
+                if app.activationPolicy() != NSApplicationActivationPolicy::Regular {
+                    continue;
+                }
+                let Some(path) = app.bundleURL().and_then(|u| u.path()).map(|p| p.to_string()) else { continue };
+                if own.starts_with(&format!("{path}/")) {
+                    continue;
+                }
+                let exe = path.rsplit('/').next().unwrap_or(&path).to_string();
+                if super::ignored(&exe) || out.iter().any(|a| a.exe.eq_ignore_ascii_case(&exe)) {
+                    continue;
+                }
+                let title = app.localizedName().map(|n| n.to_string()).unwrap_or_default();
+                out.push(AppInfo { exe, path, title, last_seen: 0, running: true, playing: false, icon: None, name: None });
+            }
+            out
+        })
+    }
+
+    /// `/Applications/Google Chrome.app` -> `Google Chrome`.
+    pub fn description(path: &str) -> Option<String> {
+        let file = path.trim_end_matches('/').rsplit('/').next()?;
+        file.strip_suffix(".app").map(str::to_string)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     pub fn running() -> Vec<super::AppInfo> {
         Vec::new()
@@ -307,6 +352,23 @@ mod tests {
         let name = friendly_name(&notepad).unwrap_or_default();
         assert!(!name.is_empty() && !name.ends_with(".exe"), "{name:?}");
         assert_eq!(friendly_name(r"C:\no\such.exe"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apps_playing_sound_are_named_like_open_apps() {
+        // nothing may be playing; when something is, it is a bundle name like the open apps
+        for name in crate::engine::volume::playing() {
+            assert!(name.ends_with(".app"), "{name}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn finder_is_open_on_a_mac() {
+        let open = platform::running();
+        assert!(open.iter().any(|a| a.exe == "Finder.app" && a.path.ends_with("/Finder.app")), "{open:?}");
+        assert_eq!(platform::description("/Applications/Google Chrome.app").as_deref(), Some("Google Chrome"));
     }
 
     #[test]

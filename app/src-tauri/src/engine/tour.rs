@@ -280,7 +280,9 @@ fn stop_ids(ctx: &Ctx) -> Vec<&'static str> {
 
 /// The deck from what is kept, and the parts with the controls each one put on it.
 fn build(ctx: &Ctx, choices: &Choices, id: &str) -> (Profile, Vec<Stop>) {
-    let keep = |stop: &str| choices.keep.get(stop).copied().unwrap_or(true);
+    // the screensaver starts off (owner, 2026-10-16: "zostawiłbym defaultowo bez wygaszacza"; it
+    // stays one switch away here and in Settings > Lights and screens); every other part starts on
+    let keep = |stop: &str| choices.keep.get(stop).copied().unwrap_or(stop != "superSaver");
     let look = |stop: &str| choices.look.get(stop).copied().unwrap_or(0);
     let mut controls = serde_json::Map::new();
     let mut stops = Vec::new();
@@ -724,7 +726,7 @@ pub fn tour_finish(app: AppHandle, keep: bool, home: bool) -> Result<Option<Stri
     let (draft, saver) = {
         let guard = TOUR.lock().unwrap_or_else(|e| e.into_inner());
         let t = guard.as_ref().ok_or("no tour runs")?;
-        (t.snapshot.draft.clone(), t.choices.keep.get("superSaver").copied().unwrap_or(true))
+        (t.snapshot.draft.clone(), t.choices.keep.get("superSaver").copied().unwrap_or(false))
     };
     let engine = app.state::<Engine>();
     if keep {
@@ -863,6 +865,13 @@ mod tests {
         assert!(p.controls.contains_key("fun/keys.14"));
         assert_eq!(p.pages.len(), 1);
         assert!(!p.controls.contains_key("fun/keys.10") || p.controls["fun/keys.10"].action.is_empty(), "no dial: no Mochi key");
+    }
+
+    #[test]
+    fn the_screensaver_starts_off_and_the_rest_on() {
+        let (_, stops) = build(&ctx(&["keys", "dial", "knobs"], Focus::Mixed), &Choices::default(), "t9");
+        assert!(stops.iter().find(|s| s.id == "superSaver").is_some_and(|s| !s.keep));
+        assert!(stops.iter().find(|s| s.id == "superRainbow").is_some_and(|s| s.keep));
     }
 
     #[test]

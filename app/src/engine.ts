@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ModuleKind } from "./deck";
 import { actionName } from "./i18n";
@@ -290,6 +290,8 @@ export interface AppInfo {
   title: string;
   lastSeen: number;
   running: boolean;
+  /** Sends sound out now (macOS). */
+  playing?: boolean;
   /** Small PNG data URI. */
   icon?: string;
   /** The program's own name ("Google Chrome"), when it has one. */
@@ -412,6 +414,8 @@ export interface PluginInfo {
   permissions: string[];
   cpu: number | null;
   memoryMb: number | null;
+  /** Stopped on the Plugins page. */
+  held: boolean;
 }
 
 export interface PresetSummary {
@@ -448,6 +452,7 @@ export type ParamDef = {
   | { type: "game" }
   | { type: "secret" }
   | { type: "place" }
+  | { type: "named"; what: string }
 );
 
 /** An app or game installed on this PC (`installed_list`). */
@@ -499,6 +504,19 @@ export type Gesture = "tap" | "hold" | "double";
  * prefix (`p1a2b3c4d/keys.4`); a hold or double press gets a suffix (`keys.4:hold`). Mirrors
  * `profile::control_id` and `Gesture::suffix` in the engine.
  */
+/** Whether a key on the deck opens `page`: a Go to page key for it anywhere, Next page on the page
+ * before it or Previous page on the one after (owner's pick 1a, 2026-10-16: the window says so
+ * when nothing does). The main page always counts as reachable: the deck starts on it. */
+export function pageReachable(profile: { pages?: { id: string }[]; controls: Record<string, { action: string; params?: Record<string, unknown> }> }, page: string | null): boolean {
+  if (page === null) return true;
+  const order = [null, ...(profile.pages ?? []).map((p) => p.id)];
+  const at = order.indexOf(page);
+  if (at < 0) return true;
+  const onPage = (p: string | null, action: string) => Array.from({ length: 15 }, (_, i) => profile.controls[controlId("keys", i, p)]).some((b) => b?.action === action);
+  if (Object.values(profile.controls).some((b) => b.action === "core.page" && b.params?.page === page)) return true;
+  return onPage(order[at - 1], "core.nextPage") || (at + 1 < order.length && onPage(order[at + 1], "core.previousPage"));
+}
+
 export function controlId(kind: ModuleKind, index: number, page: string | null = null, gesture: Gesture = "tap") {
   const base = kind === "dial" ? "dial" : `${kind}.${index}`;
   const paged = page && kind === "keys" ? `${page}/${base}` : base;
@@ -638,6 +656,8 @@ export const api = {
   midiPorts: () => invoke<string[]>("midi_ports"),
   audioDevices: () => invoke<[{ name: string; default: boolean }[], { name: string; default: boolean }[]]>("audio_devices"),
   plugins: () => invoke<PluginInfo[]>("plugins_list"),
+  pluginStop: (id: string) => invoke("plugin_stop", { id }),
+  pluginStart: (id: string) => invoke("plugin_start", { id }),
   /** macOS: may HubDeck send keys and type (Accessibility)? */
   accessibilityOk: () => invoke<boolean>("accessibility_ok"),
   /** macOS: ask for Accessibility with the system's dialog. */
@@ -728,6 +748,7 @@ export const api = {
   createPage: (profile: string, name: string) => invoke<Page>("page_create", { profile, name }),
   renamePage: (profile: string, page: string, name: string) => invoke("page_rename", { profile, page, name }),
   deletePage: (profile: string, page: string) => invoke("page_delete", { profile, page }),
+  addWayToPage: (profile: string, page: string) => invoke("page_add_way", { profile, page }),
   pauseDeck: (paused: boolean) => invoke("deck_pause", { paused }),
   setBaseTurn: (turn: number | null) => invoke("base_turn_set", { turn }),
   restartModule: (kind: string) => invoke("module_restart", { kind }),
@@ -805,21 +826,14 @@ export function useLeds(): LedsShown | null {
     // and it waits while the pointer moves: each step repaints the drawing's filters (~80 ms in
     // WebKit), which made hovering the panels lag; the deck itself keeps its rainbow
     // the same while typing or scrolling (owner, 2026-10-14: typing in the assistant lagged)
-    let moved = 0;
-    const onMove = () => (moved = Date.now());
-    const busy = ["pointermove", "keydown", "wheel"] as const;
-    busy.forEach((type) => window.addEventListener(type, onMove, { passive: true }));
     const tick = () => {
-      if (Date.now() - moved < 1200) return;
+      if (userBusy()) return;
       const color = hubRainbow(Date.now());
       document.querySelectorAll<HTMLElement>(".dk").forEach((el) => el.style.setProperty("--hub-rainbow", color));
     };
     tick();
     const timer = window.setInterval(tick, 100);
-    return () => {
-      window.clearInterval(timer);
-      busy.forEach((type) => window.removeEventListener(type, onMove));
-    };
+    return () => window.clearInterval(timer);
   }, [hub]);
   useEffect(() => {
     if (!inTauri()) return;
@@ -854,20 +868,106 @@ interface DialFrame {
   jpeg: string;
 }
 
-/** The dial's picture exactly as the hardware shows it (live values, covers, animations), for the
- * profile on the deck; null when another profile is shown or nothing came yet. */
-export function useDialFrame(profile: string | undefined, module: string): string | null {
-  const [frame, setFrame] = useState<DialFrame | null>(null);
+/** When the user last moved the pointer, typed or scrolled in the window (ms since 1970). Each
+ * repaint of the deck drawing re-runs its filters (~80 ms in WebKit), so live pictures and the
+ * rainbow wait while the user works (hovering lagged on macOS, 2026-10-13 and 2026-10-15). */
+let lastInput = 0;
+if (typeof window !== "undefined") {
+  const onInput = () => (lastInput = Date.now());
+  (["pointermove", "keydown", "wheel"] as const).forEach((type) => window.addEventListener(type, onInput, { passive: true }));
+}
+const INPUT_QUIET_MS = 1200;
+/** The deck itself counts as the user working: turning and sliding redraw the drawing too. */
+export function deckTouched() {
+  lastInput = Date.now();
+}
+/** WebView2 (Windows) draws the deck at 160 frames a second with the pictures coming in (release
+ * gate, 2026-10-16): there nothing waits, or the screensaver and GIFs stood still while the
+ * pointer moved over the window (the owner, 2026-10-16). */
+const waitsForUser = typeof navigator === "undefined" || !navigator.userAgent.includes("Edg/");
+function userBusy(): boolean {
+  return waitsForUser && Date.now() - lastInput < INPUT_QUIET_MS;
+}
+
+/** A live JPEG from the engine as an object URL, the previous one released. As data URIs each
+ * frame (16 a second) stayed in WebKit's memory: the window's page grew to 930 MB in 17 minutes
+ * and went black (2026-10-15). While the user works the newest frame waits. Through a channel, not
+ * an event: as events the page grew ~19 MB a minute while the deck moved (2026-10-16). */
+function useLiveJpeg<F extends { jpeg: string }>(which: "keys" | "dial"): { frame: F; url: string } | null {
+  const [shown, setShown] = useState<{ frame: F; url: string } | null>(null);
   useEffect(() => {
     if (!inTauri()) return;
-    invoke<DialFrame | null>("dial_frame").then((f) => f && setFrame(f)).catch(() => {});
-    const un = listen<DialFrame>("engine://dial-frame", (e) => setFrame(e.payload));
+    let pending: F | null = null;
+    let current: string | null = null;
+    let alive = true;
+    const show = (f: F) => {
+      (window as unknown as { __mirrorFrame?: () => void }).__mirrorFrame?.();
+      const bytes = Uint8Array.from(atob(f.jpeg), (c) => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+      const old = current;
+      current = url;
+      setShown({ frame: f, url });
+      // the old picture goes once the new one is in the page
+      if (old) window.setTimeout(() => URL.revokeObjectURL(old), 1000);
+    };
+    const offer = (f: F) => {
+      if (!alive) return;
+      if (userBusy()) pending = f;
+      else show(f);
+    };
+    const timer = window.setInterval(() => {
+      if (pending && !userBusy()) {
+        const f = pending;
+        pending = null;
+        show(f);
+      }
+    }, 250);
+    const channel = new Channel<F>();
+    channel.onmessage = offer;
+    invoke<F | null>("mirror_listen", { which, channel }).then((f) => f && offer(f)).catch(() => {});
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      invoke("mirror_unlisten", { id: channel.id }).catch(() => {});
+      if (current) URL.revokeObjectURL(current);
+    };
+  }, [which]);
+  return shown;
+}
+
+/** The screensaver on the deck's keys now, for the window to draw it itself (src/saver.ts); null
+ * while none runs. */
+export function useSaverShown(): { effect: string; color: string } | null {
+  const [shown, setShown] = useState<{ effect: string; color: string } | null>(null);
+  useEffect(() => {
+    if (!inTauri()) return;
+    invoke<{ effect: string; color: string } | null>("saver_shown").then(setShown).catch(() => {});
+    const un = listen<{ effect: string; color: string } | null>("engine://saver", (e) => setShown(e.payload));
     return () => {
       un.then((u) => u());
     };
   }, []);
-  if (!frame || !profile || frame.profile !== profile || frame.module !== module) return null;
-  return `data:image/jpeg;base64,${frame.jpeg}`;
+  return shown;
+}
+
+/** A clock in seconds that ticks `fps` times a second while `on`. */
+export function useTicker(on: boolean, fps: number): number {
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const start = performance.now();
+    const timer = window.setInterval(() => setT((performance.now() - start) / 1000), 1000 / fps);
+    return () => window.clearInterval(timer);
+  }, [on, fps]);
+  return t;
+}
+
+/** The dial's picture exactly as the hardware shows it (live values, covers, animations), for the
+ * profile on the deck; null when another profile is shown or nothing came yet. */
+export function useDialFrame(profile: string | undefined, module: string): string | null {
+  const shown = useLiveJpeg<DialFrame>("dial");
+  if (!shown || !profile || shown.frame.profile !== profile || shown.frame.module !== module) return null;
+  return shown.url;
 }
 
 interface KeysFrame {
@@ -881,17 +981,9 @@ interface KeysFrame {
 /** The key panel's picture exactly as the hardware shows it, with each key's window in it, for the
  * profile and page on the deck; null otherwise. */
 export function useKeysFrame(profile: string | undefined, page: string | null | undefined, module: string): { src: string; rects: KeysFrame["rects"] } | null {
-  const [frame, setFrame] = useState<KeysFrame | null>(null);
-  useEffect(() => {
-    if (!inTauri()) return;
-    invoke<KeysFrame | null>("keys_frame").then((f) => f && setFrame(f)).catch(() => {});
-    const un = listen<KeysFrame>("engine://keys-frame", (e) => setFrame(e.payload));
-    return () => {
-      un.then((u) => u());
-    };
-  }, []);
-  if (!frame || !profile || frame.profile !== profile || (frame.page ?? null) !== (page ?? null) || frame.module !== module) return null;
-  return { src: `data:image/jpeg;base64,${frame.jpeg}`, rects: frame.rects };
+  const shown = useLiveJpeg<KeysFrame>("keys");
+  if (!shown || !profile || shown.frame.profile !== profile || (shown.frame.page ?? null) !== (page ?? null) || shown.frame.module !== module) return null;
+  return { src: shown.url, rects: shown.frame.rects };
 }
 
 const previewCache = new Map<string, string>();

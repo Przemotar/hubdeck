@@ -47,6 +47,10 @@ pub struct DeckSnapshot {
     pub unresponsive: Vec<String>,
     /// Paused from the tray: keys and dial are handed back to their firmware.
     pub paused: bool,
+    /// Where each fader stands now, by `<module>#<index>`: a fader reports its place once when
+    /// attached, so a window opened later showed every cap in the middle until it moved
+    /// (owner, 2026-10-15).
+    pub faders: BTreeMap<String, u8>,
 }
 
 /// The sensor only tells one upright position (vertical) from the rest (`PROTOCOL.md`); the rest
@@ -114,6 +118,7 @@ struct Inner {
     turn_override: Option<i32>,
     unresponsive: BTreeMap<String, ()>,
     paused: bool,
+    faders: BTreeMap<String, u8>,
 }
 
 impl Inner {
@@ -137,6 +142,7 @@ impl Inner {
             turn_override: self.turn_override,
             unresponsive: self.unresponsive.keys().cloned().collect(),
             paused: self.paused,
+            faders: self.faders.clone(),
         }
     }
 }
@@ -398,7 +404,10 @@ impl Deck {
                 Event::Disconnected(id) => {
                     let key = module_key(&id);
                     fader_seen.retain(|k| !k.starts_with(&format!("{key}#")));
-                    self.lock().modules.remove(&key);
+                    let mut inner = self.lock();
+                    inner.faders.retain(|k, _| !k.starts_with(&format!("{key}#")));
+                    inner.modules.remove(&key);
+                    drop(inner);
                     self.publish_snapshot(app);
                     self.to_engine(EngineMsg::DeckChanged);
                     continue;
@@ -428,7 +437,10 @@ impl Deck {
             // a fader reports its position once when attached; that only feeds the drawing,
             // actions run when it is moved (otherwise starting the app would set volumes)
             let baseline = match &ui {
-                UiEvent::Fader { module, index, .. } => fader_seen.insert(format!("{module}#{index}")),
+                UiEvent::Fader { module, index, value } => {
+                    self.lock().faders.insert(format!("{module}#{index}"), *value);
+                    fader_seen.insert(format!("{module}#{index}"))
+                }
                 _ => false,
             };
             match (baseline, &ui) {

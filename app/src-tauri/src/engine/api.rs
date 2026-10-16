@@ -414,7 +414,10 @@ fn merged(base: Value, body: &Value, fields: &[&str]) -> Result<Profile, (u16, S
     serde_json::from_value::<Profile>(v).map_err(|e| bad(format!("not a valid profile: {e}")))
 }
 
-fn save_checked(engine: &Engine, p: Profile) -> Answer {
+fn save_checked(engine: &Engine, mut p: Profile) -> Answer {
+    if p.assistant {
+        give_bare_keys_an_icon(&mut p);
+    }
     let (errors, warnings) = check_profile(&p);
     if !errors.is_empty() {
         return Err(bad(format!("nothing saved; fix these: {}", errors.join("; "))));
@@ -463,6 +466,23 @@ fn create_profile(engine: &Engine, body: &Value) -> Answer {
     Ok(answer)
 }
 
+/// An assistant's key that opens an app or a game but got no picture (the app's icon could not be
+/// taken from its program) shows the action's own icon instead of a bare label (persona check
+/// before the release, 2026-10-16: five such keys in three personas' drafts).
+fn give_bare_keys_an_icon(p: &mut Profile) {
+    for (id, b) in p.controls.iter_mut() {
+        let key = id.rsplit('/').next().is_some_and(|c| c.starts_with("keys.")) && !id.contains(':');
+        let icon = match b.action.as_str() {
+            "core.launch" => "app-window",
+            "core.game" => "gamepad-2",
+            _ => continue,
+        };
+        if key && b.look.icon.is_none() && b.look.image.is_none() {
+            b.look.icon = Some(icon.to_string());
+        }
+    }
+}
+
 fn stored(engine: &Engine, id: &str) -> Result<Profile, (u16, String)> {
     engine.lock().store.profiles.get(id).cloned().ok_or_else(|| not_found(format!("no profile {id}")))
 }
@@ -488,6 +508,9 @@ fn set_control(engine: &Engine, id: &str, body: &Value) -> Answer {
                 return Err(bad(format!("nothing saved; fix these: {}", errors.join("; "))));
             }
             p.controls.insert(control.to_string(), binding);
+            if p.assistant {
+                give_bare_keys_an_icon(&mut p);
+            }
             engine.lock().store.save_profile(p).map_err(|e| (500, e.to_string()))?;
             engine.changed();
             Ok(json!({ "ok": true, "warnings": warnings }))
@@ -811,6 +834,25 @@ fn preview(engine: &Engine, body: &Value) -> Answer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_assistants_app_key_without_a_picture_gets_an_icon() {
+        let mut p: Profile = serde_json::from_value(json!({"id": "x", "name": "x", "controls": {
+            "keys.0": {"action": "core.launch", "params": {"target": "spotify.exe"}, "look": {"label": "Spotify"}},
+            "p1/keys.2": {"action": "core.game", "params": {"game": "steam://run/1"}, "look": {}},
+            "keys.1": {"action": "core.launch", "params": {}, "look": {"image": "a.png"}},
+            "keys.3": {"action": "core.hotkey", "params": {}, "look": {}},
+            "keys.4:hold": {"action": "core.launch", "params": {}, "look": {}}
+        }}))
+        .unwrap();
+        give_bare_keys_an_icon(&mut p);
+        let icon = |c: &str| p.controls[c].look.icon.clone();
+        assert_eq!(icon("keys.0").as_deref(), Some("app-window"));
+        assert_eq!(icon("p1/keys.2").as_deref(), Some("gamepad-2"));
+        assert_eq!(icon("keys.1"), None, "its own picture stays");
+        assert_eq!(icon("keys.3"), None, "only apps and games");
+        assert_eq!(icon("keys.4:hold"), None, "a hold shows no face");
+    }
 
     #[test]
     fn kinds_join_attached_and_remembered_modules() {

@@ -31,7 +31,9 @@ static PREFER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 /// Set the preferred player (the engine does it for the dial's Now playing).
 pub fn prefer(player: &str) {
-    let player = player.trim().to_lowercase();
+    // a player picked from the app list comes as `spotify.exe`; the session id may be `Spotify.exe`
+    // or a Store id with `Spotify` in it
+    let player = player.trim().to_lowercase().trim_end_matches(".exe").to_string();
     if let Ok(mut p) = PREFER.lock()
         && *p != player
     {

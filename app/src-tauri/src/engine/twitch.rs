@@ -43,6 +43,13 @@ pub enum Request {
     Marker(String),
     Clip,
     OpenLastClip,
+    /// Categories (games) whose name has this text, for the window's list (`names`); quiet.
+    SearchCategories(String),
+}
+
+/// The category names in a `/search/categories` reply.
+pub fn category_names(v: &Value) -> Vec<super::names::Name> {
+    v["data"].as_array().into_iter().flatten().filter_map(|c| c["name"].as_str()).map(super::names::Name::same).collect()
 }
 
 static WORKER: OnceLock<Sender<Request>> = OnceLock::new();
@@ -216,6 +223,11 @@ impl Worker {
     }
 
     fn perform(&mut self, r: Request) -> Result<(), String> {
+        if let Request::SearchCategories(text) = &r {
+            let v = self.call("GET", &format!("/search/categories?first=20&query={}", urlencode(text)), None)?;
+            super::names::set("twitch.category", category_names(&v));
+            return Ok(());
+        }
         let (id, login) = self.me()?;
         let ids = format!("broadcaster_id={id}&moderator_id={id}");
         match r {
@@ -272,13 +284,19 @@ impl Worker {
                 let url = self.last_clip.clone().unwrap_or_else(|| format!("https://www.twitch.tv/{login}/clips"));
                 crate::system::shell_open(&url)?;
             }
+            // answered above, without the broadcaster
+            Request::SearchCategories(_) => {}
         }
         Ok(())
     }
 
     fn run(mut self, rx: Receiver<Request>) {
         while let Ok(r) = rx.recv() {
-            if let Err(e) = self.perform(r) {
+            // a list the window asked for fails quietly: the field stays typed
+            let quiet = matches!(r, Request::SearchCategories(_));
+            if let Err(e) = self.perform(r)
+                && !quiet
+            {
                 let _ = self.engine.send(Msg::IntegrationError { source: "Twitch".into(), message: e });
             }
         }
@@ -288,6 +306,13 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn categories_from_the_search_reply() {
+        // GET /helix/search/categories: {"data": [{"id", "name", "box_art_url"}]}
+        let v = json!({"data": [{"id": "509658", "name": "Just Chatting", "box_art_url": "x"}, {"id": "33214", "name": "Fortnite"}]});
+        assert_eq!(category_names(&v).iter().map(|n| n.value.as_str()).collect::<Vec<_>>(), ["Just Chatting", "Fortnite"]);
+    }
 
     #[test]
     fn chat_modes_toggle_from_the_current_settings() {

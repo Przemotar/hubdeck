@@ -236,12 +236,28 @@ pub fn safe_data_uri(s: &str) -> bool {
     matches!(kind, "png" | "jpeg" | "gif" | "webp" | "svg+xml") && s.len() < 4_000_000 && data.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
 }
 
+/// An animated picture's own file as a data URI, for the window to play it itself as Stream Deck's
+/// window does, instead of a stream of the deck's pictures (owner, 2026-10-16); None for anything
+/// that is not a GIF in the pictures folder. In looks: `name#anim` (see [`uri`]).
+fn image_animation(name: String) -> Option<String> {
+    use base64::Engine as _;
+    if name.contains(['/', '\\', '#']) || name.contains("..") || !name.to_lowercase().ends_with(".gif") {
+        return None;
+    }
+    let bytes = std::fs::read(dir()?.join(&name)).ok()?;
+    Some(format!("data:image/gif;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 pub fn uri(reference: &str) -> Option<String> {
     if reference.starts_with("data:") {
         return safe_data_uri(reference).then(|| reference.to_string());
     }
     if reference == COVER_REF {
         return COVER.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    }
+    // `name#anim`: the GIF itself, for the window's drawings to play
+    if let Some(name) = reference.strip_suffix("#anim") {
+        return image_animation(name.to_string());
     }
     let (name, frame) = match reference.split_once('#') {
         Some((n, f)) => (n, f.parse::<usize>().ok()),

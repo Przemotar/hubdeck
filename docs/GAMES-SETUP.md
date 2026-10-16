@@ -21,7 +21,7 @@ profile panel (click the active tab > the app list: pick the game while it runs)
 - **Keep "Send as: For games".** Games read the keyboard differently from other apps; this mode
   sends hardware key codes and holds them a moment. If a game still misses presses, raise *Hold (ms)*
   to 50-80. A game started as administrator needs HubDeck started as administrator too.
-- **Several keys at once or in order** (a combo, a buy sequence): choose the *Multi-action* action
+- **Several keys at once or in order** (a combo, a buy sequence): choose the *Multi action* action
   and add steps, or click *Record keys* and play the sequence.
 - **More than 15 keys?** Add a key page (the + next to *Key pages*) and put a *Go to page* key on
   the main page.

@@ -135,13 +135,54 @@ enum Cmd {
 
 static WORKER: OnceLock<Sender<Cmd>> = OnceLock::new();
 
-/// Scenes and audio inputs OBS reported (read when connecting), for the import check.
-static KNOWN: std::sync::Mutex<(Vec<String>, Vec<String>)> = std::sync::Mutex::new((Vec::new(), Vec::new()));
+/// What OBS named (read when connecting), by kind: `scene`, `input`, `transition`, `collection`,
+/// `profile`, `filter:<source>`; for the window's lists and the import check.
+static KNOWN: std::sync::Mutex<std::collections::BTreeMap<String, Vec<String>>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 static CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// (scenes, audio inputs) while connected to OBS; None otherwise.
 pub fn known() -> Option<(Vec<String>, Vec<String>)> {
+    let all = names()?;
+    let get = |k: &str| all.get(k).cloned().unwrap_or_default();
+    Some((get("scene"), get("input")))
+}
+
+/// Every list OBS gave, while connected (the window picks from them; owner, 2026-10-15: lists, not
+/// names typed from memory).
+pub fn names() -> Option<std::collections::BTreeMap<String, Vec<String>>> {
     CONNECTED.load(std::sync::atomic::Ordering::Relaxed).then(|| KNOWN.lock().map(|k| k.clone()).unwrap_or_default())
+}
+
+/// The names in an OBS reply, as (kind, names); `source` is the source a filter list was asked for.
+fn names_in(kind: &str, data: &Value, source: Option<&str>) -> Option<(String, Vec<String>)> {
+    let list = |key: &str, field: Option<&str>| -> Vec<String> {
+        data[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| match field {
+                Some(f) => x[f].as_str().map(str::to_string),
+                None => x.as_str().map(str::to_string),
+            })
+            .collect()
+    };
+    Some(match kind {
+        "GetSceneList" => ("scene".into(), list("scenes", Some("sceneName"))),
+        "GetInputList" => ("input".into(), list("inputs", Some("inputName"))),
+        "GetSceneTransitionList" => ("transition".into(), list("transitions", Some("transitionName"))),
+        "GetSceneCollectionList" => ("collection".into(), list("sceneCollections", None)),
+        "GetProfileList" => ("profile".into(), list("profiles", None)),
+        "GetSourceFilterList" => (format!("filter:{}", source?), list("filters", Some("filterName"))),
+        _ => return None,
+    })
+}
+
+fn remember(kind: &str, data: &Value, source: Option<&str>) {
+    if let Some((k, v)) = names_in(kind, data, source)
+        && let Ok(mut known) = KNOWN.lock()
+    {
+        known.insert(k, v);
+    }
 }
 
 /// Start the worker; `url` and `password` come from the settings and the credential store.
@@ -208,6 +249,8 @@ enum Then {
     },
     /// GetInputList answered: ask each input whether it is muted.
     Inputs,
+    /// GetSourceFilterList answered for this source or scene (a source without filters is fine).
+    FiltersOf(String),
     MuteOf(String),
     /// A status asked at connect time: a failure (e.g. no replay buffer configured) is not an error.
     Quiet,
@@ -333,7 +376,9 @@ impl Worker {
                 self.socket = Some(socket);
                 // the state keys show right after connecting
                 self.call("GetSceneList", json!({}), Then::Quiet);
-                for kind in ["GetRecordStatus", "GetStreamStatus", "GetVirtualCamStatus", "GetReplayBufferStatus", "GetStudioModeEnabled", "GetSceneCollectionList", "GetProfileList"] {
+                for kind in
+                    ["GetRecordStatus", "GetStreamStatus", "GetVirtualCamStatus", "GetReplayBufferStatus", "GetStudioModeEnabled", "GetSceneCollectionList", "GetProfileList", "GetSceneTransitionList"]
+                {
                     self.call(kind, json!({}), Then::Quiet);
                 }
                 self.call("GetCurrentProgramScene", json!({}), Then::Nothing);
@@ -480,7 +525,7 @@ impl Worker {
                 let then = self.pending.remove(d["requestId"].as_str().unwrap_or("")).unwrap_or(Then::Nothing);
                 let kind = d["requestType"].as_str().unwrap_or("");
                 if d["requestStatus"]["result"] != true {
-                    if matches!(then, Then::Quiet) {
+                    if matches!(then, Then::Quiet | Then::FiltersOf(_)) {
                         return;
                     }
                     let comment = d["requestStatus"]["comment"].as_str().unwrap_or("request failed");
@@ -494,6 +539,8 @@ impl Worker {
     }
 
     fn response(&mut self, kind: &str, data: &Value, then: Then) {
+        let filters_of = if let Then::FiltersOf(s) = &then { Some(s.clone()) } else { None };
+        remember(kind, data, filters_of.as_deref());
         match (kind, then) {
             ("GetStudioModeEnabled", Then::FlipStudio) => {
                 let on = data["studioModeEnabled"] == true;
@@ -522,18 +569,15 @@ impl Worker {
             }
             ("GetCurrentProgramScene", _) => self.scene(data["currentProgramSceneName"].as_str().unwrap_or("")),
             ("GetSceneList", _) => {
-                let scenes: Vec<String> = data["scenes"].as_array().into_iter().flatten().filter_map(|s| s["sceneName"].as_str().map(str::to_string)).collect();
-                if let Ok(mut k) = KNOWN.lock() {
-                    k.0 = scenes;
+                // the filters of every scene too (a filter sits on a scene or a source)
+                for name in names_in(kind, data, None).map(|(_, v)| v).unwrap_or_default() {
+                    self.call("GetSourceFilterList", json!({"sourceName": name.clone()}), Then::FiltersOf(name));
                 }
             }
             ("GetInputList", Then::Inputs) => {
-                let names: Vec<String> = data["inputs"].as_array().into_iter().flatten().filter_map(|i| i["inputName"].as_str().map(str::to_string)).collect();
-                if let Ok(mut k) = KNOWN.lock() {
-                    k.1 = names.clone();
-                }
-                for name in names {
-                    self.call("GetInputMute", json!({"inputName": name.clone()}), Then::MuteOf(name));
+                for name in names_in(kind, data, None).map(|(_, v)| v).unwrap_or_default() {
+                    self.call("GetInputMute", json!({"inputName": name.clone()}), Then::MuteOf(name.clone()));
+                    self.call("GetSourceFilterList", json!({"sourceName": name.clone()}), Then::FiltersOf(name));
                 }
             }
             ("GetInputMute", Then::MuteOf(name)) => self.state(format!("obs:mute:{name}"), data["inputMuted"] == true),
@@ -609,6 +653,31 @@ fn read_json(socket: &mut Socket) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lists_come_out_of_obs_replies() {
+        // shapes from the obs-websocket 5 protocol (GetSceneTransitionList, GetSceneCollectionList...)
+        assert_eq!(
+            names_in(
+                "GetSceneTransitionList",
+                &json!({"currentSceneTransitionName": "Fade", "transitions": [{"transitionName": "Cut", "transitionKind": "cut_transition"}, {"transitionName": "Fade"}]}),
+                None
+            ),
+            Some(("transition".into(), vec!["Cut".into(), "Fade".into()]))
+        );
+        assert_eq!(
+            names_in("GetSceneCollectionList", &json!({"currentSceneCollectionName": "Main", "sceneCollections": ["Main", "Podcast"]}), None),
+            Some(("collection".into(), vec!["Main".into(), "Podcast".into()]))
+        );
+        assert_eq!(names_in("GetProfileList", &json!({"currentProfileName": "Untitled", "profiles": ["Untitled", "1080p"]}), None), Some(("profile".into(), vec!["Untitled".into(), "1080p".into()])));
+        assert_eq!(
+            names_in("GetSourceFilterList", &json!({"filters": [{"filterName": "Color Correction", "filterEnabled": true}]}), Some("Camera")),
+            Some(("filter:Camera".into(), vec!["Color Correction".into()]))
+        );
+        assert_eq!(names_in("GetSourceFilterList", &json!({"filters": []}), None), None);
+        assert_eq!(names_in("GetSceneList", &json!({"scenes": [{"sceneName": "Live", "sceneIndex": 0}]}), None), Some(("scene".into(), vec!["Live".into()])));
+        assert_eq!(names_in("GetRecordStatus", &json!({}), None), None);
+    }
 
     #[test]
     fn authentication_matches_the_protocol_example() {

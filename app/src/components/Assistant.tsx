@@ -828,8 +828,10 @@ function TasteCard() {
 /** A suggestion's words: what it says, what it asks the assistant, and its short chip. */
 function nudgeWords(nudge: Nudge) {
   const kind = nudge.kind === "module" ? t(`kind.${nudge.exe}` as Key) : "";
-  // a control of the tour's deck: "Knob 3"
-  const [ctlKind, ctlIndex] = nudge.exe === "dial" ? ["dial", null] : nudge.exe.split(".");
+  // a control of the tour's deck: "Knob 3"; its page and gesture ("page/keys.2", "dial:hold") left
+  // out (a gesture made the text "control.dial:hold", missing, and blanked the window, 2026-10-15)
+  const ctl = (nudge.exe.split("/").pop() ?? "").split(":")[0];
+  const [ctlKind, ctlIndex] = ctl === "dial" ? ["dial", null] : ctl.split(".");
   const control = nudge.kind === "unused" ? `${t(`control.${ctlKind}` as Key)}${ctlIndex !== null ? ` ${Number(ctlIndex) + 1}` : ""}` : "";
   const ask = nudge.kind === "app" ? t("nudge.askApp", { name: nudge.name }) : nudge.kind === "unused" ? t("nudge.askUnused", { control, label: nudge.name, deck: nudge.deck ?? "" }) : t("nudge.askModule", { kind });
   const chip = nudge.kind === "app" ? t("nudge.chipApp", { name: nudge.name }) : nudge.kind === "unused" ? t("nudge.chipUnused", { control }) : t("nudge.chipModule", { kind });
@@ -903,6 +905,21 @@ function NudgeSwitch() {
       <span>{t("nudge.toggle")}</span>
     </label>
   );
+}
+
+/**
+ * The user has set HubDeck up: a tour profile was kept, or there are two profiles of their own (not
+ * drafts, not made at once for apps). Profiles then comes first in the left column and is open at
+ * start; Get started stays as it is (owner's pick 2a, 2026-10-16; docs/FLOWS.md difference 3).
+ */
+export function useSetUp(view: EngineView): boolean {
+  const [tourDone, setTourDone] = useState(false);
+  const count = view.state?.profiles.length ?? 0;
+  useEffect(() => {
+    api.tourDone().then(setTourDone, () => {});
+  }, [count]);
+  const own = view.state?.profiles.filter((p) => !p.draft && !p.ready).length ?? 0;
+  return tourDone || own >= 2;
 }
 
 export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; onTour?: () => void; onBuild?: () => void }) {

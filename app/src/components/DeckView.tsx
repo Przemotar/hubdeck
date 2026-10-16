@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import "../deck.css";
 import { controlKey, type ControlRef, type LiveState, type ModuleInfo, type ModuleKind } from "../deck";
 import { FADER_COLORS, KNOB_COLORS } from "../identify";
-import { api, controlId, useDialFrame, useKeysFrame, useLeds, useLiveLooks, usePreview, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
+import { api, controlId, useDialFrame, useKeysFrame, useLeds, useLiveLooks, usePreview, useSaverShown, useTicker, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
 import { localizeError, t, useLanguage, type Key } from "../i18n";
 import { clampToGrid, detachedKinds, detachedModule, FOOTPRINT, GRID_COLS, GRID_ROWS, keysOfKind, MODULE_KINDS, ownedKey, placeModules, placementKey, rotatedSize, type Placed, type Placement, type Rotation } from "../layout";
+import { saverBody } from "../saver";
 
 /*
  * The live deck, drawn as the hardware seen from above (look variant B, chosen 2026-10-11):
@@ -149,7 +150,8 @@ function inlineSvg(svg: string, prefix: string) {
 }
 
 function Screen({ svg, prefix, x, y, w, h, clip }: { svg: string; prefix: string; x: number; y: number; w: number; h: number; clip?: string }) {
-  const parsed = inlineSvg(svg, prefix);
+  // parsed once per picture: a key with a GIF carries the whole file
+  const parsed = useMemo(() => inlineSvg(svg, prefix), [svg, prefix]);
   if (!parsed) return null;
   return (
     <g clipPath={clip}>
@@ -241,15 +243,23 @@ export function readable(color: string | null | undefined): string | undefined {
   return `#${lift.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function CtlLabel({ ctx, x, y, down, text, color }: { ctx: Ctx; x: number; y: number; down: number; text?: string; color?: string | null }) {
+function CtlLabel({ ctx, x, y, down, text, color, outward }: { ctx: Ctx; x: number; y: number; down: number; text?: string; color?: string | null; outward?: boolean }) {
   if (!text || ctx.arranging) return null;
   const a = (ctx.upright * Math.PI) / 180;
+  // `outward`: the label ends a track that runs along the module's y. When the track lies across
+  // the screen, the text sits just above it and ends at the track's end, running back along it:
+  // centred on the end it covered the slot, and past the end there is no room in the module
+  // (a turned fader's caption sat on its slot, 2026-10-15)
+  const along = Math.sin(a);
+  const across = outward && Math.abs(along) > 0.5;
+  const anchor = across ? (along > 0 ? "end" : "start") : "middle";
+  const lift = across ? -22 : down;
   // screen-down in the module's own frame: (0, 1) turned by `upright`
-  const [lx, ly] = [r2(x - Math.sin(a) * down), r2(y + Math.cos(a) * down)];
+  const [lx, ly] = [r2(x - Math.sin(a) * lift), r2(y + Math.cos(a) * lift)];
   const shown = text.replace(/\s+/g, " ").trim();
   const short = shown.length > 12 ? `${shown.slice(0, 11)}…` : shown;
   return (
-    <text className="dk-ctl-label" x={lx} y={ly} textAnchor="middle" dominantBaseline="central" transform={`rotate(${ctx.upright} ${lx} ${ly})`} style={readable(color) ? { fill: readable(color) } : undefined}>
+    <text className="dk-ctl-label" x={lx} y={ly} textAnchor={anchor} dominantBaseline="central" transform={`rotate(${ctx.upright} ${lx} ${ly})`} style={readable(color) ? { fill: readable(color) } : undefined}>
       {short}
     </text>
   );
@@ -263,7 +273,7 @@ function caption(b: Binding | undefined): string | undefined {
   if (!b) return undefined;
   if (b.look.label) return b.look.label;
   const p = (b.params ?? {}) as Record<string, unknown>;
-  const app = typeof p.app === "string" && p.app ? p.app.replace(/\.exe$/i, "") : "";
+  const app = typeof p.app === "string" && p.app ? p.app.replace(/\.(exe|app)$/i, "") : "";
   if (b.action === "core.volume") return app ? app.charAt(0).toUpperCase() + app.slice(1) : t(`caption.volume.${p.target === "mic" || p.target === "others" || p.target === "front" ? p.target : "system"}` as Key);
   const words: Record<string, Key> = { "core.scroll": "caption.scroll", "core.seek": "caption.seek", "core.media": "caption.media", "core.brightness": "caption.brightness", "core.deckBrightness": "caption.brightness", "core.profile": "caption.profiles", "core.page": "caption.pages", "core.hotkey": "caption.keys" };
   return words[b.action] ? t(words[b.action]) : undefined;
@@ -300,16 +310,23 @@ function Recess({ ctx, x, y, w, h, rx, fill = "#0c0c0f" }: { ctx: Ctx; x: number
 // the picture fills the clear cap almost to its edge
 const KP = 0.8;
 
-function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; mirror?: { src: string; rect: [number, number, number, number] } | null }) {
-  const svg = usePreview("key", look);
+/** `mirror.src` is the `#id` of the panel picture, held once in the keys' defs. */
+/** A GIF on a key plays in the window itself, as in Stream Deck's window, not as a stream of the
+ * deck's pictures (owner, 2026-10-16). */
+const GIFS_IN_WINDOW = false; // WINDOW_PLAYS_GIFS in engine/mod.rs: smooth, but WebView2 440-600 MB instead of ~320
+const playsItself = (look?: Look) => GIFS_IN_WINDOW && !!look?.image && /\.gif$/i.test(look.image);
+
+function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; mirror?: { src: string; rect: [number, number, number, number]; saver?: boolean } | null }) {
+  const own = playsItself(look) && !mirror?.saver;
+  const svg = usePreview("key", own && look ? { ...look, image: `${look.image}#anim` } : look);
   const [pw, ph] = [KW - 2 * KP, KH - 2 * KP];
-  if (mirror) {
+  if (mirror && !own) {
     // this key's window cut out of the picture the hardware got (live values, covers, clocks)
     const [rx, ry, rw, rh] = mirror.rect;
     return (
       <g clipPath={`url(#${ctx.id("kclip")})`}>
         <svg x={KP} y={KP} width={pw} height={ph} viewBox={`${rx} ${ry} ${rw} ${rh}`} preserveAspectRatio="none">
-          <image href={mirror.src} x="0" y="0" width="480" height="272" />
+          <use href={mirror.src} />
         </svg>
       </g>
     );
@@ -341,13 +358,42 @@ function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; m
   );
 }
 
+/** Off: the screensaver drawn here through <use> grew WebView2 by 45 MB a minute (window stage,
+ * 2026-10-16); the keys show the deck's pictures of it until a canvas version measures well. */
+const SAVER_IN_WINDOW = false;
+
+/** The screensaver's panel, 15 frames a second, for the keys to show their windows of it. */
+function SaverPanel({ id, effect, color }: { id: string; effect: string; color: string }) {
+  const t = useTicker(true, 15);
+  return (
+    <defs>
+      <svg id={id} viewBox="0 0 480 272" width="480" height="272">
+        <rect width="480" height="272" fill="#000" />
+        <g dangerouslySetInnerHTML={{ __html: saverBody(effect, t, color) ?? "" }} />
+      </svg>
+    </defs>
+  );
+}
+
 function Keys({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, page, arranging, id } = ctx;
   // what the hardware shows right now, while this profile and page are on the deck
   const frame = useKeysFrame(profile?.id, page, m.id);
+  // the screensaver is drawn here, from the same effects as the deck's; its frames change only
+  // SaverPanel, the keys show it through <use> (a tick that redrew the whole panel of keys took
+  // WebView2 to 850 MB, 2026-10-16)
+  const saver = SAVER_IN_WINDOW ? useSaverShown() : null;
   return (
     <>
       <ModuleBody ctx={ctx} w={400} h={300} />
+      {saver && <SaverPanel id={id("ksaver")} effect={saver.effect} color={saver.color} />}
+      {/* the panel picture the hardware got, once: each key shows its window of it (fifteen
+          copies of each frame made WebKit decode and repaint it fifteen times) */}
+      {frame && (
+        <defs>
+          <image id={id("kpanel")} href={frame.src} x="0" y="0" width="480" height="272" />
+        </defs>
+      )}
       {/* the slightly recessed top panel that holds the keys and the plate */}
       <Recess ctx={ctx} x={KX0 - PANEL_M} y={PANEL_Y} w={GRID_W + 2 * PANEL_M} h={PANEL_H} rx={8} fill="#0c0c0e" />
       {/* matte black, only a faint flat sheen */}
@@ -378,7 +424,18 @@ function Keys({ ctx }: { ctx: Ctx }) {
                   </text>
                 </>
               ) : (
-                <KeyFace ctx={ctx} i={i} look={look} mirror={frame && frame.rects[i] ? { src: frame.src, rect: frame.rects[i] } : null} />
+                <KeyFace
+                  ctx={ctx}
+                  i={i}
+                  look={look}
+                  mirror={
+                    saver
+                      ? { src: `#${id("ksaver")}`, rect: frame?.rects[i] ?? [(i % 5) * 96, Math.floor(i / 5) * 90.67, 96, 90.67], saver: true }
+                      : frame && frame.rects[i]
+                        ? { src: `#${id("kpanel")}`, rect: frame.rects[i] }
+                        : null
+                  }
+                />
               )}
               {/* glossy glass top: a thin bright rim, a sheen over the upper part, a hard highlight on the top edge */}
               <rect width={KW} height={KH} rx="8" fill={`url(#${id("vign")})`} pointerEvents="none" />
@@ -600,12 +657,24 @@ function Faders({ ctx }: { ctx: Ctx }) {
             <rect x={cx - 3.5} y={top - 12} width="7" height={bottom - top + 24} rx="3.5" fill="#030304" stroke="#fff" strokeOpacity=".06" />
             {color && (
               <g className={`dk-fx-${colors[i]?.effect}`}>
-                <rect x={cx - 2} y={ty + 8} width="4" height={Math.max(0, bottom + 10 - ty - 8)} rx="2" style={{ fill: color }} opacity={0.6 * level} filter={`url(#${id("soft")})`} />
+                {/* the glow as a gradient, not a blur filter: a cap moving 25 times a second re-ran
+                    the blur each time and the window lagged behind the fader (WebKit, 2026-10-15) */}
+                <defs>
+                  <linearGradient id={id(`fglow${i}`)} x1="0" x2="1" y1="0" y2="0">
+                    <stop offset="0" style={{ stopColor: color }} stopOpacity="0" />
+                    <stop offset=".5" style={{ stopColor: color }} stopOpacity=".7" />
+                    <stop offset="1" style={{ stopColor: color }} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <rect x={cx - 6} y={ty + 6} width="12" height={Math.max(0, bottom + 12 - ty - 6)} rx="6" fill={`url(#${id(`fglow${i}`)})`} opacity={0.6 * level} />
                 <rect x={cx - 1.2} y={ty + 8} width="2.4" height={Math.max(0, bottom + 10 - ty - 8)} rx="1.2" style={{ fill: color }} opacity={level} />
               </g>
             )}
             <g opacity={value === undefined && !arranging ? 0.9 : 1}>
-              <rect x={cx - 21} y={ty - 11} width="42" height="26" rx="9" fill="#000" opacity=".65" filter={`url(#${id("soft")})`} />
+              {/* the cap's soft shadow from stacked rounded rects (no blur filter, see the glow) */}
+              <rect x={cx - 24} y={ty - 13} width="48" height="31" rx="12" fill="#000" opacity=".15" />
+              <rect x={cx - 22.5} y={ty - 12} width="45" height="28.5" rx="10.5" fill="#000" opacity=".25" />
+              <rect x={cx - 21} y={ty - 11} width="42" height="26" rx="9" fill="#000" opacity=".35" />
               {/* the cap: rounded back, a ribbed front face toward the user */}
               <rect x={cx - 20} y={ty - 13} width="40" height="25" rx="8" fill={`url(#${id("thumb")})`} stroke="#fff" strokeOpacity=".14" />
               <g clipPath={`url(#${id("fclip")})`} transform={`translate(${cx - 20} ${ty - 13})`}>
@@ -613,7 +682,7 @@ function Faders({ ctx }: { ctx: Ctx }) {
               </g>
               <path d={`M${cx - 14} ${ty - 11.5}h28`} stroke="#fff" strokeOpacity=".25" strokeWidth=".8" strokeLinecap="round" />
             </g>
-            <CtlLabel ctx={ctx} x={cx} y={bottom + 12} down={0} text={caption(profile?.controls[controlId("faders", i)])} color={color} />
+            <CtlLabel ctx={ctx} x={cx} y={bottom + 14} down={0} text={caption(profile?.controls[controlId("faders", i)])} color={color} outward />
           </Ctl>
         );
       })}
@@ -792,8 +861,11 @@ interface DeckViewProps extends Props {
   /** Stores a placement; null forgets the entry. */
   onPlace: (key: string, placement: Placement | null) => void;
   arranging: boolean;
-  /** The Edge chip under the deck opens the lights' settings (owner's pick 5a). */
+  /** The Edge chip under the deck, and the base's rim in the drawing, open the lights' settings
+   * (owner's pick 5a; 2026-10-16 he tried to click the rim itself). */
   onEdge?: () => void;
+  /** A click on the drawing away from every control: nothing selected, as in Stream Deck. */
+  onDeselect?: () => void;
 }
 
 interface Drag {
@@ -898,7 +970,12 @@ export function DeckView(props: DeckViewProps) {
   const stageStyle = { "--dk-ratio": vb[2] / vb[3] } as CSSProperties;
 
   return (
-    <div className={`dk${arranging ? " is-arranging" : ""}${live.deck.paused ? " is-paused" : ""}${!arranging && detachedKinds(live.deck.modules, saved).length ? " has-shelf" : ""}`}>
+    <div
+      className={`dk${arranging ? " is-arranging" : ""}${live.deck.paused ? " is-paused" : ""}${!arranging && detachedKinds(live.deck.modules, saved).length ? " has-shelf" : ""}`}
+      onClick={(e) => {
+        if (!arranging && !(e.target as Element).closest(".dk-ctl, .dk-rim, button, a, input")) props.onDeselect?.();
+      }}
+    >
       <div className="dk-stage" style={stageStyle}>
         {/* static layers: light on the desk, edge glow, the board */}
         <svg className="dk-layer dk-back" viewBox={viewBox} aria-hidden="true">
@@ -920,6 +997,11 @@ export function DeckView(props: DeckViewProps) {
         <svg className="dk-layer dk-front" viewBox={viewBox} role="group" aria-label={t("module.base")}>
           <Defs id={id} edge={edge} />
           <g ref={baseRef} transform={`rotate(${baseTurn} ${CX} ${CY})`}>
+            {!arranging && props.onEdge && (
+              <rect className="dk-rim" x={-MARGIN / 2 - 4} y={-MARGIN / 2 - 4} width={GW + MARGIN + 8} height={GH + MARGIN + 8} rx="26" onClick={props.onEdge}>
+                <title>{t("deck.edgeOpen")}</title>
+              </rect>
+            )}
             {arranging &&
               range(GRID_COLS * GRID_ROWS).map((i) => <rect key={`cell${i}`} className="dk-cell" x={(i % GRID_COLS) * U + 6} y={Math.floor(i / GRID_COLS) * U + 6} width={U - 12} height={U - 12} rx="10" />)}
             {placed.map((p) => {

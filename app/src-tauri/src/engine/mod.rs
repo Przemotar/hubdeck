@@ -46,6 +46,7 @@ mod media;
 pub mod mhz;
 pub mod midi;
 pub mod monitor;
+pub mod names;
 pub mod nudge;
 pub mod obs;
 mod pet;
@@ -102,6 +103,8 @@ pub const CALIBRATION_EVENT: &str = "engine://calibration";
 pub const ERROR_EVENT: &str = "engine://error";
 /// What the knob, fader and base LEDs show now, by module id (`leds::LedView`).
 pub const LEDS_EVENT: &str = "engine://leds";
+/// How long a pressed key shows its frame: long enough to see, short enough not to be in the way.
+const PRESS_FLASH: Duration = Duration::from_millis(160);
 /// How often HubDeck's rainbow moves on (10 steps a second: smooth on the LEDs, light on USB).
 const RAINBOW_STEP: Duration = Duration::from_millis(100);
 /// How long the dial shows a value after it changed.
@@ -203,19 +206,57 @@ static DIAL_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value
 /// At most this often to the window (the hardware gets every frame).
 const DIAL_MIRROR_EVERY: Duration = Duration::from_millis(125);
 
+/// The window plays GIF keys itself (src/components/DeckView.tsx, the same switch there): smooth,
+/// WebView2 440-600 MB instead of ~320 with the deck's pictures (window stage, 2026-10-16); off
+/// until the owner picks.
+const WINDOW_PLAYS_GIFS: bool = false;
+
+/// How often the key panel goes to the window while only animations move on it.
+const KEYS_MIRROR_SLOW: Duration = Duration::from_secs(1);
+
+/// The screensaver on the keys now (`{effect, color}`), for the window to draw it itself.
+static SAVER_SHOWN: std::sync::Mutex<Option<serde_json::Value>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+pub fn saver_shown() -> Option<serde_json::Value> {
+    SAVER_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 /// The key panel's last picture, the same way (keys with live values showed only their icon).
 static KEYS_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value>>> = std::sync::LazyLock::new(Default::default);
 
-/// The key panel's last picture (`{profile, page, module, jpeg, rects}`), when the window opens.
+/// The window's pages that take the pictures: (`"keys"` or `"dial"`, its channel). Through
+/// channels, not events: Tauri's events "are not designed for high throughput" (its docs), and as
+/// events the pictures grew WebView2's page by ~19 MB a minute while the deck moved (release gate,
+/// 2026-10-16); with the window on a page without the deck it stayed flat.
+type MirrorChannel = tauri::ipc::Channel<serde_json::Value>;
+static MIRRORS: std::sync::LazyLock<std::sync::Mutex<Vec<(String, MirrorChannel)>>> = std::sync::LazyLock::new(Default::default);
+/// At most this many channels a kind: a page that reloads never says goodbye.
+const MIRRORS_EACH: usize = 4;
+
+/// A page takes the key panel's (`which` "keys": `{profile, page, module, jpeg, rects}`) or the
+/// dial's (`{profile, module, jpeg}`, JPEG in base64) pictures through `channel`; answers the
+/// last one.
 #[tauri::command]
-pub fn keys_frame() -> Option<serde_json::Value> {
-    KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+pub fn mirror_listen(which: String, channel: MirrorChannel) -> Option<serde_json::Value> {
+    let mut all = MIRRORS.lock().unwrap_or_else(|e| e.into_inner());
+    while all.iter().filter(|(w, _)| *w == which).count() >= MIRRORS_EACH {
+        let oldest = all.iter().position(|(w, _)| *w == which).expect("counted");
+        all.remove(oldest);
+    }
+    all.push((which.clone(), channel));
+    let shown = if which == "dial" { &DIAL_SHOWN } else { &KEYS_SHOWN };
+    shown.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// The dial's last picture (`{profile, module, jpeg}` in base64), when the window opens.
+/// The page no longer shows the deck.
 #[tauri::command]
-pub fn dial_frame() -> Option<serde_json::Value> {
-    DIAL_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+pub fn mirror_unlisten(id: u32) {
+    MIRRORS.lock().unwrap_or_else(|e| e.into_inner()).retain(|(_, c)| c.id() != id);
+}
+
+fn send_mirror(which: &str, frame: &serde_json::Value) {
+    MIRRORS.lock().unwrap_or_else(|e| e.into_inner()).retain(|(w, c)| w != which || c.send(frame.clone()).is_ok());
 }
 
 static LIVE_LOOKS: std::sync::LazyLock<std::sync::Mutex<(String, HashMap<String, Look>)>> = std::sync::LazyLock::new(Default::default);
@@ -554,6 +595,10 @@ impl Engine {
             pet_jpegs: HashMap::new(),
             dial_mirror_at: Instant::now(),
             keys_mirror_at: Instant::now(),
+            dial_mirror_due: false,
+            keys_mirror_due: false,
+            keys_mirror_slow: false,
+            saver_published: None,
             monitor_pick: HashMap::new(),
             live_sig: String::new(),
             live_next: Instant::now(),
@@ -591,6 +636,8 @@ impl Engine {
             backlight_sent: HashMap::new(),
             last_blank_check: Instant::now(),
             highlight_shown: None,
+            press_flash: None,
+            failed_keys: HashMap::new(),
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run(rx)).expect("spawn engine thread");
         let media_tx = tx.clone();
@@ -1077,6 +1124,13 @@ fn picture_failures() -> Vec<String> {
     picture_failed().lock().unwrap_or_else(|e| e.into_inner()).drain().collect()
 }
 
+/// A test copy draws its virtual keys and dial for the window's mirror and sends them nowhere, so
+/// the window can be measured with the deck's pictures coming in (owner's pick 2a, 2026-10-16:
+/// the window as a stage of the release gate, on the test copy).
+fn mirror_only() -> bool {
+    crate::automation::get().is_some()
+}
+
 fn picture_sender(screen: Screen) -> &'static PictureSender {
     static SENDERS: [std::sync::OnceLock<PictureSender>; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
     let i = screen as usize;
@@ -1352,6 +1406,15 @@ struct Worker {
     dial_mirror_at: Instant,
     /// When the key panel's picture last went to the window.
     keys_mirror_at: Instant,
+    /// A newer dial picture waits for the window ([`Worker::send_mirrors`]).
+    dial_mirror_due: bool,
+    /// A newer key panel picture waits for the window.
+    keys_mirror_due: bool,
+    /// Only animations move on the keys (GIFs, the screensaver), which the window plays itself:
+    /// the key panel goes to it once a second, for what else changes (clocks, values).
+    keys_mirror_slow: bool,
+    /// The screensaver the window was last told about (effect, color).
+    saver_published: Option<(String, String)>,
     /// The metric a system monitor was turned to, by control.
     monitor_pick: HashMap<String, monitor::Metric>,
     /// The texts of the clocks and timers on screen, so they redraw only when one changes.
@@ -1417,6 +1480,10 @@ struct Worker {
     last_blank_check: Instant,
     /// The tour's highlight as last drawn: the control and whether it is lit now.
     highlight_shown: Option<(String, bool)>,
+    /// A key just pressed (index, since when): its frame shows the press arrived.
+    press_flash: Option<(usize, Instant)>,
+    /// Keys whose last press failed, by `profile|control id` without the gesture, and why.
+    failed_keys: HashMap<String, String>,
 }
 
 impl Worker {
@@ -1445,6 +1512,16 @@ impl Worker {
             // wake for the next frame of an animation on screen, not up to a whole tick later
             let now = Instant::now();
             let wait = self.frames.values().map(|(_, ends)| ends.saturating_duration_since(now)).min().map_or(tick, |d| d.clamp(Duration::from_millis(10), tick));
+            // a key frame that waits (the last one still going out, or too soon): wake when it may
+            // go, not at the next tick; on the 40 ms grid a 36 ms send and the 50 ms gap meant a
+            // frame every 80 ms, 12.5-14.5 a second (owner's pick, 2026-10-16: GIFs want 15)
+            let wait = if self.keys_waiting {
+                let gap = (self.keys_moved + KEYS_MOVING_EVERY).saturating_duration_since(now);
+                let poll = if picture_sender(Screen::Keys).busy() { Duration::from_millis(4) } else { gap };
+                wait.min(gap.max(poll)).max(Duration::from_millis(2))
+            } else {
+                wait
+            };
             let first = rx.recv_timeout(wait);
             busy_from = Some(Instant::now());
             let first = match first {
@@ -1576,6 +1653,7 @@ impl Worker {
             }
             self.send_seek(now);
             self.animate(now);
+            self.send_mirrors();
             if now.duration_since(self.last_folder_check) >= Duration::from_secs(4) {
                 self.last_folder_check = now;
                 self.check_profiles_folder();
@@ -1647,6 +1725,11 @@ impl Worker {
             if s.highlight.as_ref().is_some_and(|(c, _, _)| highlight_matches(c, control)) {
                 s.highlight = None;
             }
+        }
+        // a key shows at once that its press arrived (owner's pick 1a, 2026-10-16)
+        if let (Some(index), InputEvent::Press(true)) = (control.strip_prefix("keys.").and_then(|i| i.parse::<usize>().ok()), event) {
+            self.press_flash = Some((index, Instant::now()));
+            self.redraw_keys();
         }
         // what is touched while a draft is tried (for the assistant), and, if the user allowed
         // it, how often each control is used
@@ -1880,10 +1963,29 @@ impl Worker {
         }
         self.executor.foreground = foreground;
         self.executor.mapped = mapped;
-        match self.executor.run(binding, event) {
+        // a key's red corner: set when its press fails, gone when one works (the gesture's suffix
+        // is not part of the key's place)
+        let active = self.lock().active.clone().unwrap_or_default();
+        let key_place = format!("{active}|{}", id.split(':').next().unwrap_or(id));
+        let result = self.executor.run(binding, event);
+        let was_failed = self.failed_keys.contains_key(&key_place);
+        match &result {
+            Ok(_) => {
+                self.failed_keys.remove(&key_place);
+            }
+            Err(message) if key_place.rsplit(['/', '|']).next().is_some_and(|c| c.starts_with("keys.")) => {
+                self.failed_keys.insert(key_place.clone(), message.clone());
+            }
+            Err(_) => {}
+        }
+        if was_failed != self.failed_keys.contains_key(&key_place) {
+            self.redraw_keys();
+        }
+        match result {
             Ok(out) => {
                 if let Some(page) = out.page {
-                    self.show_page((!page.is_empty()).then_some(page));
+                    let page = if page == exec::NEXT_PAGE || page == exec::PREVIOUS_PAGE { self.page_beside(page == exec::NEXT_PAGE) } else { (!page.is_empty()).then_some(page) };
+                    self.show_page(page);
                 }
                 if let Some(profile) = out.switch_profile {
                     self.choose(&profile);
@@ -2020,6 +2122,17 @@ impl Worker {
                 let _ = self.app.emit(ERROR_EVENT, EngineError { control: id.into(), message });
             }
         }
+    }
+
+    /// The page after (or before) the one shown, the main page counting as the first; it wraps,
+    /// so one key steps through all of them.
+    fn page_beside(&self, next: bool) -> Option<String> {
+        let s = self.lock();
+        let mut all: Vec<Option<String>> = vec![None];
+        all.extend(s.active_profile().map(|p| p.pages.iter().map(|x| Some(x.id.clone())).collect::<Vec<_>>()).unwrap_or_default());
+        let at = all.iter().position(|x| *x == s.page).unwrap_or(0);
+        let n = all.len();
+        all[if next { (at + 1) % n } else { (at + n - 1) % n }].clone()
     }
 
     fn show_page(&mut self, page: Option<String>) {
@@ -2170,6 +2283,7 @@ impl Worker {
 
     fn redraw_keys(&mut self) {
         self.publish_looks();
+        self.publish_saver();
         let snapshot = self.deck.snapshot();
         let user = self.app.state::<Placements>().all();
         let (profile, page) = {
@@ -2184,7 +2298,11 @@ impl Worker {
             }
         };
         for m in snapshot.modules.iter().filter(|m| m.kind == "keys") {
-            let Some(module) = self.deck.module(&m.id) else { continue };
+            // a test copy's virtual keys have no module: their picture is drawn for the window only
+            let module = self.deck.module(&m.id);
+            if module.is_none() && !mirror_only() {
+                continue;
+            }
             let rotation = self.content_rotation(m.kind, m.slot.as_deref(), snapshot.turn, &user);
             let mut looks: Vec<Look> = (0..15)
                 .map(|i| {
@@ -2246,6 +2364,16 @@ impl Worker {
                     })
                     .collect();
             }
+            // a press just arrived, and the keys whose last press failed
+            if let Some((i, _)) = self.press_flash
+                && let Some(look) = looks.get_mut(i)
+            {
+                look.pressed = true;
+            }
+            for (i, look) in looks.iter_mut().enumerate() {
+                let place = format!("{}|{}", profile.as_ref().map_or("", |p| p.id.as_str()), control_id(page.as_deref(), &format!("keys.{i}")));
+                look.failed = self.failed_keys.contains_key(&place);
+            }
             // the tour points at a key: it turns white (the label and icon stay readable)
             if let Some(look) = self.lit_highlight().and_then(|c| c.strip_prefix("keys.")?.parse::<usize>().ok()).and_then(|i| looks.get_mut(i)) {
                 *look = Look { bg: Some(HIGHLIGHT.into()), fg: Some("#111018".into()), icon_color: None, style: None, image: None, ..look.clone() };
@@ -2278,7 +2406,7 @@ impl Worker {
                 }
                 other => other,
             });
-            if compare == Some(CompareVariant::A) {
+            if let (Some(CompareVariant::A), Some(module)) = (compare, &module) {
                 // the first version: one 72x72 image per key
                 for (i, look) in looks.iter().enumerate() {
                     let svg = render::key_svg(look, rotation);
@@ -2293,6 +2421,9 @@ impl Worker {
             // ~60 KB and took ~60 ms to send on Windows, so the Fun page ran at 7 pictures a second
             // (measured 2026-10-14); at rest the keys keep the full quality
             let moving = self.saver_on || looks.iter().any(|l| l.image.as_deref().is_some_and(|i| i.contains('#')));
+            // the window plays GIFs itself; the screensaver it still takes from here (drawn in the
+            // window it grew WebView2 by 45 MB a minute, 2026-10-16)
+            self.keys_mirror_slow = WINDOW_PLAYS_GIFS && moving && !self.saver_on;
             let quality = (compare == Some(CompareVariant::C)).then_some(100).or(moving.then_some(MOVING_QUALITY));
             // one full-panel image: ~11 ms over USB and all keys change at once
             let mut tiles: Option<Vec<render::Tile>> = None;
@@ -2329,7 +2460,9 @@ impl Worker {
             match jpeg {
                 // sent on the keys' own thread, so the dial and the next frame do not wait for USB
                 Ok(jpeg) => {
-                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
+                    if let Some(module) = &module {
+                        picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
+                    }
                     self.sent.insert(m.id.clone(), svg);
                     self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
                 }
@@ -2957,25 +3090,26 @@ impl Worker {
         }
     }
 
-    /// A press on a session key brings that session's terminal forward; the sessions dial turns
-    /// through them and a press brings the one shown forward.
+    /// A press on a session key says on the dial which session it is and what it waits for; the
+    /// sessions dial turns through them. It no longer pulls the terminal forward: that took a fake
+    /// Alt press past Windows' focus lock (owner, 2026-10-16: no workarounds).
     fn agent_input(&mut self, binding: &Binding, event: InputEvent) {
-        let project = match (binding.action.as_str(), event) {
+        let session = match (binding.action.as_str(), event) {
             (actions::AGENTS, InputEvent::Turn(d)) => {
                 self.fleet.scroll(d as i32);
                 self.dial_dirty = true;
                 return;
             }
-            (actions::AGENTS, InputEvent::Press(true)) => self.fleet.selected_session().map(|s| s.project.clone()),
+            (actions::AGENTS, InputEvent::Press(true)) => self.fleet.selected_session().map(|s| (s.project.clone(), s.state, s.tool.clone())),
             (_, InputEvent::Press(true)) => {
                 let slot = (actions::param_f64(&binding.params, "slot", 1.0).max(1.0) as usize) - 1;
-                self.fleet.by_slot(slot).map(|s| s.project.clone())
+                self.fleet.by_slot(slot).map(|s| (s.project.clone(), s.state, s.tool.clone()))
             }
             _ => return,
         };
-        let caption = match project {
-            Some(p) if agents::focus_project(&p) => return,
-            Some(p) => format!("No window named {p}"),
+        let caption = match session {
+            Some((project, state, Some(tool))) if state == agents::State::Permission => format!("{project}: {} ({tool})", state.word()),
+            Some((project, state, _)) => format!("{project}: {}", state.word()),
             None => "No session here".to_string(),
         };
         self.feedback = Some((Feedback { value: None, caption }, Instant::now()));
@@ -3341,6 +3475,10 @@ impl Worker {
     }
 
     fn expire_deck_ui(&mut self, now: Instant) {
+        if self.press_flash.is_some_and(|(_, at)| now.duration_since(at) >= PRESS_FLASH) {
+            self.press_flash = None;
+            self.redraw_keys();
+        }
         if self.notify_until.is_some_and(|t| now >= t) {
             self.notify_until = None;
             self.set_lighting(exec::Lighting { target: "base".into(), effect: None });
@@ -3428,32 +3566,63 @@ impl Worker {
     /// The dial's picture to the window too, so its drawing shows what the hardware shows: kept
     /// for when the window opens, sent while it is open, at most every [`DIAL_MIRROR_EVERY`].
     fn mirror_dial(&mut self, profile: Option<&str>, module: &str, jpeg: &[u8]) {
-        if self.dial_mirror_at.elapsed() < DIAL_MIRROR_EVERY {
-            return;
-        }
-        self.dial_mirror_at = Instant::now();
         use base64::Engine as _;
         let frame = serde_json::json!({"profile": profile, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg)});
-        if self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) {
-            let _ = self.app.emit("engine://dial-frame", frame.clone());
-        }
         *DIAL_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+        self.dial_mirror_due = true;
+        self.send_mirrors();
     }
 
     /// The key panel's picture to the window, with where each key's window sits in it, so the
     /// drawing shows what the keys show (live values, covers, clocks); like [`Self::mirror_dial`].
     fn mirror_keys(&mut self, profile: Option<&str>, page: Option<&str>, module: &str, jpeg: &[u8], geometry: &render::PanelGeometry) {
-        if self.keys_mirror_at.elapsed() < DIAL_MIRROR_EVERY {
-            return;
-        }
-        self.keys_mirror_at = Instant::now();
         use base64::Engine as _;
         let rects: Vec<[f32; 4]> = (0..15).map(|i| geometry.key_rect(i)).map(|(x, y, w, h)| [x, y, w, h]).collect();
         let frame = serde_json::json!({"profile": profile, "page": page, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg), "rects": rects});
-        if self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) {
-            let _ = self.app.emit("engine://keys-frame", frame.clone());
-        }
         *KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+        self.keys_mirror_due = true;
+        self.send_mirrors();
+    }
+
+    /// The newest dial and key panel pictures to an open window, each at most every
+    /// [`DIAL_MIRROR_EVERY`]. A frame that comes sooner waits and goes on the engine's next turn:
+    /// dropping it left the window on the screensaver's last frame once the keys stood still
+    /// (owner, 2026-10-15).
+    /// Tells the window when the screensaver starts, changes or ends, so it draws it itself.
+    fn publish_saver(&mut self) {
+        let shown = (self.saver_on && !self.blanked).then(|| {
+            let s = self.lock();
+            let effect = s.saver_preview.as_ref().filter(|(_, until)| *until > Instant::now()).map_or(s.store.settings.saver.clone(), |(e, _)| e.clone());
+            (effect, s.store.settings.lights.color.clone())
+        });
+        if shown != self.saver_published {
+            let value = shown.as_ref().map(|(effect, color)| serde_json::json!({"effect": effect, "color": color}));
+            *SAVER_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
+            let _ = self.app.emit("engine://saver", value);
+            self.saver_published = shown;
+        }
+    }
+
+    fn send_mirrors(&mut self) {
+        if !self.dial_mirror_due && !self.keys_mirror_due {
+            return;
+        }
+        let open = self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false));
+        if self.dial_mirror_due && self.dial_mirror_at.elapsed() >= DIAL_MIRROR_EVERY {
+            self.dial_mirror_due = false;
+            self.dial_mirror_at = Instant::now();
+            if open && let Some(frame) = DIAL_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                send_mirror("dial", &frame);
+            }
+        }
+        let keys_every = if self.keys_mirror_slow { KEYS_MIRROR_SLOW } else { DIAL_MIRROR_EVERY };
+        if self.keys_mirror_due && self.keys_mirror_at.elapsed() >= keys_every {
+            self.keys_mirror_due = false;
+            self.keys_mirror_at = Instant::now();
+            if open && let Some(frame) = KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+                send_mirror("keys", &frame);
+            }
+        }
     }
 
     fn redraw_dial(&mut self) {
@@ -3461,7 +3630,10 @@ impl Worker {
         let user = self.app.state::<Placements>().all();
         let profile = self.lock().active_profile().cloned();
         for m in snapshot.modules.iter().filter(|m| m.kind == "dial") {
-            let Some(module) = self.deck.module(&m.id) else { continue };
+            let module = self.deck.module(&m.id);
+            if module.is_none() && !mirror_only() {
+                continue;
+            }
             let rotation = self.content_rotation(m.kind, m.slot.as_deref(), snapshot.turn, &user);
             let stored = profile.as_ref().and_then(|p| p.controls.get("dial"));
             // the dial's Now playing names its music app: its song shows and its player is steered
@@ -3614,7 +3786,9 @@ impl Worker {
             self.perf.dial_time += dial_started.elapsed();
             match jpeg {
                 Ok(jpeg) => {
-                    picture_sender(Screen::Dial).send(m.id.clone(), module.clone(), report::dial_image(&jpeg, module.output_len));
+                    if let Some(module) = &module {
+                        picture_sender(Screen::Dial).send(m.id.clone(), module.clone(), report::dial_image(&jpeg, module.output_len));
+                    }
                     self.sent.insert(m.id.clone(), svg);
                     self.mirror_dial(profile.as_ref().map(|p| p.id.as_str()), &m.id, &jpeg);
                 }

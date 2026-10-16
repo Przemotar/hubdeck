@@ -447,6 +447,16 @@ pub fn games_play(engine: State<'_, Engine>, on: bool) {
 }
 
 #[tauri::command]
+pub fn plugin_stop(id: String) -> Res<()> {
+    super::plugins::stop_one(&id)
+}
+
+#[tauri::command]
+pub fn plugin_start(id: String) -> Res<()> {
+    super::plugins::start_one(&id)
+}
+
+#[tauri::command]
 pub fn plugins_list() -> Vec<super::plugins::PluginInfo> {
     super::plugins::list()
 }
@@ -667,6 +677,53 @@ pub fn onboarding_done(engine: State<'_, Engine>) -> Res<()> {
     Ok(())
 }
 
+/// The names a service knows for a list field (`ParamKind::Named`): `what` as in the catalog,
+/// `arg` the source of an OBS filter or the text typed for a Twitch category. None while the
+/// service has not answered (not connected): the window keeps a typed field. Asking also starts a
+/// fresh read where the list comes from the network; the window asks again a moment later.
+#[tauri::command]
+pub fn names_list(what: String, arg: Option<String>) -> Option<Vec<super::names::Name>> {
+    use super::names::{Name, get};
+    let arg = arg.unwrap_or_default();
+    match what.as_str() {
+        w if w.starts_with("obs.") => {
+            let all = super::obs::names()?;
+            let kind = match &w[4..] {
+                "filter" => format!("filter:{arg}"),
+                k => k.to_string(),
+            };
+            Some(all.get(&kind).cloned().unwrap_or_default().iter().map(|n| Name::same(n)).collect())
+        }
+        w if w.starts_with("ha.") => {
+            super::homeassistant::list();
+            get(w)
+        }
+        "spotify.playlist" => {
+            super::spotify::request(super::spotify::Request::ListPlaylists);
+            get(&what)
+        }
+        "twitch.category" => {
+            if arg.trim().chars().count() >= 2 {
+                let _ = super::twitch::request(super::twitch::Request::SearchCategories(arg.trim().to_string()));
+            }
+            get(&what)
+        }
+        w => get(w),
+    }
+}
+
+/// A line from the window's page for HubDeck's log: that it started, and every error it hits (the
+/// release window has no inspector; a black window on macOS left no trace, 2026-10-15).
+#[tauri::command]
+pub fn window_log(error: bool, message: String) {
+    let message: String = message.chars().take(2000).collect();
+    if error {
+        log::error!("window: {message}");
+    } else {
+        log::info!("window: {message}");
+    }
+}
+
 /// The icon of a program as a picture for a key; returns the image name.
 #[tauri::command]
 pub async fn app_icon(path: String) -> Res<String> {
@@ -701,11 +758,64 @@ pub fn page_create(engine: State<'_, Engine>, profile: String, name: String) -> 
     {
         let mut s = engine.lock();
         let mut p = s.store.profiles.get(&profile).cloned().ok_or_else(|| format!("no profile {profile}"))?;
+        let before = p.pages.last().map(|pg| pg.id.clone());
         p.pages.push(page.clone());
+        let polish = s.store.settings.language.starts_with("pl");
+        for (control, binding) in page_arrows(&page.id, polish) {
+            p.controls.entry(control).or_insert(binding);
+        }
+        // the page before gets its way on, as in Stream Deck (owner, 2026-10-16: with only the new
+        // page's arrows the main page had no way to the next one)
+        if let Some(control) = way_on(&p.controls, before.as_deref()) {
+            let next = page_arrows(before.as_deref().unwrap_or(""), polish).pop().expect("two arrows").1;
+            p.controls.insert(control, next);
+        }
         s.store.save_profile(p).map_err(io)?;
     }
     engine.changed();
     Ok(page)
+}
+
+/// A new page's bottom corners step back and on through the pages, as Stream Deck does (owner's
+/// pick 2a, 2026-10-16); they are ordinary keys, moved or cleared like any other.
+fn page_arrows(page: &str, polish: bool) -> Vec<(String, Binding)> {
+    [(10, "core.previousPage", "Previous", "Wstecz", "arrow-left"), (14, "core.nextPage", "Next", "Dalej", "skip-forward")]
+        .into_iter()
+        .filter_map(|(index, action, en, pl, icon)| {
+            let look = serde_json::json!({"label": if polish { pl } else { en }, "icon": icon});
+            let b: Binding = serde_json::from_value(serde_json::json!({"action": action, "params": {}, "look": look})).ok()?;
+            Some((super::profile::control_id(Some(page), &format!("keys.{index}")), b))
+        })
+        .collect()
+}
+
+/// Where the page `page` (None: the main one) gets a Next page key: none when it has one already,
+/// else its bottom right key, or the free key nearest to it (from the end); none when all are used.
+fn way_on(controls: &std::collections::BTreeMap<String, Binding>, page: Option<&str>) -> Option<String> {
+    let id = |i: usize| super::profile::control_id(page, &format!("keys.{i}"));
+    if (0..15).any(|i| controls.get(&id(i)).is_some_and(|b| b.action == "core.nextPage")) {
+        return None;
+    }
+    (0..15).rev().map(id).find(|c| controls.get(c).is_none_or(|b| b.action.is_empty()))
+}
+
+/// The page before `page` gets a Next page key (the window's "Add Next page" when nothing on the
+/// deck opens the page, owner's pick 1a, 2026-10-16).
+#[tauri::command]
+pub fn page_add_way(engine: State<'_, Engine>, profile: String, page: String) -> Res<()> {
+    {
+        let mut s = engine.lock();
+        let mut p = s.store.profiles.get(&profile).cloned().ok_or_else(|| format!("no profile {profile}"))?;
+        let at = p.pages.iter().position(|x| x.id == page).ok_or_else(|| format!("no page {page}"))?;
+        let before = (at > 0).then(|| p.pages[at - 1].id.clone());
+        let polish = s.store.settings.language.starts_with("pl");
+        let control = way_on(&p.controls, before.as_deref()).ok_or("the page before this one has no free key: clear one and try again")?;
+        let next = page_arrows(before.as_deref().unwrap_or(""), polish).pop().expect("two arrows").1;
+        p.controls.insert(control, next);
+        s.store.save_profile(p).map_err(io)?;
+    }
+    engine.changed();
+    Ok(())
 }
 
 #[tauri::command]
@@ -982,5 +1092,34 @@ mod accessibility {
 mod accessibility {
     pub fn trusted(_prompt: bool) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_page_gets_its_arrows_in_the_bottom_corners() {
+        let arrows = page_arrows("p1", false);
+        assert_eq!(arrows.iter().map(|(c, b)| (c.as_str(), b.action.as_str())).collect::<Vec<_>>(), [("p1/keys.10", "core.previousPage"), ("p1/keys.14", "core.nextPage")]);
+        assert_eq!(page_arrows("p1", true)[1].1.look.label.as_deref(), Some("Dalej"));
+    }
+
+    #[test]
+    fn the_page_before_gets_a_next_page_key_where_one_is_free() {
+        let b = |action: &str| serde_json::from_value::<Binding>(serde_json::json!({"action": action, "params": {}})).unwrap();
+        let mut controls = std::collections::BTreeMap::new();
+        assert_eq!(way_on(&controls, None).as_deref(), Some("keys.14"));
+        controls.insert("keys.14".to_string(), b("core.hotkey"));
+        controls.insert("keys.13".to_string(), b("core.hotkey"));
+        assert_eq!(way_on(&controls, None).as_deref(), Some("keys.12"));
+        controls.insert("keys.3".to_string(), b("core.nextPage"));
+        assert_eq!(way_on(&controls, None), None);
+        assert_eq!(way_on(&controls, Some("p1")).as_deref(), Some("p1/keys.14"));
+        for i in 0..15 {
+            controls.insert(format!("p2/keys.{i}"), b("core.hotkey"));
+        }
+        assert_eq!(way_on(&controls, Some("p2")), None);
     }
 }

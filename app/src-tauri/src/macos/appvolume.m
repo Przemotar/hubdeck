@@ -239,3 +239,51 @@ void mh_appvol_reset(void) {
         appvol_reset();
     }
 }
+
+// The bundle names (`Spotify.app`) of the regular apps sending sound out now: an audio process
+// counts for the app whose bundle id starts its own (com.google.Chrome.helper -> Google Chrome).
+// For the window's app lists, which put them first (owner, 2026-10-15). A malloc'd string, one
+// name a line; free it with mh_free. Empty before macOS 14.2.
+char *mh_audio_playing(void) {
+    @autoreleasepool {
+        NSMutableArray<NSString *> *bundles = [NSMutableArray array];
+        if (@available(macOS 14.2, *)) {
+            AudioObjectPropertyAddress a = global(kAudioHardwarePropertyProcessObjectList);
+            UInt32 size = 0;
+            if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, NULL, &size) == noErr && size > 0) {
+                NSMutableData *data = [NSMutableData dataWithLength:size];
+                if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, NULL, &size, data.mutableBytes) == noErr) {
+                    AudioObjectID *ids = data.mutableBytes;
+                    for (UInt32 i = 0; i < size / sizeof(AudioObjectID); i++) {
+                        UInt32 running = 0, s = sizeof running;
+                        AudioObjectPropertyAddress r = global(kAudioProcessPropertyIsRunningOutput);
+                        if (AudioObjectGetPropertyData(ids[i], &r, 0, NULL, &s, &running) != noErr || !running) continue;
+                        CFStringRef bundle = NULL;
+                        s = sizeof bundle;
+                        AudioObjectPropertyAddress b = global(kAudioProcessPropertyBundleID);
+                        if (AudioObjectGetPropertyData(ids[i], &b, 0, NULL, &s, &bundle) == noErr && bundle) {
+                            [bundles addObject:((__bridge NSString *)bundle).lowercaseString];
+                            CFRelease(bundle);
+                        }
+                    }
+                }
+            }
+        }
+        NSMutableArray<NSString *> *names = [NSMutableArray array];
+        for (NSRunningApplication *app in NSWorkspace.sharedWorkspace.runningApplications) {
+            NSString *own = app.bundleIdentifier.lowercaseString;
+            if (app.activationPolicy != NSApplicationActivationPolicyRegular || !own.length || !app.bundleURL) continue;
+            for (NSString *b in bundles) {
+                if ([b isEqualToString:own] || [b hasPrefix:[own stringByAppendingString:@"."]]) {
+                    [names addObject:app.bundleURL.lastPathComponent];
+                    break;
+                }
+            }
+        }
+        return strdup([names componentsJoinedByString:@"\n"].UTF8String);
+    }
+}
+
+void mh_free(char *p) {
+    free(p);
+}

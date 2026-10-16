@@ -353,8 +353,39 @@ fn picture(uri: &str, size: f32, label: &str, fg: &str, label_px: f32, round: bo
     out
 }
 
+/// What sits over a key's drawing: a light frame while a press is acknowledged, a red corner
+/// with an "!" after a failed press. Inside the turned group, so the corner is top right as read.
+fn key_marks(look: &Look, s: f32) -> String {
+    let mut out = String::new();
+    if look.failed {
+        out += &format!(
+            r##"<path d="M{a} 0H{s}V{b}Z" fill="#f0506e"/><rect x="{x}" y="4" width="2.6" height="8" rx="1.3" fill="#fff"/><circle cx="{cx}" cy="15" r="1.5" fill="#fff"/>"##,
+            a = s - 24.0,
+            b = 24.0,
+            x = s - 8.3,
+            cx = s - 7.0
+        );
+    }
+    if look.pressed {
+        // in the key's text color, so it shows on a light key too
+        let fg = color(look.fg.as_ref(), DEFAULT_FG);
+        out += &format!(r##"<rect x="1.5" y="1.5" width="{w}" height="{w}" rx="10" fill="none" stroke="{fg}" stroke-opacity="0.9" stroke-width="3"/>"##, w = s - 3.0);
+    }
+    out
+}
+
 /// One key's drawing in a 72x72 box, turned `rotation` degrees clockwise about its centre.
 fn key_body(look: &Look, rotation: i32) -> String {
+    let s = KEY_PX as f32;
+    let body = key_content(look, rotation);
+    let marks = key_marks(look, s);
+    if marks.is_empty() {
+        return body;
+    }
+    format!(r#"{body}<g transform="rotate({rotation} {c} {c})">{marks}</g>"#, c = s / 2.0)
+}
+
+fn key_content(look: &Look, rotation: i32) -> String {
     let s = KEY_PX as f32;
     let bg = color(look.bg.as_ref(), DEFAULT_BG);
     let fg = color(look.fg.as_ref(), DEFAULT_FG);
@@ -434,6 +465,15 @@ pub fn panel_svg(looks: &[Look], rotation: i32, geometry: &PanelGeometry) -> Str
         out += &format!(r#"<g transform="translate({cx} {cy}) scale({scale})">{}</g>"#, key_body(look, rotation));
     }
     out + "</svg>"
+}
+
+/// A screen's pixels as JPEG. The pixmap is opaque (every screen has a background), so its
+/// premultiplied RGBA is the plain colour and the alpha byte is simply left out by the encoder.
+pub fn encode_jpeg(pixmap: &tiny_skia::Pixmap, quality: u8) -> Result<Vec<u8>, String> {
+    let (w, h) = (u16::try_from(pixmap.width()).map_err(|e| e.to_string())?, u16::try_from(pixmap.height()).map_err(|e| e.to_string())?);
+    let mut out = Vec::with_capacity(32 * 1024);
+    jpeg_encoder::Encoder::new(&mut out, quality).encode(pixmap.data(), w, h, jpeg_encoder::ColorType::Rgba).map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 /// The key panel as 15 tiles instead of one SVG: each tile is the same drawing as in
@@ -972,17 +1012,11 @@ impl Renderer {
         let size = tree.size().to_int_size();
         let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or("empty image")?;
         resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
-        // the background is opaque, so dropping alpha is lossless
-        let rgb = image::RgbImage::from_fn(size.width(), size.height(), |x, y| {
-            let p = pixmap.pixel(x, y).expect("in bounds").demultiply();
-            image::Rgb([p.red(), p.green(), p.blue()])
-        });
         let rendered = started.elapsed();
-        let mut out = Cursor::new(Vec::new());
         let quality = quality.unwrap_or(if size.width() == DIAL_PX { DIAL_QUALITY } else { KEY_QUALITY });
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality).encode_image(&rgb).map_err(|e| e.to_string())?;
+        let out = encode_jpeg(&pixmap, quality)?;
         log::debug!("image {}x{}: render {:?}, jpeg {:?}", size.width(), size.height(), rendered, started.elapsed() - rendered);
-        Ok(out.into_inner())
+        Ok(out)
     }
 
     /// The key panel from tiles ([`panel_tiles`]): a tile drawn before is taken from memory.
@@ -1015,13 +1049,7 @@ impl Renderer {
             };
             panel.draw_pixmap(tile.x, tile.y, (*pixmap).as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
         }
-        let rgb = image::RgbImage::from_fn(PANEL_W, PANEL_H, |x, y| {
-            let p = panel.pixel(x, y).expect("in bounds").demultiply();
-            image::Rgb([p.red(), p.green(), p.blue()])
-        });
-        let mut out = Cursor::new(Vec::new());
-        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.unwrap_or(KEY_QUALITY)).encode_image(&rgb).map_err(|e| e.to_string())?;
-        Ok(out.into_inner())
+        encode_jpeg(&panel, quality.unwrap_or(KEY_QUALITY))
     }
 
     /// Draw an SVG at its own size, or scaled to fit `size` and centered on it (transparent
@@ -1397,6 +1425,99 @@ mod timing {
             }
             eprintln!("after {} frames: {} MB", (round + 1) * 100, rss());
         }
+    }
+
+    #[test]
+    fn a_pressed_key_gets_a_frame_and_a_failed_one_a_red_corner() {
+        let plain = Look { label: Some("Mic".into()), icon: Some("mic".into()), ..Look::default() };
+        let svg = |l: &Look| key_svg(l, 0);
+        assert!(!svg(&plain).contains("#f0506e") && !svg(&plain).contains("stroke-width=\"3\""));
+        assert!(svg(&Look { pressed: true, ..plain.clone() }).contains("stroke-width=\"3\""));
+        assert!(svg(&Look { failed: true, ..plain.clone() }).contains("#f0506e"));
+        // the marks turn with the content, so the corner is top right as the user reads the key
+        assert!(svg(&Look { failed: true, ..plain.clone() }).matches("rotate(90").count() == 0);
+        assert!(key_svg(&Look { failed: true, ..plain }, 90).matches("rotate(90").count() == 2);
+    }
+
+    /// Writes the press frame and the red corner on a few keys to `target/key-marks.jpg` to look at.
+    #[test]
+    #[ignore]
+    fn key_marks_picture() {
+        let r = Renderer::default();
+        let looks: Vec<Look> = (0..15)
+            .map(|i| Look {
+                label: Some(["Mic", "Open", "Spotify", "Clock", "OBS"][i % 5].into()),
+                icon: Some(["mic", "app-window", "music", "clock", "video"][i % 5].into()),
+                pressed: i == 1 || i == 7 || i == 12,
+                failed: i == 2 || i == 7,
+                bg: (i == 12).then(|| "#f2f2f2".into()),
+                fg: (i == 12).then(|| "#111111".into()),
+                ..Look::default()
+            })
+            .collect();
+        let jpeg = r.panel_jpeg(&panel_tiles(&looks, 0, &PanelGeometry::default()), Some(92)).unwrap();
+        std::fs::write(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/key-marks.jpg"), jpeg).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn panel_breakdown_timing() {
+        // where a cached panel's 7 ms go (2026-10-15, the release gate's CPU over 15 %)
+        use base64::Engine as _;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/demo");
+        let mut frames = Vec::new();
+        for name in ["aurora.gif", "bars.gif", "dots.gif", "fire.gif", "heartbeat.gif", "lava.gif", "orbit.gif"] {
+            let bytes = std::fs::read(dir.join(name)).unwrap();
+            let img = image::load_from_memory(&bytes).unwrap();
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+            frames.push(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.get_ref())));
+        }
+        let looks: Vec<Look> = (0..15).map(|i| Look { image: Some(frames[i % frames.len()].clone()), label: Some("Fun".into()), ..Look::default() }).collect();
+        let r = Renderer::default();
+        let geometry = PanelGeometry::default();
+        r.panel_jpeg(&panel_tiles(&looks, 0, &geometry), Some(80)).unwrap();
+        let n = 20;
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            std::hint::black_box(panel_tiles(&looks, 0, &geometry));
+        }
+        let build = t.elapsed() / n;
+        let tiles = panel_tiles(&looks, 0, &geometry);
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            for tile in &tiles {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                tile.svg.hash(&mut h);
+                std::hint::black_box(h.finish());
+            }
+        }
+        let hash = t.elapsed() / n;
+        let bytes: usize = tiles.iter().map(|t| t.svg.len()).sum();
+        let mut panel = tiny_skia::Pixmap::new(PANEL_W, PANEL_H).unwrap();
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            std::hint::black_box(image::RgbImage::from_fn(PANEL_W, PANEL_H, |x, y| {
+                let p = panel.pixel(x, y).unwrap().demultiply();
+                image::Rgb([p.red(), p.green(), p.blue()])
+            }));
+        }
+        let convert = t.elapsed() / n;
+        panel.fill(tiny_skia::Color::from_rgba8(40, 30, 60, 255));
+        let rgb = image::RgbImage::from_pixel(PANEL_W, PANEL_H, image::Rgb([40, 30, 60]));
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            let mut out = std::io::Cursor::new(Vec::new());
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 80).encode_image(&rgb).unwrap();
+        }
+        let encode = t.elapsed() / n;
+        let t = std::time::Instant::now();
+        for _ in 0..n {
+            r.panel_jpeg(&tiles, Some(80)).unwrap();
+        }
+        let whole = t.elapsed() / n;
+        eprintln!("build tiles {build:?} ({} KB of SVG), hash {hash:?}, to RGB {convert:?}, JPEG {encode:?}; panel_jpeg {whole:?}", bytes / 1024);
     }
 
     #[test]

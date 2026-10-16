@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
@@ -11,11 +11,11 @@ import { api, useEngine } from "./engine";
 import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
-import { ArrangePanel, Banner, BaseTurnPicker, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, TopBar } from "./components/Panels";
+import { ArrangePanel, Banner, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
 import { Guide, guideSeen } from "./components/Guide";
-import { askAssistant } from "./components/Assistant";
+import { askAssistant, useSetUp } from "./components/Assistant";
 import { Icon } from "./components/Icon";
 import { CalibrationPanel } from "./components/Calibration";
 import { detachedKinds, placeModules, placementKey, usePlacements } from "./layout";
@@ -54,9 +54,17 @@ export default function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(DEMO_PANEL === "plugins" ? "plugins" : "general");
   const [galleryOpen, setGalleryOpen] = useState(DEMO_PANEL === "gallery");
   const [newRequest, setNewRequest] = useState(0);
-  // Get started is open when the app opens (owner, 2026-10-14)
-  const [leftTab, setLeftTab] = useState<LeftTab>(DEMO_PANEL === "profiles" ? "profiles" : DEMO_PANEL === "actions" ? "actions" : "assistant");
+  // Get started is open when the app opens (owner, 2026-10-14); once set up, Profiles is
+  // (docs/FLOWS.md difference 3), unless the user picked a tab already
+  const [leftTab, setLeftTab] = useState<LeftTab>(DEMO_PANEL === "profiles" ? "profiles" : "assistant");
+  const setUp = useSetUp(view);
+  const tabPicked = useRef(false);
+  useEffect(() => {
+    if (setUp && !tabPicked.current && !DEMO_PANEL) setLeftTab("profiles");
+  }, [setUp]);
   const [forAppOpen, setForAppOpen] = useState(DEMO_PANEL === "forapp");
+  // "Edge" under the drawing: this profile's lights (owner's pick 3a, 2026-10-16)
+  const [edgeOpen, setEdgeOpen] = useState(false);
   // a profile just made for an app: the inspector suggests next steps until something is picked
   const [fresh, setFresh] = useState<string | null>(DEMO_PANEL === "fresh" ? "demo-obs" : null);
   const { saved, save } = usePlacements();
@@ -95,10 +103,9 @@ export default function App() {
   const [guideOpen, setGuideOpen] = useState(DEMO_PANEL === "guide");
   const startGuide = () => {
     if (guideSeen()) return;
-    // a key is picked so the inspector shows its editor; the actions are on the left
+    // a key is picked so the inspector shows its editor with "What should it do?"
     const keys = live.deck.modules.find((m) => m.kind === "keys");
     if (keys) setSelected({ module: keys.id, kind: keys.kind, index: 0 } as ControlRef);
-    setLeftTab("actions");
     showInspector();
     setGuideOpen(true);
   };
@@ -132,8 +139,13 @@ export default function App() {
   // touching a control on the hardware selects it, so you can find a key by pressing it
   useEffect(() => {
     if (live.lastTouched) {
-      setSelected(live.lastTouched);
-      setProfileOpen(false);
+      const touched = live.lastTouched;
+      // after the deck's drawing: the control's panel is heavy and the first move of a fader
+      // waited for it (2026-10-15)
+      startTransition(() => {
+        setSelected(touched);
+        setProfileOpen(false);
+      });
     }
   }, [live.lastTouched]);
 
@@ -178,11 +190,11 @@ export default function App() {
         </main>
       ) : settingsOpen && !calibrating ? (
         <main className="workspace">
-          <SettingsPanel live={live} view={view} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} onCalibrate={() => (setCalibrating(true), setSettingsOpen(false))} />
+          <SettingsPanel live={live} view={view} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} onCalibrate={() => (setCalibrating(true), setSettingsOpen(false))} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onBuild={() => (setBuilderOpen(true), setSettingsOpen(false))} />
         </main>
       ) : (
       <main className={`workspace${arranging ? " is-arranging" : ""}`}>
-        <LeftPanel view={view} selected={selected} tab={leftTab} onTab={setLeftTab} onBuild={() => setBuilderOpen(true)} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onOpenPlugins={() => (setSettingsSection("plugins"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
+        <LeftPanel view={view} tab={leftTab} onTab={(tab) => ((tabPicked.current = true), setLeftTab(tab))} onBuild={() => setBuilderOpen(true)} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onNewProfile={() => setNewRequest((n) => n + 1)} onOpenProfile={() => (setProfileOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
         <section className="center">
           <div className="stage-bar">
             {!arranging && live.deck.modules.some((m) => m.kind === "keys") && <PageBar view={view} />}
@@ -213,14 +225,12 @@ export default function App() {
             onSelect={(c) => {
               setSelected(c);
               showInspector();
-              // picking a control in the window is to give it something: the actions come back
-              // (the assistant's talk stays: a key of a draft being tried is fixed next to it)
-              setLeftTab((tab) => (tab === "assistant" ? tab : "actions"));
             }}
             saved={saved}
             onPlace={save}
             arranging={arranging}
-            onEdge={() => (setSettingsSection("lights"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
+            onEdge={() => setEdgeOpen(true)}
+            onDeselect={() => setSelected(null)}
             profile={view.profile}
             page={view.state?.page ?? null}
             onDropAction={(c, action) => {
@@ -244,18 +254,26 @@ export default function App() {
           <CalibrationPanel onClose={() => setCalibrating(false)} />
         ) : arranging ? (
           <ArrangePanel onDone={toggleArrange} live={live} saved={saved} onPlace={save} />
-        ) : forAppOpen ? (
-          <ForAppPanel view={view} kinds={kinds} onClose={() => setForAppOpen(false)} onMade={(id) => (setForAppOpen(false), setFresh(id), setSelected(null))} />
-        ) : galleryOpen ? (
-          <GalleryPanel live={live} saved={saved} onClose={() => setGalleryOpen(false)} />
-        ) : gamesOpen ? (
-          <GamesPanel view={view} onClose={() => setGamesOpen(false)} />
-        ) : profileOpen ? (
-          <ProfilePanel view={view} onClose={() => setProfileOpen(false)} />
         ) : (
-          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} />
+          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} onOpenPlugins={() => (setSettingsSection("plugins"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
         )}
       </main>
+      )}
+      {/* panels open over the window, so a touch on a control still shows its editor (docs/FLOWS.md, difference 4) */}
+      {!tourShown && !arranging && !calibrating && (forAppOpen || galleryOpen || gamesOpen || profileOpen || edgeOpen) && (
+        <Sheet onClose={() => (setForAppOpen(false), setGalleryOpen(false), setGamesOpen(false), setProfileOpen(false), setEdgeOpen(false))}>
+          {edgeOpen ? (
+            <EdgePanel view={view} onClose={() => setEdgeOpen(false)} onAll={() => (setEdgeOpen(false), setSettingsSection("lights"), setSettingsOpen(true))} />
+          ) : forAppOpen ? (
+            <ForAppPanel view={view} kinds={kinds} onClose={() => setForAppOpen(false)} onMade={(id) => (setForAppOpen(false), setFresh(id), setSelected(null))} />
+          ) : galleryOpen ? (
+            <GalleryPanel live={live} saved={saved} onClose={() => setGalleryOpen(false)} />
+          ) : gamesOpen ? (
+            <GamesPanel view={view} onClose={() => setGamesOpen(false)} />
+          ) : (
+            <ProfilePanel view={view} onClose={() => setProfileOpen(false)} />
+          )}
+        </Sheet>
       )}
       {guideOpen && !tourShown && <Guide onClose={() => setGuideOpen(false)} />}
     </div>

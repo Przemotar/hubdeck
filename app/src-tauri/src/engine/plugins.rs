@@ -163,6 +163,8 @@ struct Host {
     dir: PathBuf,
     /// Controls currently shown with a plugin action: context -> (plugin, action, settings).
     visible: Mutex<HashMap<String, (String, String, Value)>>,
+    /// Plugins the user stopped on the Plugins page: the watchdog leaves them stopped.
+    held: Mutex<std::collections::HashSet<String>>,
 }
 
 static HOST: OnceLock<Host> = OnceLock::new();
@@ -293,6 +295,7 @@ pub fn start(data_dir: &Path, engine: Sender<Msg>) {
         port,
         dir: data_dir.join("plugins"),
         visible: Mutex::new(HashMap::new()),
+        held: Mutex::new(std::collections::HashSet::new()),
     };
     if HOST.set(host).is_err() {
         return;
@@ -385,6 +388,10 @@ fn watch() {
         }
         for (id, code) in ended {
             host.children.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+            // stopped on the Plugins page: not a crash, nothing to start again
+            if host.held.lock().unwrap_or_else(|e| e.into_inner()).contains(&id) {
+                continue;
+            }
             log::warn!("plugin {id} stopped ({code})");
             exited_at.insert(id.clone(), Instant::now());
             host.status.lock().unwrap_or_else(|e| e.into_inner()).entry(id).or_insert((0, String::new())).1 = format!("stopped ({code})");
@@ -407,6 +414,35 @@ fn watch() {
             }
         }
     }
+}
+
+/// Stop a plugin by hand (it eats the CPU, it misbehaves): its program ends and the watchdog leaves
+/// it stopped until Start (owner's pick, 2026-10-16; PAIN-POINTS SD11: plugins that eat the CPU).
+pub fn stop_one(id: &str) -> Result<(), String> {
+    let host = HOST.get().ok_or("plugins are not running")?;
+    host.held.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string());
+    if let Some(mut child) = host.children.lock().unwrap_or_else(|e| e.into_inner()).remove(id) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    host.outbox.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    host.status.lock().unwrap_or_else(|e| e.into_inner()).entry(id.to_string()).or_insert((0, String::new())).1 = "stopped by you".into();
+    log::info!("plugin {id} stopped by the user");
+    Ok(())
+}
+
+/// Start a plugin stopped by hand (or one the watchdog gave up on), with a fresh restart count.
+pub fn start_one(id: &str) -> Result<(), String> {
+    let host = HOST.get().ok_or("plugins are not running")?;
+    host.held.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    if host.children.lock().unwrap_or_else(|e| e.into_inner()).contains_key(id) {
+        return Ok(());
+    }
+    host.status.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), (0, "starting".into()));
+    let plugins = host.plugins.read().unwrap_or_else(|e| e.into_inner());
+    let p = plugins.iter().find(|p| p.manifest.id == id).ok_or_else(|| format!("no plugin {id}"))?;
+    launch(p, host.port);
+    Ok(())
 }
 
 /// Plugin programs left running by an earlier HubDeck that crashed (no Exit, so `stop` never ran):
@@ -460,6 +496,8 @@ pub struct PluginInfo {
     /// CPU use in percent of one core, and memory in MB, while it runs.
     pub cpu: Option<f32>,
     pub memory_mb: Option<u64>,
+    /// Stopped on the Plugins page.
+    pub held: bool,
 }
 
 /// CPU and memory of the plugin processes, refreshed on each call (the page asks every 2 s).
@@ -474,6 +512,7 @@ pub fn list() -> Vec<PluginInfo> {
     sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&wanted), true);
     let status = host.status.lock().unwrap_or_else(|e| e.into_inner());
     let outbox = host.outbox.lock().unwrap_or_else(|e| e.into_inner());
+    let held = host.held.lock().unwrap_or_else(|e| e.into_inner());
     host.plugins
         .read()
         .unwrap_or_else(|e| e.into_inner())
@@ -491,6 +530,7 @@ pub fn list() -> Vec<PluginInfo> {
                 permissions: p.manifest.permissions.clone(),
                 cpu: pids.get(&p.manifest.id).and_then(|pid| sys.process(*pid)).map(|pr| pr.cpu_usage()),
                 memory_mb: pids.get(&p.manifest.id).and_then(|pid| sys.process(*pid)).map(|pr| pr.memory() / 1_048_576),
+                held: held.contains(&p.manifest.id),
             }
         })
         .collect()

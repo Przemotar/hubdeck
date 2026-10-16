@@ -63,6 +63,28 @@ pub fn settings_view(v: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// A short version for the bug form on GitHub (owner's pick 2a, 2026-10-16): version, system,
+/// modules and the last warnings and errors, scrubbed like the file, short enough for the form's
+/// address; the person sees it in the form and can change it before sending.
+pub fn brief(log_file: &Path, version: &str, deck: &DeckSnapshot) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "HubDeck {version}, {} ({}, {})", sysinfo::System::long_os_version().unwrap_or_default(), std::env::consts::OS, std::env::consts::ARCH);
+    let modules: Vec<String> = deck.modules.iter().map(|m| format!("{} {}", m.kind, m.firmware.as_deref().unwrap_or("?"))).collect();
+    let _ = writeln!(out, "Modules: {}", if modules.is_empty() { "none".to_string() } else { modules.join(", ") });
+    if !deck.unresponsive.is_empty() {
+        let _ = writeln!(out, "Not responding: {}", deck.unresponsive.join(", "));
+    }
+    let log = std::fs::read_to_string(log_file).unwrap_or_default();
+    let problems: Vec<String> = log.lines().filter(|l| l.contains("][WARN][") || l.contains("][ERROR][")).filter_map(scrub).map(|l| l.chars().take(220).collect()).collect();
+    let _ = writeln!(out, "Last warnings and errors ({} of {}):", problems.len().min(BRIEF_LINES), problems.len());
+    for l in problems.iter().skip(problems.len().saturating_sub(BRIEF_LINES)) {
+        let _ = writeln!(out, "{l}");
+    }
+    out
+}
+
+const BRIEF_LINES: usize = 20;
+
 pub fn write(dir: &Path, log_file: &Path, version: &str, deck: &DeckSnapshot, settings: &serde_json::Value, plugins: &[super::plugins::PluginInfo]) -> std::io::Result<PathBuf> {
     let mut out = String::new();
     let _ = writeln!(out, "HubDeck {version} diagnostics, {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
@@ -110,6 +132,37 @@ mod tests {
         assert_eq!(v["spotifyClientId"], "(set)");
         assert_eq!(v["apps"], "(1 items)");
         assert_eq!(v["count"], 3);
+    }
+
+    #[test]
+    fn the_brief_has_only_the_last_warnings_and_errors_scrubbed() {
+        let dir = std::env::temp_dir().join(format!("hubdeck-brief-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("hubdeck.log");
+        let mut text = String::from(
+            "[2026-10-16][10:00:00][INFO][x] fine
+",
+        );
+        for i in 0..30 {
+            text += &format!(
+                "[2026-10-16][10:00:{i:02}][WARN][x] keys MHKD15AA431251603100 dropped {i}
+"
+            );
+        }
+        std::fs::write(&log, text).unwrap();
+        let b = brief(&log, "0.1.0", &DeckSnapshot::default());
+        assert!(b.starts_with("HubDeck 0.1.0") && b.contains("Modules: none") && b.contains("(20 of 30)"), "{b}");
+        assert!(
+            !b.contains("fine")
+                && !b.contains("MHKD15AA431251603100")
+                && b.contains("dropped 29")
+                && !b.contains(
+                    "dropped 9
+"
+                ),
+            "{b}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

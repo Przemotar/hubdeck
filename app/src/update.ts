@@ -19,6 +19,9 @@ export const updates = {
   check: () => invoke<UpdateInfo | null>("update_check"),
   /** Downloads, installs and restarts; only on the user's request. */
   install: () => invoke("update_install"),
+  /** The version before this one, to go back to (None: there is none). */
+  previous: () => invoke<UpdateInfo | null>("update_previous"),
+  rollback: (version: string) => invoke("update_rollback", { version }),
 };
 
 /** A newer version found by the check at start (`update://available`); dismissable. */

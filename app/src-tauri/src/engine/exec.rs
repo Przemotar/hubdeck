@@ -107,7 +107,12 @@ pub fn step_profile(ordered: &[String], current: Option<&str>, step: i32) -> Opt
 }
 
 /// The actions a test copy (`automation`) runs: they change only HubDeck itself.
-const TEST_COPY_RUNS: [&str; 7] = ["core.page", "core.profile", "core.clock", "core.timer", "core.lighting", "core.deckBrightness", "core.dialGallery"];
+/// `out.page` for Next page / Previous page: resolved against the active profile's pages.
+pub const NEXT_PAGE: &str = ":next";
+pub const PREVIOUS_PAGE: &str = ":previous";
+
+const TEST_COPY_RUNS: [&str; 10] =
+    ["core.page", "core.nextPage", "core.previousPage", "core.profile", "core.clock", "core.timer", "core.lighting", "core.deckBrightness", "core.dialGallery", "core.saver"];
 
 /// The app, to send keys, clicks and text from its main thread: on macOS 26 enigo's keyboard
 /// layout lookup (TSMGetInputSourceProperty) stops the app when called from any other thread
@@ -120,6 +125,12 @@ thread_local! {
 }
 
 /// Run `f` with the keyboard and mouse: on the main thread on macOS, here elsewhere.
+/// `{date}` and `{time}` in a typed text become the date and time of the press (one of the keys
+/// other deck owners use most, PAIN-POINTS RD8).
+fn with_now(text: &str, now: chrono::DateTime<chrono::Local>) -> String {
+    text.replace("{date}", &now.format("%Y-%m-%d").to_string()).replace("{time}", &now.format("%H:%M").to_string())
+}
+
 fn keyboard<T: Send + 'static>(f: impl FnOnce(&mut Enigo) -> Result<T, String> + Send + 'static) -> Result<T, String> {
     let run = move || {
         ENIGO.with(|cell| {
@@ -374,7 +385,7 @@ impl Executor {
             ("core.text", InputEvent::Press(true)) => {
                 let text = param_str(p, "text");
                 if !text.is_empty() {
-                    let text = text.to_string();
+                    let text = with_now(text, chrono::Local::now());
                     keyboard(move |e| e.text(&text).map_err(|e| e.to_string()))?;
                 }
             }
@@ -645,6 +656,8 @@ impl Executor {
             }
 
             ("core.page", InputEvent::Press(true)) => out.page = Some(param_str(p, "page").to_string()),
+            ("core.nextPage", InputEvent::Press(true)) => out.page = Some(NEXT_PAGE.to_string()),
+            ("core.previousPage", InputEvent::Press(true)) => out.page = Some(PREVIOUS_PAGE.to_string()),
 
             // an input this action does not use (e.g. turning a knob bound to "Open app")
             _ => {}
@@ -847,6 +860,14 @@ fn open_closed_app(target: &volume::Target) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn date_and_time_are_filled_in_typed_text() {
+        use chrono::TimeZone;
+        let now = chrono::Local.with_ymd_and_hms(2026, 10, 16, 9, 5, 0).unwrap();
+        assert_eq!(with_now("{date} {time}", now), "2026-10-16 09:05");
+        assert_eq!(with_now("no marks", now), "no marks");
+    }
     use serde_json::json;
 
     #[test]

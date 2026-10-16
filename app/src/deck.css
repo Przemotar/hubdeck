@@ -43,6 +43,21 @@
   width: 100%;
   height: 100%;
   overflow: visible;
+  /* each layer on its own GPU layer: a moving fader or a new key picture in the front repainted
+     the board below with its noise, shadow and blur filters (~130 ms a frame in WebKit, the
+     window drew 8 frames a second, 2026-10-15) */
+  will-change: transform;
+}
+/* the base's rim opens the lights; only its band takes clicks, the controls sit above it */
+.dk-rim {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 22;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.dk-rim:hover {
+  stroke: rgb(255 255 255 / 0.06);
 }
 .dk-back {
   pointer-events: none;

@@ -63,6 +63,89 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
     app.restart()
 }
 
+/// Where the releases are listed (public, no sign-in).
+const RELEASES: &str = "https://api.github.com/repos/Przemotar/hubdeck/releases?per_page=30";
+
+/// `0.1.2` or `v0.1.2` as numbers to compare; anything after `-` (a pre-release) is not a version
+/// to go back to.
+fn version_of(tag: &str) -> Option<(u64, u64, u64)> {
+    let v = tag.trim().trim_start_matches('v');
+    if v.contains('-') {
+        return None;
+    }
+    let mut parts = v.split('.').map(|p| p.parse::<u64>().ok());
+    Some((parts.next()??, parts.next()??, parts.next()??))
+}
+
+/// The newest published release older than `current` in a GitHub releases list: (version, notes).
+pub fn previous_release(releases: &serde_json::Value, current: &str) -> Option<(String, String)> {
+    let now = version_of(current)?;
+    releases
+        .as_array()?
+        .iter()
+        .filter(|r| r["draft"] != true && r["prerelease"] != true)
+        .filter_map(|r| {
+            let tag = r["tag_name"].as_str()?;
+            let v = version_of(tag)?;
+            (v < now).then(|| (v, tag.trim_start_matches('v').to_string(), r["body"].as_str().unwrap_or("").to_string()))
+        })
+        .max_by_key(|(v, _, _)| *v)
+        .map(|(_, version, notes)| (version, notes))
+}
+
+/// The version before this one, to go back to after an update that broke something (owner's pick,
+/// 2026-10-16: users of other decks roll back by hand after almost every update,
+/// `docs/PAIN-POINTS.md` RD1). None when there is none or updates are not set up.
+#[tauri::command]
+pub async fn update_previous(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    if !enabled(&app) {
+        return Ok(None);
+    }
+    let current = app.package_info().version.to_string();
+    let list = tauri::async_runtime::spawn_blocking(|| -> Result<serde_json::Value, String> {
+        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
+        agent.get(RELEASES).header("User-Agent", "HubDeck").header("Accept", "application/vnd.github+json").call().map_err(|e| e.to_string())?.body_mut().read_json().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(previous_release(&list, &current).map(|(version, notes)| UpdateInfo { version, notes, date: None }))
+}
+
+/// Go back to `version`: the profiles are backed up first, then that release's signed update is
+/// downloaded, its signature checked like any update, installed, and HubDeck restarts.
+#[tauri::command]
+pub async fn update_rollback(app: AppHandle, version: String) -> Result<(), String> {
+    if !enabled(&app) || version_of(&version).is_none() {
+        return Err("no such version".into());
+    }
+    if let Ok(data) = app.path().app_data_dir() {
+        crate::engine::backup::create(&data, &format!("before going back to {version}")).map_err(|e| e.to_string())?;
+    }
+    let url: tauri::Url = format!("https://github.com/Przemotar/hubdeck/releases/download/v{version}/latest.json").parse().map_err(|e| format!("{e}"))?;
+    let wanted = version.clone();
+    let update = app
+        .updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| e.to_string())?
+        // an older version is the point here: take exactly the one asked for
+        .version_comparator(move |_, release| release.version.to_string() == wanted)
+        .build()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("version {version} has no update file"))?;
+    log::info!("going back to HubDeck {}", update.version);
+    crate::guard::leaving();
+    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+        if let (Ok(data), Ok(logs)) = (app.path().app_data_dir(), app.path().app_log_dir()) {
+            crate::guard::spawn(&data, &logs);
+        }
+        return Err(e.to_string());
+    }
+    app.restart()
+}
+
 /// (updates set up in this build, "Check for updates at start").
 #[tauri::command]
 pub fn update_settings_get(app: AppHandle, engine: State<'_, Engine>) -> (bool, bool) {
@@ -93,4 +176,26 @@ pub fn check_at_start(app: &AppHandle) {
             Err(e) => log::info!("update check: {e}"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_previous_release_is_the_newest_older_published_one() {
+        // the GitHub releases list (tag_name, draft, prerelease, body)
+        let list = serde_json::json!([
+            {"tag_name": "v0.2.0", "draft": false, "prerelease": false, "body": "new"},
+            {"tag_name": "v0.1.2", "draft": false, "prerelease": false, "body": "fixes"},
+            {"tag_name": "v0.1.3-rc.1", "draft": false, "prerelease": true, "body": "rc"},
+            {"tag_name": "v0.1.1", "draft": false, "prerelease": false, "body": "old"},
+            {"tag_name": "v0.1.9", "draft": true, "prerelease": false, "body": "draft"}
+        ]);
+        assert_eq!(previous_release(&list, "0.2.0"), Some(("0.1.2".into(), "fixes".into())));
+        assert_eq!(previous_release(&list, "0.1.1"), None);
+        assert_eq!(previous_release(&serde_json::json!([]), "0.1.0"), None);
+        assert_eq!(version_of("v0.10.2"), Some((0, 10, 2)));
+        assert!(version_of("0.1.0-rc.6").is_none());
+    }
 }

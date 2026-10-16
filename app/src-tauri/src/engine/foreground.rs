@@ -77,6 +77,20 @@ mod platform {
         }
     }
 
+    /// No window in front: the app in front was closed and Windows activated nothing (the
+    /// desktop shows). Reported as no app, so the deck goes home instead of waiting on the closed
+    /// app's profile until the next click (owner, 2026-10-16: closing Chrome went home "dopiero po
+    /// jakiejś chwili"; the foreground stayed NULL until another window was clicked).
+    fn report_nothing() {
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if *last != "\t" {
+            *last = "\t".into();
+            if let Some(tx) = SENDER.get() {
+                let _ = tx.send(Msg::Foreground { exe: String::new(), title: String::new() });
+            }
+        }
+    }
+
     unsafe extern "system" fn on_event(_: HWINEVENTHOOK, _event: u32, hwnd: HWND, _: i32, _: i32, _: u32, _: u32) {
         report(hwnd);
     }
@@ -88,6 +102,9 @@ mod platform {
             .name("foreground-check".into())
             .spawn(|| {
                 let mut locked = None;
+                // checks in a row with no window in front; one is skipped, as switching windows
+                // can pass through none for a moment
+                let mut nothing = 0u32;
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(250));
                     let now = super::super::idle::session_locked();
@@ -102,7 +119,16 @@ mod platform {
                         }
                     }
                     // SAFETY: GetForegroundWindow has no preconditions.
-                    report(unsafe { GetForegroundWindow() });
+                    let hwnd = unsafe { GetForegroundWindow() };
+                    if hwnd.is_invalid() {
+                        nothing += 1;
+                        if nothing == 2 && locked != Some(true) {
+                            report_nothing();
+                        }
+                    } else {
+                        nothing = 0;
+                        report(hwnd);
+                    }
                 }
             })
             .expect("spawn foreground check");

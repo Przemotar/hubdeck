@@ -2,9 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { actionFits, api, controlId, GAMES_ENABLED, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, newBinding, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
-import { AssistantPanel, refreshNudge, useNudge } from "./Assistant";
+import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
 import { ModuleThumb } from "./DeckView";
 import { demoParam } from "../demo/params";
@@ -12,7 +12,7 @@ import { setTheme, useTheme, type Theme } from "../theme";
 import { osName, updates, useAppVersion, useUpdateAvailable, type UpdateInfo } from "../update";
 import { share, type GalleryEntry } from "../share";
 import { detachedKinds, keysOfKind, MODULE_KINDS, ownedKey, placeModules, type Placement } from "../layout";
-import { getLanguage, groupName as localizeGroup, localizeAction, localizeError, localizeGame, localizePreset, t, useLanguage, type Key, type Lang } from "../i18n";
+import { getLanguage, localizeError, localizeGame, localizePreset, t, useLanguage, type Key, type Lang } from "../i18n";
 
 const moduleName = (kind: ModuleKind) => t(`module.${kind}`);
 
@@ -39,22 +39,6 @@ export function movedNote(moved: Moved[] | undefined, pages: Profile["pages"] = 
   return t("profile.moved", { list });
 }
 
-/** One hue per action group for the icon tiles of the library (by the English group name). */
-const GROUP_HUES: Record<string, string> = {
-  System: "#8b7cf6",
-  Media: "#3ecf8e",
-  Audio: "#38bdf8",
-  OBS: "#f0506e",
-  Spotify: "#1ed760",
-  Twitch: "#a970ff",
-  Streamlabs: "#80f5d2",
-  "Home Assistant": "#41bdf5",
-  MIDI: "#f5a524",
-  Joystick: "#f97316",
-  HubDeck: "#b2a6ff",
-};
-const groupHue = (group: string) => GROUP_HUES[group] ?? Object.entries(GROUP_HUES).find(([g]) => localizeGroup(g) === group)?.[1] ?? "#b2a6ff";
-
 /** The app icon: a purple tile with a dial and a column of keys. */
 export const Logo = () => (
   <svg className="logo" viewBox="0 0 64 64" aria-hidden="true">
@@ -67,11 +51,17 @@ export const Logo = () => (
   </svg>
 );
 
-export type LeftTab = "actions" | "profiles" | "assistant";
+export type LeftTab = "profiles" | "assistant";
 
-/** The left column: the action library and the profiles list as two tabs, so neither covers the inspector. */
-export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProfile, onBuild, onTour, onOpenPlugins }: { view: EngineView; selected: ControlRef | null; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void; onTour?: () => void; onOpenPlugins?: () => void }) {
+/**
+ * The left column: Get started (the assistant) and the profiles list as two tabs. Actions are chosen
+ * only in the right panel, where the control is known (owner's pick 1a, 2026-10-16, variant A).
+ * Once set up, Profiles comes first and is open at start; Get started keeps the same places
+ * (owner's pick 2a, 2026-10-16: "zawsze to samo" stays; docs/FLOWS.md difference 3).
+ */
+export function LeftPanel({ view, tab, onTab, onOpenProfile, onNewProfile, onBuild, onTour }: { view: EngineView; tab: LeftTab; onTab: (tab: LeftTab) => void; onOpenProfile: () => void; onNewProfile: () => void; onBuild?: () => void; onTour?: () => void }) {
   useLanguage();
+  const setUp = useSetUp(view);
   // HubDeck's own suggestion (an app without a deck): a dot on the Assistant tab, looked at now and then
   const nudge = useNudge();
   useEffect(() => {
@@ -82,116 +72,22 @@ export function LeftPanel({ view, selected, tab, onTab, onOpenProfile, onNewProf
   return (
     // one width for every tab (owner, 2026-10-14: Get started widening the column looked odd);
     // Get started comes first and is open at start
-    <aside data-guide="library" className="library" aria-label={tab === "actions" ? t("library.title") : tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
-      <div className="lib-tabs seg full" role="tablist">
+    <aside data-guide="library" className="library" aria-label={tab === "profiles" ? t("profiles.title") : t("assistant.title")}>
+      <div className={`lib-tabs seg full${setUp ? " is-set-up" : ""}`} role="tablist">
         <button role="tab" aria-selected={tab === "assistant"} className={`tab${tab === "assistant" ? " is-active" : ""}`} onClick={() => onTab("assistant")}>
           {t("assistant.tab")}
           {nudge && tab !== "assistant" && <span className="tab-dot" aria-label={t("nudge.ask")} />}
-        </button>
-        <button role="tab" aria-selected={tab === "actions"} className={`tab${tab === "actions" ? " is-active" : ""}`} onClick={() => onTab("actions")}>
-          {t("library.title")}
         </button>
         <button role="tab" data-guide="profiles" aria-selected={tab === "profiles"} className={`tab${tab === "profiles" ? " is-active" : ""}`} onClick={() => onTab("profiles")}>
           {t("profiles.title")}
         </button>
       </div>
-      {tab === "actions" ? (
-        <ActionLibrary view={view} selected={selected} onOpenPlugins={onOpenPlugins} />
-      ) : tab === "profiles" ? (
+      {tab === "profiles" ? (
         <ProfilesList view={view} onOpenProfile={onOpenProfile} onNewProfile={onNewProfile} />
       ) : (
         <AssistantPanel view={view} onTour={onTour} onBuild={onBuild} />
       )}
     </aside>
-  );
-}
-
-function ActionLibrary({ view, selected, onOpenPlugins }: { view: EngineView; selected: ControlRef | null; onOpenPlugins?: () => void }) {
-  const [query, setQuery] = useState("");
-  // search the translated texts and the English ones
-  const actions = (view.catalog?.actions ?? [])
-    .map((raw) => ({ raw, a: localizeAction(raw) }))
-    .filter(({ raw, a }) => !query || `${a.name} ${a.group} ${a.description} ${raw.name} ${raw.group}`.toLowerCase().includes(query.toLowerCase()))
-    .map(({ a }) => a);
-  // no "Popular" group (it listed Hotkey, Open app and Open game twice; owner's pick 6a)
-  const listed = actions;
-  const groups = [...new Set(listed.map((a) => a.group))];
-  const [closed, setClosed] = useState<string[]>([]);
-  // actions that do not fit the picked control wait behind "Show" in their group
-  const [unfitOpen, setUnfitOpen] = useState<string[]>([]);
-  const page = view.state?.page ?? null;
-  const current = selected && view.profile ? view.profile.controls[controlId(selected.kind, selected.index, page)]?.action : undefined;
-  const assign = (id: string) => {
-    const def = view.catalog?.actions.find((a) => a.id === id);
-    if (!def || !selected || !view.profile) return;
-    api.setBinding(view.profile.id, controlId(selected.kind, selected.index, view.state?.page ?? null), newBinding(def)).catch((e) => console.error(e));
-  };
-  return (
-    <>
-      <div className="lib-head">
-        <div className="search">
-          <Icon name="search" />
-          <input id="action-search" className="input" placeholder={t("library.search")} aria-label={t("library.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-        <p className="lib-hint">{selected ? t("library.hintSelected", { control: controlName(selected) }) : t("library.hint")}</p>
-      </div>
-      <div className="lib-groups">
-      {groups.map((g) => {
-        const items = listed.filter((a) => a.group === g);
-        const isClosed = closed.includes(g) && !query;
-        return (
-        <section key={g} className="library-group">
-          <button className={`group-head${isClosed ? " is-closed" : ""}`} aria-expanded={!isClosed} onClick={() => setClosed((c) => (c.includes(g) ? c.filter((x) => x !== g) : [...c, g]))}>
-            <Icon name="chevron-down" />
-            {g}
-            <span className="n">{selected && !query ? items.filter((a) => actionFits(a, selected.kind)).length : items.length}</span>
-          </button>
-          {!isClosed && items
-            .filter((a) => !selected || query || unfitOpen.includes(g) || actionFits(a, selected.kind))
-            .map((a) => {
-              const fits = !selected || actionFits(a, selected.kind);
-              const icon = view.icons.find((i) => i.name === a.icon);
-              const isCurrent = current === a.id;
-              return (
-                <button
-                  key={`${g}-${a.id}`}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("application/x-hubdeck-action", a.id);
-                    e.dataTransfer.effectAllowed = "copy";
-                  }}
-                  className={`library-item${fits ? "" : " is-disabled"}${isCurrent ? " is-current" : ""}`}
-                  aria-disabled={!selected || !fits}
-                  title={fits ? a.description : t("library.notOn", { control: selected ? t(`on.${selected.kind}`) : "" })}
-                  onClick={() => selected && fits && assign(a.id)}
-                >
-                  {a.icon.startsWith("data:") ? (
-                    // a Stream Deck plugin's own icon
-                    <span className="library-icon is-picture" aria-hidden="true">
-                      <img src={a.icon} alt="" />
-                    </span>
-                  ) : (
-                    <span className="library-icon" aria-hidden="true" style={{ "--h": groupHue(a.group) } as React.CSSProperties} dangerouslySetInnerHTML={{ __html: icon?.svg ?? "" }} />
-                  )}
-                  <span className="nm">{a.name}</span>
-                  {isCurrent ? <span className="tail">✓ {selected ? controlName(selected) : ""}</span> : selected && !fits ? <span className="tail">{t("library.notHere")}</span> : null}
-                </button>
-              );
-            })}
-          {!isClosed && selected && !query && !unfitOpen.includes(g) && items.some((a) => !actionFits(a, selected.kind)) && (
-            <button className="link-btn lib-unfit" onClick={() => setUnfitOpen((o) => [...o, g])}>
-              {t("library.showUnfit", { count: items.filter((a) => !actionFits(a, selected.kind)).length, control: t(`on.${selected.kind}` as Key) })}
-            </button>
-          )}
-        </section>
-        );
-      })}
-      </div>
-      <button className="lib-foot" onClick={onOpenPlugins}>
-        <Icon name="plug" />
-        <span>{t("library.morePlugins")}</span>
-      </button>
-    </>
   );
 }
 
@@ -998,6 +894,7 @@ export function TopBar({
           {t("topbar.games")}
         </button>
       )}
+      <HelpMenu />
       <button className="tool ghost" onClick={onOpenSettings}>
         <Icon name="settings" />
         {t("topbar.settings")}
@@ -1008,6 +905,64 @@ export function TopBar({
         {t("topbar.modules", { count })}
       </div>
     </header>
+  );
+}
+
+/** Help and feedback in the top bar (owner's pick 1a, 2026-10-16: "Report a problem" was only in
+ * Settings): a bug report with the short diagnostics filled in (his 2a), a feature idea, a
+ * question. Its button says Feedback, the owner's pick of three (C, 2026-10-16: people should report). */
+function HelpMenu() {
+  useLanguage();
+  const version = useAppVersion();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(open, ref, close);
+  const go = (url: string) => {
+    setOpen(false);
+    api.openLink(url).catch(() => {});
+  };
+  const report = () => {
+    const versionField = `&version=${encodeURIComponent(`HubDeck ${version ?? "?"}, ${osName()}`)}`;
+    share
+      .diagnosticsBrief()
+      .catch(() => "")
+      .then((brief) => go(`${REPO}/issues/new?template=bug.yml${versionField}${brief ? `&diagnostics=${encodeURIComponent(brief)}` : ""}`));
+  };
+  return (
+    <span className="pop-anchor help-menu" ref={ref}>
+      <button className="tool ghost" aria-haspopup="menu" aria-expanded={open} title={t("help.title")} onClick={() => setOpen((o) => !o)}>
+        <Icon name="message-square" />
+        {t("help.button")}
+      </button>
+      {open && (
+        <div className="popover help-pop" role="menu">
+          <div className="pop-label">{t("help.title")}</div>
+          <div className="menu-list">
+            <button role="menuitem" className="menu-row compact" onClick={report}>
+              <Icon name="alert" />
+              <span className="menu-text">
+                <b>{t("help.report")}</b>
+                <small>{t("help.reportHelp")}</small>
+              </span>
+            </button>
+            <button role="menuitem" className="menu-row compact" onClick={() => go(`${REPO}/issues/new?template=feature.yml`)}>
+              <Icon name="sparkles" />
+              <span className="menu-text">
+                <b>{t("help.suggest")}</b>
+              </span>
+            </button>
+            <button role="menuitem" className="menu-row compact" onClick={() => go(`${REPO}/discussions`)}>
+              <Icon name="message-square" />
+              <span className="menu-text">
+                <b>{t("help.ask")}</b>
+              </span>
+            </button>
+          </div>
+          <p className="help">{t("help.menuText")}</p>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -1056,6 +1011,27 @@ export function EffectFields({ idPrefix, effect, speed, onChange }: { idPrefix: 
 }
 
 /** Title row of a side panel: icon, small caption, title, close. */
+/** A panel over the window (For an app, Gallery, Games, a deck's settings): the editor on the right stays. Esc or a click outside closes it. */
+export function Sheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      // a popover inside closes first (its own Escape); the sheet only when nothing else is open
+      if (e.key === "Escape" && !document.querySelector(".sheet .popover")) close.current();
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
+  return (
+    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close.current()}>
+      <div className="sheet" role="dialog" aria-modal="true">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function PanelHead({ title, crumb, icon, onClose }: { title: string; crumb?: string; icon?: string; onClose?: () => void }) {
   return (
     <div className="insp-head panel-head">
@@ -1078,6 +1054,62 @@ function PanelHead({ title, crumb, icon, onClose }: { title: string; crumb?: str
 }
 
 /** Name, apps that switch to it, auto-switch, export / import / duplicate / delete. */
+/**
+ * "Edge" under the drawing: this profile's lights (its color, its own edge) and the way to every
+ * profile's lights in Settings, so lights live in two places, not three (owner's pick 3a,
+ * 2026-10-16; docs/FLOWS.md difference 6).
+ */
+export function EdgePanel({ view, onClose, onAll }: { view: EngineView; onClose: () => void; onAll: () => void }) {
+  useLanguage();
+  const profile = view.profile;
+  const [draft, setDraft] = useState<Profile | null>(profile);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => setDraft(profile), [profile?.id]);
+  if (!profile || !draft) return null;
+  const commit = (next: Profile) => {
+    setDraft(next);
+    api.saveProfile(next).catch((e) => setMessage(String(e)));
+  };
+  return (
+    <aside className="inspector sectioned side-panel edge-panel">
+      <PanelHead title={t("edge.title")} crumb={draft.name} icon="sun" onClose={onClose} />
+      <section className="sec">
+        <h3 className="sec-title">{t("profile.edgeTitle")}</h3>
+        <div className="row between">
+          <label className="check">
+            <input type="checkbox" checked={!!draft.edge} onChange={(e) => commit({ ...draft, edge: e.target.checked ? draft.color ?? "#8b7cf6" : undefined })} />
+            {t("profile.edge")}
+          </label>
+          {draft.edge && (
+            <label className="color">
+              <input type="color" value={draft.edge} aria-label={t("look.color")} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} onBlur={() => commit(draft)} />
+              <span className="mono">{draft.edge.toUpperCase()}</span>
+            </label>
+          )}
+        </div>
+        {draft.edge ? <EffectFields idPrefix="edge" effect={draft.edgeEffect} speed={draft.edgeSpeed} onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect, edgeSpeed })} /> : <p className="help">{t("edge.followHelp")}</p>}
+      </section>
+      <section className="sec">
+        <div className="row between">
+          <span className="label">{t("profile.color")}</span>
+          <label className="color">
+            <input type="color" value={draft.color ?? "#8b7cf6"} aria-label={t("profile.color")} onChange={(e) => setDraft({ ...draft, color: e.target.value })} onBlur={() => commit(draft)} />
+          </label>
+        </div>
+        <p className="help">{t("profile.colorHelp")}</p>
+      </section>
+      <section className="sec end">
+        <button className="tool align-start" onClick={onAll}>
+          <Icon name="sun" />
+          {t("edge.all")}
+        </button>
+        <p className="help">{t("edge.allHelp")}</p>
+        {message && <p className="help">{message}</p>}
+      </section>
+    </aside>
+  );
+}
+
 export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () => void }) {
   useLanguage();
   const profile = view.profile;
@@ -1179,15 +1211,6 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
         )}
         <p className="help">{t("profile.panelHelp")}</p>
       </section>
-      <section className="sec">
-        <div className="row between">
-          <span className="label">{t("profile.color")}</span>
-          <label className="color">
-            <input type="color" value={draft.color ?? "#8b7cf6"} aria-label={t("profile.color")} onChange={(e) => setDraft({ ...draft, color: e.target.value })} onBlur={() => commit(draft)} />
-          </label>
-        </div>
-        <p className="help">{t("profile.colorHelp")}</p>
-      </section>
       {issues.length > 0 && (
         <section className="sec">
           <h3 className="sec-title">{t("profile.checkTitle")}</h3>
@@ -1198,33 +1221,6 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
             </p>
           ))}
           <p className="help">{t("profile.checkHelp")}</p>
-        </section>
-      )}
-      {/* the edge in this profile's own color: shown only on a profile that has one (the tour sets it);
-          the deck's lights live in Settings > Lights and screens (owner's pick 5a) */}
-      {draft.edge && (
-        <section className="sec">
-          <h3 className="sec-title">{t("profile.edgeTitle")}</h3>
-          <div className="row between">
-            <label className="check">
-              <input type="checkbox" checked={!!draft.edge} onChange={(e) => commit({ ...draft, edge: e.target.checked ? "#8b7cf6" : undefined })} />
-              {t("profile.edge")}
-            </label>
-            {draft.edge && (
-              <label className="color">
-                <input type="color" value={draft.edge} aria-label={t("look.color")} onChange={(e) => setDraft({ ...draft, edge: e.target.value })} onBlur={() => commit(draft)} />
-                <span className="mono">{draft.edge.toUpperCase()}</span>
-              </label>
-            )}
-          </div>
-          {draft.edge && (
-            <EffectFields
-              idPrefix="edge"
-              effect={draft.edgeEffect}
-              speed={draft.edgeSpeed}
-              onChange={(edgeEffect, edgeSpeed) => commit({ ...draft, edgeEffect, edgeSpeed })}
-            />
-          )}
         </section>
       )}
       <section className="sec">
@@ -1318,7 +1314,7 @@ const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
 
 /** Settings as a page of its own over the whole window (owner, 2026-10-13: a panel in the right
  *  column covered the key editor): sections on the left, one section's content on the right. */
-export function SettingsPanel({ live, view, section, onSection, onClose, onCalibrate }: { live: LiveState; view: EngineView; section: SettingsSection; onSection: (s: SettingsSection) => void; onClose: () => void; onCalibrate: () => void }) {
+export function SettingsPanel({ live, view, section, onSection, onClose, onCalibrate, onTour, onBuild }: { live: LiveState; view: EngineView; section: SettingsSection; onSection: (s: SettingsSection) => void; onClose: () => void; onCalibrate: () => void; onTour?: () => void; onBuild?: () => void }) {
   const { lang, setLanguage } = useLanguage();
   return (
     <div className="settings-page">
@@ -1375,6 +1371,26 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
           {section === "updates" && <UpdatesSettings />}
           {section === "help" && (
             <>
+              {(onTour || onBuild) && (
+                <section className="sec">
+                  <h3 className="sec-title">{t("help.startTitle")}</h3>
+                  <p className="help">{t("help.startHelp")}</p>
+                  <div className="btn-grid">
+                    {onTour && (
+                      <button className="tool" onClick={onTour}>
+                        <Icon name="play" />
+                        {t("assistant.showMe")}
+                      </button>
+                    )}
+                    {onBuild && (
+                      <button className="tool" onClick={onBuild}>
+                        <Icon name="layers" />
+                        {t("assistant.buildYourself")}
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
               <HelpFeedback />
               <About />
             </>
@@ -1620,7 +1636,39 @@ function UpdatesSettings() {
       {result && typeof result === "object" && "version" in result && <UpdateCard info={result} />}
       {result && typeof result === "object" && "error" in result && <p className="help">{result.error}</p>}
       <p className="help">{enabled ? t("updates.help") : t("updates.notSetUp")}</p>
+      <GoBack />
     </section>
+  );
+}
+
+/** After an update that broke something: back to the version before, signed like any update,
+ *  the profiles backed up first (owner's pick, 2026-10-16; PAIN-POINTS RD1). */
+function GoBack() {
+  useLanguage();
+  const [previous, setPrevious] = useState<UpdateInfo | null>(null);
+  const [state, setState] = useState<"idle" | "going" | { error: string }>("idle");
+  useEffect(() => {
+    updates.previous().then(setPrevious, () => setPrevious(null));
+  }, []);
+  if (!previous) return null;
+  return (
+    <div className="field go-back">
+      <span className="label">{t("updates.backTitle")}</span>
+      <p className="help">{t("updates.backHelp", { version: previous.version })}</p>
+      <button
+        className="tool align-start"
+        disabled={state === "going"}
+        onClick={() => {
+          if (!window.confirm(t("updates.backConfirm", { version: previous.version }))) return;
+          setState("going");
+          updates.rollback(previous.version).catch((e) => setState({ error: String(e) }));
+        }}
+      >
+        <Icon name="chevron-left" />
+        {state === "going" ? t("updates.going") : t("updates.goBack", { version: previous.version })}
+      </button>
+      {typeof state === "object" && <p className="help">{state.error}</p>}
+    </div>
   );
 }
 
@@ -1748,6 +1796,7 @@ function CrashBanner() {
   useLanguage();
   const [report, setReport] = useState<CrashReport | null>(null);
   const [copied, setCopied] = useState(false);
+  const appVersion = useAppVersion();
   useEffect(() => {
     api.crashReport().then(setReport, () => setReport(null));
   }, []);
@@ -1761,6 +1810,20 @@ function CrashBanner() {
       <button className="tool small" onClick={() => navigator.clipboard.writeText(details).then(() => setCopied(true), () => {})}>
         <Icon name="copy" />
         {copied ? t("crash.copied") : t("crash.copy")}
+      </button>
+      <button
+        className="tool small primary"
+        onClick={() => {
+          // the moment people report most willingly (owner's pick 1a, 2026-10-16); the log is
+          // scrubbed by crash_report, cut to what the form's address takes
+          const head = [`HubDeck ended without quitting at ${report.at}${report.restarted ? " (started again by its guard)" : ""}.`, report.panic ?? ""];
+          const brief = [...head, ...report.log.slice(-25).map((l) => l.slice(0, 220))].join("\n").slice(0, 5000);
+          const version = `&version=${encodeURIComponent(`HubDeck ${appVersion ?? "?"}, ${osName()}`)}`;
+          api.openLink(`${REPO}/issues/new?template=bug.yml&title=${encodeURIComponent(`HubDeck stopped at ${at}`)}${version}&diagnostics=${encodeURIComponent(brief)}`).catch(() => {});
+        }}
+      >
+        <Icon name="alert" />
+        {t("crash.report")}
       </button>
       <button className="tool small" onClick={() => (api.crashSeen(), setReport(null))}>
         {t("crash.ok")}
@@ -1957,6 +2020,15 @@ export function PageBar({ view }: { view: EngineView }) {
       )}
       {currentPage && !naming && (
         <>
+          {!pageReachable(profile, currentPage.id) && (
+            <span className="page-warn row">
+              <Icon name="alert" />
+              {t("pages.unreachable")}
+              <button className="tool small" title={t("pages.addWayHelp")} onClick={() => api.addWayToPage(profile.id, currentPage.id).catch((e) => window.alert(localizeError(String(e))))}>
+                {t("pages.addWay")}
+              </button>
+            </span>
+          )}
           <button className="tool ghost small" onClick={() => setNaming({ id: currentPage.id, name: currentPage.name })}>
             {t("pages.rename")}
           </button>
@@ -2786,6 +2858,21 @@ function PluginsList() {
                   {p.memoryMb !== null && <span className="mono">{p.memoryMb} MB</span>}
                   {!p.connected && <span>{localizeError(p.status)}</span>}
                   {p.restarts > 0 && <span>{t("plugins.restarts", { count: p.restarts })}</span>}
+                  {/* a plugin that eats the CPU says so (PAIN-POINTS SD11) */}
+                  {p.cpu !== null && p.cpu > 20 && <span className="pill is-warn">{t("plugins.busy")}</span>}
+                </div>
+                <div className="row">
+                  {p.held || !p.connected ? (
+                    <button className="tool" onClick={() => api.pluginStart(p.id).then(() => api.plugins().then(setPlugins), (e) => setMessage(String(e)))}>
+                      <Icon name="play" />
+                      {t("plugins.start")}
+                    </button>
+                  ) : (
+                    <button className="tool" onClick={() => api.pluginStop(p.id).then(() => api.plugins().then(setPlugins), (e) => setMessage(String(e)))}>
+                      <Icon name="x" />
+                      {t("plugins.stop")}
+                    </button>
+                  )}
                 </div>
                 {p.permissions.length > 0 && (
                   <div className="perm">

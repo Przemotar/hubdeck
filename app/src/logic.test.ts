@@ -2,7 +2,7 @@
 // Run with `pnpm test` in app/.
 
 import { describe, expect, it } from "vitest";
-import { controlId, hasState, hubRainbow, pressable, RAINBOW_MS } from "./engine";
+import { controlId, hasState, hubRainbow, pageReachable, pressable, RAINBOW_MS } from "./engine";
 import { clampToGrid, detachedKinds, keysOfKind, ownedKey, placeModules, rotatedSize } from "./layout";
 import { localizeError, localizeGame, setLanguage, specialKeyName, t } from "./i18n";
 import type { ModuleInfo } from "./deck";
@@ -121,5 +121,18 @@ describe("captions of dimmed lights", () => {
     expect(readable("#05100a")).toBeUndefined(); // nearly off: the caption keeps its own light color
     expect(readable("#000000")).toBeUndefined();
     expect(readable(null)).toBeUndefined();
+  });
+});
+
+describe("a page nothing on the deck opens (owner's pick 1a, 2026-10-16)", () => {
+  const b = (action: string, params: Record<string, unknown> = {}) => ({ action, params });
+  const pages = [{ id: "p1" }, { id: "p2" }];
+  it("counts Next on the page before, Previous on the one after and Go to page anywhere", () => {
+    expect(pageReachable({ pages, controls: {} }, null)).toBe(true);
+    expect(pageReachable({ pages, controls: {} }, "p1")).toBe(false);
+    expect(pageReachable({ pages, controls: { "keys.14": b("core.nextPage") } }, "p1")).toBe(true);
+    expect(pageReachable({ pages, controls: { "keys.14": b("core.nextPage") } }, "p2")).toBe(false);
+    expect(pageReachable({ pages, controls: { "p2/keys.10": b("core.previousPage") } }, "p1")).toBe(true);
+    expect(pageReachable({ pages, controls: { "p1/keys.3": b("core.page", { page: "p2" }) } }, "p2")).toBe(true);
   });
 });

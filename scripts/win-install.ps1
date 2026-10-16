@@ -31,6 +31,10 @@ if ($p.ExitCode -ne 0) { Write-Error "the installer ended with $($p.ExitCode)" }
 # a silent NSIS install may start the app itself; start it in the tray only if it did not
 Start-Sleep -Seconds 2
 if (-not (Get-Process -Name hubdeck -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })) {
-    Start-Process -FilePath $exe -ArgumentList "--hidden"
+    # started through WMI, not as a child of this shell: a Claude Code session that ends takes its
+    # child processes with it, and the app and its guard died with the session at 14:02 on
+    # 2026-10-16 without handing the deck back (docs/KNOWLEDGE.md)
+    $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$exe`" --hidden" }
+    if ($r.ReturnValue -ne 0) { Write-Error "starting HubDeck failed: $($r.ReturnValue)" }
 }
 Write-Output ("installed and running: {0}" -f (Get-Item $exe).LastWriteTime.ToString("yyyy-MM-dd HH:mm"))

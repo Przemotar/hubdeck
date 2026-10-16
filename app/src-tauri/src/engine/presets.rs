@@ -1260,7 +1260,15 @@ mod tests {
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/demo/fixture.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, serde_json::to_string(&fixture).unwrap()).unwrap();
+        // presets find the apps installed here: the demo is public, so the home folder is nobody's
+        // (the 2026-10-16 export stopped on the owner's own Discord and VS Code paths)
+        let mut text = serde_json::to_string(&fixture).unwrap();
+        if let Ok(home) = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
+            let json_home = serde_json::to_string(&home).unwrap();
+            let json_home = json_home.trim_matches('"');
+            text = text.replace(json_home, if cfg!(windows) { r"C:\\Users\\you" } else { "/Users/you" });
+        }
+        std::fs::write(&path, text).unwrap();
         println!("wrote {} ({} KB)", path.display(), std::fs::metadata(&path).unwrap().len() / 1024);
     }
 

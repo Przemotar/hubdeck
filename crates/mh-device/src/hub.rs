@@ -209,6 +209,13 @@ fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last
             module.id.serial = serial;
         }
         module.port_path = crate::location::usb_port_path(&path);
+        // macOS never sends SET_IDLE; without it the rollers stay silent (Windows sends it itself)
+        if cfg!(target_os = "macos")
+            && kind.is_m0()
+            && let Err(e) = crate::recover::set_idle(&path)
+        {
+            warn!("SET_IDLE {}: {e}", kind.name());
+        }
         backoff.remove(&path);
         let module = Arc::new(module);
         let id = module.id.clone();

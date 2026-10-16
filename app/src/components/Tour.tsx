@@ -345,7 +345,6 @@ export function Tour({
             <span className="help tour-parts-help">{t("tour.partsHelp")}</span>
           </nav>
           <main className="tour-stop">
-            <span className="tour-count">{t("tour.stopOf", { n: at + 1, count: main.length })}</span>
             <h3>{t(`tour.${stop.id}.title` as Key)}</h3>
             <p className="tour-text">{t((stop.id === "volume" && tour.mac ? "tour.volume.bodyMac" : `tour.${stop.id}.body`) as Key)}</p>
             {at === 0 && <p className="help">{t("tour.firstHint")}</p>}

@@ -141,7 +141,15 @@ fn write_report(data_dir: &Path, ended: chrono::DateTime<chrono::Local>, tail: &
 /// The last unexpected end, if the window has not shown it yet.
 #[tauri::command]
 pub fn crash_report(engine: tauri::State<'_, crate::engine::Engine>) -> Option<serde_json::Value> {
-    serde_json::from_slice(&std::fs::read(engine.data_dir().join(REPORT)).ok()?).ok()
+    let mut report: serde_json::Value = serde_json::from_slice(&std::fs::read(engine.data_dir().join(REPORT)).ok()?).ok()?;
+    // it can go into a public bug report (Report this crash): private things out, as in diagnostics
+    if let Some(lines) = report.get_mut("log").and_then(|l| l.as_array_mut()) {
+        *lines = lines.iter().filter_map(|l| l.as_str().and_then(crate::engine::diagnostics::scrub)).map(serde_json::Value::String).collect();
+    }
+    if let Some(panic) = report.get("panic").and_then(|p| p.as_str()).and_then(crate::engine::diagnostics::scrub) {
+        report["panic"] = serde_json::Value::String(panic);
+    }
+    Some(report)
 }
 
 /// The user has seen it: kept beside as the last one seen, so the banner does not come back.

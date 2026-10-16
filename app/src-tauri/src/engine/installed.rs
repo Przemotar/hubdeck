@@ -516,6 +516,26 @@ mod platform {
 mod tests {
     use super::*;
 
+    /// The window's lists read every installed app's icon (on a Mac each comes in every size up to
+    /// 1024 px). Run under `/usr/bin/time -l` and read the maximum resident set size:
+    /// `cargo test -p hubdeck --release -- --ignored icons_of_every_app --nocapture`.
+    #[test]
+    #[ignore]
+    fn icons_of_every_app() {
+        let started = std::time::Instant::now();
+        let found = list_with_icons(true);
+        let with = found.apps.iter().chain(&found.games).filter(|i| i.icon.is_some()).count();
+        println!("{} apps, {} games, {with} icons in {:.1} s", found.apps.len(), found.games.len(), started.elapsed().as_secs_f32());
+        // HUBDECK_ICON_DIR=<dir>: also write the 128 px key icons of the first apps, to look at
+        if let Ok(dir) = std::env::var("HUBDECK_ICON_DIR") {
+            for item in found.apps.iter().filter(|i| !i.exe.is_empty()).take(12) {
+                if let Ok(png) = super::super::appicon::png(&item.exe) {
+                    let _ = std::fs::write(Path::new(&dir).join(format!("{}.png", item.name)), png);
+                }
+            }
+        }
+    }
+
     #[test]
     fn steam_files_are_read() {
         let folders = "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"C:\\\\Program Files (x86)\\\\Steam\"\n\t\t\"label\"\t\t\"\"\n\t}\n}\n";

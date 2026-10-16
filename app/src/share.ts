@@ -23,6 +23,7 @@ export const share = {
   add: (pkg: string) => invoke<Imported>("gallery_add", { package: pkg }),
   /** Write the diagnostics file and show it (as the tray item does). */
   saveDiagnostics: () => invoke("diagnostics_save"),
+  diagnosticsBrief: () => invoke<string>("diagnostics_brief"),
 };
 
 /** Extension of a profile package (profile and its pictures in one file). */

@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time. The quickest way to a fix: **Settings > Help and about > Save diagnostics** (or the tray icon menu), then attach that file below (it has versions, modules and the log, with web addresses, keys and paths removed).
+        Thanks for taking the time. The quickest way to a fix: **Feedback > Report a problem** in HubDeck's top bar fills in the diagnostics below; or **Settings > Help and feedback > Save diagnostics** (also in the tray icon menu) and attach that file (it has versions, modules and the log, with web addresses, keys and paths removed).
   - type: textarea
     id: what
     attributes:
@@ -13,6 +13,15 @@ body:
       placeholder: "I turned knob 2 (Volume, Spotify) and nothing changed; I expected Spotify to get quieter."
     validations:
       required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: How much does it get in your way?
+      options:
+        - It stops me using HubDeck
+        - A feature I need does not work
+        - Annoying, but I can work around it
+        - A small thing
   - type: textarea
     id: steps
     attributes:
@@ -30,5 +39,5 @@ body:
   - type: textarea
     id: diagnostics
     attributes:
-      label: Diagnostics file
-      description: Drag the file from "Save diagnostics for a bug report" here.
+      label: Diagnostics
+      description: Filled in when you use Feedback > Report a problem in HubDeck (version, system, modules, last warnings and errors; addresses, keys and paths removed). You can also drag the file from Settings > Help and feedback > Save diagnostics here.

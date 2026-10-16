@@ -8,9 +8,11 @@
 //      seconds; fails on memory that keeps growing, a high peak, or a busy CPU
 //   4. restarts: quit through the local API and start again in the tray, --restarts times; every
 //      module that was attached must come back
+//   5. window (Windows): a test copy shows the busiest deck with the screensaver for
+//      --window-seconds (150); its page's smoothness and the WebView2 memory
 //
 //   node scripts/release-gate.mjs [--profile <name or id>, default: a draft with every GIF and Mochi] [--minutes 5] [--every 5] [--restarts 3]
-//                                 [--skip audit,sizes,soak,restarts]
+//                                 [--skip audit,sizes,soak,restarts,window] [--window-seconds 150]
 //
 // The soak only shows the profile (a try, like the assistant's Try): the user's home and active
 // profile come back at the end. Nothing takes the focus: the app is started with --hidden.
@@ -284,6 +286,98 @@ async function restartLoop() {
   report("restarts", true, `${restarts} restarts, ${before.join(", ")} back each time (${times.join(" s, ")} s)`);
 }
 
+// --- 5. window -----------------------------------------------------------------------------
+// The window while the deck moves (owner's pick 2a, 2026-10-16: he kept finding the slow window
+// himself): a test copy (scripts/automation.ps1: its own data, virtual modules, the window
+// off-screen, never the focus) shows the busiest deck with the screensaver for --window-seconds;
+// its page reports every 5 s how smoothly it drew (`window: smoothness`) and the WebView2
+// processes' memory is read at the start and the end. Windows only (the test copy is Windows').
+// growth: MB a minute after the first minute (as events the deck pictures grew it ~19-27 MB a
+// minute; through a channel 0-3, 2026-10-16)
+const WINDOW_LIMITS = { framesPerSec: 30, slowShare: 0.05, webviewGrowthMbPerMin: 5 };
+
+function webviewMb(appPid) {
+  // the WebView2 processes started by the test copy (the browser process and its children)
+  const out = execFileSync("powershell", ["-NoProfile", "-Command", `$all = Get-CimInstance Win32_Process; $ids = @(${appPid}); do { $n = $ids.Count; $ids = @($ids + ($all | Where-Object { $ids -contains $_.ParentProcessId -and $ids -notcontains $_.ProcessId } | ForEach-Object { $_.ProcessId })) } while ($ids.Count -gt $n); ($all | Where-Object { $ids -contains $_.ProcessId -and $_.Name -eq 'msedgewebview2.exe' } | ForEach-Object { (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).PrivateMemorySize64 } | Measure-Object -Sum).Sum`], { encoding: "utf8" }).trim();
+  return Number(out || 0) / 1048576;
+}
+
+async function windowStage() {
+  if (!win) return report("window", true, "skipped: the test copy runs on Windows only");
+  const seconds = Number(opt("window-seconds", "150"));
+  // --window-show gifs | saver | both (default): what moves, to tell their costs apart
+  const show = opt("window-show", "both");
+  const dir = path.join(process.env.TEMP, "hubdeck-gate-window");
+  const ps = (...a) => execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "scripts", "automation.ps1"), "-Dir", dir, "-CdpPort", "9450", ...a], { encoding: "utf8" });
+  ps("-Stop");
+  // the test copy is the debug build: build it with the code being released
+  execFileSync("cargo", ["build", "-p", "hubdeck"], { cwd: root, stdio: "inherit" });
+  ps("-Fresh");
+  try {
+    const token = fs.readFileSync(path.join(dir, "api-token"), "utf8").trim();
+    let port = null;
+    for (let i = 0; i < 40 && !port; i++) {
+      try {
+        port = fs.readFileSync(path.join(dir, "api-http-port"), "utf8").trim();
+      } catch {
+        await sleep(500);
+      }
+    }
+    const call = async (method, route, body) => {
+      const res = await fetch(`http://127.0.0.1:${port}/api/${route}`, { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`${method} /api/${route}: ${res.status} ${await res.text()}`);
+      return res.json();
+    };
+    const appPid = Number(fs.readFileSync(path.join(dir, "automation.pid"), "utf8").trim().split(/\s+/)[0]);
+    // the busiest deck, as in the soak: the user's GIFs on the keys, Mochi on the dial; key 0
+    // starts the screensaver (12 s a press)
+    const { profiles } = await call("GET", "profiles");
+    const gifs = new Set();
+    for (const p of profiles) {
+      const full = await call("GET", `profiles/${p.id}`);
+      for (const b of Object.values(full.controls ?? {})) if (/\.gif$/i.test(b.look?.image ?? "")) gifs.add(b.look.image);
+    }
+    const list = [...gifs];
+    const controls = { dial: { action: "core.pet", params: { name: "Mochi", press: "pet" }, look: { label: "Mochi" } }, "keys.0": { action: "core.saver", params: { effect: "rain" }, look: { label: "Saver" } } };
+    for (let i = 1; i < 15 && list.length && show !== "saver"; i++) controls[`keys.${i}`] = { action: "", look: { label: "", image: list[i % list.length], fit: "fill" } };
+    const made = await call("POST", "profiles", { name: "Release gate window", controls });
+    await call("POST", `profiles/${made.profile.id}/activate`);
+    await sleep(5000); // the page settles
+    const logFile = path.join(dir, "logs", "hubdeck.log");
+    const from = fs.readFileSync(logFile, "utf8").split(/\r?\n/).length;
+    const memStart = webviewMb(appPid);
+    console.log(`window: ${seconds} s on the test copy, ${list.length} animations, Mochi, the screensaver; WebView2 ${memStart.toFixed(1)} MB`);
+    const end = Date.now() + seconds * 1000;
+    const mem = [];
+    while (Date.now() < end) {
+      if (show !== "gifs") await call("POST", "test/input", { kind: "keys", index: 0, gesture: "press", value: 1 });
+      await sleep(Math.min(10_000, Math.max(0, end - Date.now())));
+      const at = seconds - (end - Date.now()) / 1000;
+      mem.push({ at, mb: webviewMb(appPid) });
+      console.log(`  ${at.toFixed(0)} s  WebView2 ${mem.at(-1).mb.toFixed(1)} MB`);
+    }
+    const memEnd = webviewMb(appPid);
+    const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/).slice(from).filter((l) => l.includes("] window: ") || l.includes("[ERROR]"));
+    const errors = lines.filter((l) => l.includes("[ERROR]") && l.includes("window: "));
+    const smooth = lines
+      .map((l) => l.match(/smoothness: deck events ([\d.]+)\/s, deck pictures ([\d.]+)\/s, frames ([\d.]+)\/s, (\d+) over 50 ms, slowest (\d+) ms/))
+      .filter(Boolean)
+      .map((m) => ({ pictures: Number(m[2]), frames: Number(m[3]), slow: Number(m[4]), worst: Number(m[5]) }));
+    for (const l of lines.slice(-4)) console.log("  " + l.split("] window: ")[1]);
+    if (smooth.length === 0) return report("window", false, `no smoothness lines in ${seconds} s (the page did not draw, or got no deck pictures)`);
+    const frames = smooth.reduce((s, x) => s + x.frames, 0) / smooth.length;
+    const pictures = smooth.reduce((s, x) => s + x.pictures, 0) / smooth.length;
+    const slowShare = smooth.reduce((s, x) => s + x.slow, 0) / Math.max(1, smooth.reduce((s, x) => s + x.frames * 5, 0));
+    const worst = Math.max(...smooth.map((x) => x.worst));
+    const settled = mem.filter((m) => m.at >= 60);
+    const growth = settled.length >= 2 ? ((settled.at(-1).mb - settled[0].mb) / (settled.at(-1).at - settled[0].at)) * 60 : 0;
+    const ok = errors.length === 0 && frames >= WINDOW_LIMITS.framesPerSec && slowShare <= WINDOW_LIMITS.slowShare && growth <= WINDOW_LIMITS.webviewGrowthMbPerMin;
+    report("window", ok, `frames ${frames.toFixed(1)}/s (limit ${WINDOW_LIMITS.framesPerSec}), ${(slowShare * 100).toFixed(1)} % over 50 ms (limit ${WINDOW_LIMITS.slowShare * 100}), slowest ${worst} ms, deck pictures ${pictures.toFixed(1)}/s, WebView2 ${memStart.toFixed(1)} -> ${memEnd.toFixed(1)} MB, growth ${growth.toFixed(1)} MB/min after the first minute (limit ${WINDOW_LIMITS.webviewGrowthMbPerMin}${settled.length < 2 ? "; run --window-seconds 120 or more to measure it" : ""}), ${errors.length} window errors${errors.length ? ": " + errors[0].split("] window: ")[1]?.slice(0, 200) : ""}`);
+  } finally {
+    ps("-Stop");
+  }
+}
+
 // --- run -----------------------------------------------------------------------------------
 if (!win && !mac) {
   console.error("the release gate runs on Windows and macOS");
@@ -294,6 +388,7 @@ if (!skip.has("audit")) audits();
 if (!skip.has("sizes")) sizes();
 if (!skip.has("soak")) await soak().catch((e) => report("soak", false, e.message));
 if (!skip.has("restarts")) await restartLoop().catch((e) => report("restarts", false, e.message));
+if (!skip.has("window")) await windowStage().catch((e) => report("window", false, e.message));
 const failed = results.filter((r) => !r.ok);
 console.log(failed.length ? `\nFAILED: ${failed.map((r) => r.step).join(", ")} (do not release)` : "\nPASSED");
 process.exit(failed.length ? 1 : 0);

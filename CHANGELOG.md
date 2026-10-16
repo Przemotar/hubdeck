@@ -21,13 +21,36 @@ The first public version.
 - The deck assistant (Claude Code on your account) that sketches whole decks for you, and a
   step-by-step mode with a gallery of options to try on the deck.
 - Lights: one style for the whole deck with reactions (calls, microphone, agents waiting).
+- The window, rebuilt around what you want a control to do: pick a key, then "What should it do?"
+  with ideas from other deck owners, or drag an action onto a key; names as in the most popular
+  decks (Open, Multimedia, Text, Multi action, Pages); a new page gets Previous and Next page
+  keys and the page before it a Next page key, and a page nothing opens says so. The window
+  shows what the hardware shows (live values, covers, clocks).
+- A pressed key shows a short frame; a key whose last press failed shows a red corner until a
+  press works. Fields that name an app, scene, source, device or entity are lists, not typing.
+- Settings > Updates: go back to the version before. Settings > Plugins: stop and start a plugin by
+  hand; a plugin over 20 % CPU says so.
+- A guard hands the deck back and starts HubDeck again if it ever stops, and the window shows a
+  crash report; one HubDeck at a time drives the deck.
 - Reduce motion (Settings > General, taken from your system the first time): nothing blinks or
   flashes on the deck or in the window.
 - Windows 10/11 and macOS (Apple silicon and Intel). On macOS: calls, profiles for apps, CPU and
   GPU temperatures, the built-in screen's brightness, and each app's own volume (macOS 14.2 or
   later; it asks once for System Audio Recording).
 
+Measured on the release build before publishing (Windows 10, the busiest deck: 22 animations and
+Mochi): 9.4 % of one CPU core on average, memory 59 -> 62 MB over 5 minutes, keys 16 pictures a
+second; 3 restarts with every module back in 6 s; at rest in the tray about 3 % and 40 MB; the
+window 162 frames a second with no slow frames. Installer 9.0 MB, installed 21.2 MB; cargo audit
+and pnpm audit clean.
+
 Known issues:
+
+- macOS: this version's window was last checked on a Mac before its rebuild (2026-10-15); the
+  macOS build is made and signed by CI but not yet tried on hardware. Please report what you see.
+- The window shows the deck's animations (GIFs, the screensaver) at about 8 frames a second; the
+  deck itself plays them at 15 or more. With the window open WebView2 uses about 300-350 MB; closed,
+  HubDeck takes about 70 MB.
 
 - macOS: after the app restarts, the keys or the dial module sometimes stops taking pictures;
   HubDeck tries to restart it by itself, and taking it off the base and putting it back always helps.

@@ -14,7 +14,7 @@ Put the plugin's folder into the plugins folder of the app data and restart HubD
 | Windows | `%APPDATA%\dev.hubdeck.app\plugins\<plugin>\` |
 | macOS | `~/Library/Application Support/dev.hubdeck.app/plugins/<plugin>/` |
 
-Its actions then appear in the action library under the plugin's name. A working example is in
+Its actions then appear under "What should it do?" (the control's panel), in a group named after the plugin. A working example is in
 `plugins/example-counter/` (Node 22 or later, no packages).
 
 ## manifest.json

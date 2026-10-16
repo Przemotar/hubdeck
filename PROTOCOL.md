@@ -36,8 +36,8 @@ Each module is a separate USB HID device (the base contains a Prolific USB hub `
 | M0 | LED brightness | output `02 2E target idx 0..100` | no |
 | M0 | LED effects | `02 2C target FF mode 0` after a color `02 2D`, speed `02 30 50` | yes on knobs (2026-10-11, watched on the deck, violet, speed 50): 2 breathing = smooth fade in and out; 3 strobe = hard on/off; 4 "spring" = fast blinking; 5 cycling = colors jump in order; 6 random = colors jump; 7 wave = smooth color change; 8 "water" = shimmer, every other LED of the ring lit in turn (so a knob ring has several LEDs, addressed only as one); 9 rainbow = smooth color change. The base edge did not change in that test because it was sent index `FF` (see the next row). Base edge, index 0, step by step with the owner (2026-10-11): static red, breathing, wave (whole strip changes color smoothly) all work; 8 "water" runs a pattern along the strip (every second or third LED, with a visible direction) and changes colors meanwhile, so the edge has many LEDs, addressed only as one; index `FF` is ignored by the base |
 | M0 | LED addressing limits | the official M0 SDK (`Adjust_LED_Color_CM_M0`) accepts target 0 = base with index 0 only (`FF` rejected), 1 = faders 0-4 or `FF`, 2 = knobs 0-2 or `FF`; the SDK has no other LED command (color, mode, brightness, speed only), so single LEDs inside a knob ring are not addressable through any known command | read from the SDK, 2026-10-11 |
-| Faders | event | input tag `0x2A`, `02 05 v1..v5` | yes (441 events in the demo) |
-| Rollers | event | input tag `0x2A`, `01 02 r1 r2` (0 up, 1 down, ff none) | yes on Windows (39 events in the demo); on the Mac (2026-10-14) the reference unit's rollers sent no report at all (raw read, two slots) and the left roller squealed; on Windows the same module works (owner, 2026-10-14), so it is the Mac side (suspected USB suspend: nothing is ever sent to the rollers). Rollers firmware 01.00.03.01; their HID descriptor equals the knobs' (Consumer page 0x0C, input report 1 of 63 B, output 2, features 3, 2D-31, 36) |
+| Faders | event | input tag `0x2A`, `02 05 v1..v5` | yes (441 events in the demo); on macOS too (344 events, 2026-10-15, firmware 01.00.05.00; a fader reports its place once when attached, and the 5 report up to ~120 times a second together while moved) |
+| Rollers | event | input tag `0x2A`, `01 02 r1 r2` (0 up, 1 down, ff none) | yes on Windows (39 events in the demo) and on macOS after SET_IDLE (2026-10-15). **The rollers (firmware 01.00.03.01) send no input report at all until the host sends the HID class request SET_IDLE** (`21 0A 0000 0000 0000`, duration 0, interface 0). Windows' HID driver sends it to every HID device; macOS does not, so on the Mac the rollers were silent (reseating did not help; GET_IDLE reads 0 before and after). Sent from `prototype/tools/hid_idle.py --set`, both rollers turned at once (owner's deck, 2026-10-15 16:56); HubDeck now sends it to every M0 module on macOS at connect. Knobs (01.00.05.00) report without it. Their HID descriptor equals the knobs' (Consumer page 0x0C, input report 1 of 63 B, output 2, features 3, 2D-31, 36). The squeal of session 9 was not heard on 2026-10-15 |
 | Knobs | rotation / press | input tag `0x2A`, `00 03 ...` / `03 03 ...` | yes (335 rotations, 26 presses in the layout A test) |
 | Keys | software mode | feature `03 3A 01` | yes, 2026-10-09 19:0x (before that the module was in a bad state, see below) |
 | Keys | info | get feature `0x3B` → `14 03 05 0f e0 01 10 01 01 48 48` = 3 rows, 5 columns, 15 keys, 480×272, key 72×72 | yes (our decoding) |
@@ -75,6 +75,11 @@ second**, with JPEG quality 80 (~7 KB panel, ~4 KB dial) and 60 (~5 KB, ~3 KB) a
 modules together each still at ~32 fps. The limit is on the device side, not the size of the
 picture. Whether the screens show every frame was not checked by eye yet.
 
+JPEG made by the `jpeg-encoder` crate (baseline, its default chroma sampling, quality 80-98) is
+taken by the keys (480x272 panel) and the dial (240x240) like the `image` crate's: checked
+2026-10-15 on the PC with the release gate's busiest deck and the film deck (the dial mirror in the
+window shows the same bytes the dial got).
+
 ## Base orientation and module placement (2026-10-09)
 
 - **Orientation**: the base has a sensor. When the base is rotated, report `0x35` and event `0x2B` switch between `01` and `00`. The official app treats `1` as "horizontal" and everything else as "vertical". It tells only two states apart. Confirmed on the reference unit: base lying flat horizontally = `01` (horizontal), standing upright = `00` (vertical). 4-position test (2026-10-09 20:25–20:28, rotating 90° to the right each time): start `01`, 90° right `00`, 180° `01`, 270° `01`. It is a one-direction tilt switch, not an accelerometer: it only tells the "90° right" position (upright on a stand) apart from the rest. App: automatic horizontal/vertical from the sensor plus a manual rotation in 4 positions, remembered per base. The earlier "heartbeat every 0.5 s" is the same orientation reports. Drawing turn for the upright (`00`) position: 180 (the owner's deck, 2026-10-14: at 0 everything stood upside down; lying flat stays 270). The switch can stick: on 2026-10-13, after the deck was carried to the Mac, the flat base read vertical until the owner lifted it slightly (mechanical, not software); the manual rotation covers it.
@@ -91,6 +96,12 @@ Firmware update, serial number change, factory data write, recovery tests and fa
 ## Hot unplugging (2026-10-09)
 
 Removing a module from the base causes an HID read error (`read error`). `prototype/masterhub/hub.py` closes the handle, scans for devices every second and, when the module comes back, runs `initialize()` and `on_connect` (redraw). Measured: the keys came back 5 s after unplugging.
+
+A module with a loose contact on the base leaves USB for about 0.5 s on a press (Windows plays
+its unplug sound) even with no host software running: seen on the keys module 2026-10-15 (5 drops
+in a minute of presses, both sides of the module, HubDeck quit); taking it off the base and
+putting it back cured it. `prototype/tools/usbwatch.py` lists the modules every 0.1 s by
+enumeration (opens nothing) and prints each GONE/BACK.
 
 ## Keys and dial firmware lockup (cause confirmed 2026-10-09)
 

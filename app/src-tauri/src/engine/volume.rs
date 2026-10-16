@@ -22,6 +22,30 @@ pub fn mic_users() -> Vec<String> {
     platform::mic_users()
 }
 
+/// The apps sending sound out right now, as the window's app lists name them (`Spotify.app` on a
+/// Mac); empty where the system does not say (Windows: not yet).
+pub fn playing() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe extern "C" {
+            fn mh_audio_playing() -> *mut std::ffi::c_char;
+            fn mh_free(p: *mut std::ffi::c_char);
+        }
+        // SAFETY: a malloc'd, NUL-ended string from the helper, copied, then freed by it
+        unsafe {
+            let p = mh_audio_playing();
+            if p.is_null() {
+                return Vec::new();
+            }
+            let text = std::ffi::CStr::from_ptr(p).to_string_lossy().to_string();
+            mh_free(p);
+            text.lines().filter(|l| !l.is_empty()).map(str::to_string).collect()
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    Vec::new()
+}
+
 /// Call once on the thread that will use this module (COM on Windows).
 /// HubDeck quits: macOS apps whose volume it set (process taps) play straight again.
 #[cfg(target_os = "macos")]

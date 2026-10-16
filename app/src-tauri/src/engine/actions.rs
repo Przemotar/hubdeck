@@ -53,6 +53,13 @@ pub enum ParamKind {
     Secret,
     /// A place for the weather, `Name|lat|lon`, picked with a city search.
     Place,
+    /// A name a connected service knows, picked from its list (`names_list`): `what` is e.g.
+    /// `obs.scene`, `obs.input`, `obs.filter` (of the param `source`), `streamlabs.audio`,
+    /// `ha.light`, `spotify.playlist`, `twitch.category`. Typed names stay possible while the
+    /// service is not connected (owner, 2026-10-15/16: lists, not names from memory).
+    Named {
+        what: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,7 +103,7 @@ pub fn catalog() -> Vec<ActionDef> {
     vec![
         ActionDef {
             id: "core.launch",
-            name: "Open app, file or website",
+            name: "Open",
             group: "System",
             description: "Opens a program, a document, a folder or a URL.",
             inputs: vec![Press],
@@ -134,7 +141,7 @@ pub fn catalog() -> Vec<ActionDef> {
         },
         ActionDef {
             id: "core.media",
-            name: "Media control",
+            name: "Multimedia",
             group: "Media",
             description: "Play/pause, next and previous track for whatever is playing.",
             inputs: vec![Press, Turn],
@@ -168,9 +175,7 @@ pub fn catalog() -> Vec<ActionDef> {
                     json!("system"),
                 ),
                 ParamDef {
-                    help: Some(
-                        "The program, e.g. spotify.exe, chrome.exe, Discord.exe (on a Mac the app's name works too: Spotify, Google Chrome). macOS: 14.2 or later, asks once for System Audio Recording.",
-                    ),
+                    help: Some("The app whose sound this sets; it needs to be playing. macOS: 14.2 or later, asks once for System Audio Recording."),
                     when: Some(("target", vec!["app"])),
                     ..p("app", "App", ParamKind::App, json!(""))
                 },
@@ -197,7 +202,7 @@ pub fn catalog() -> Vec<ActionDef> {
         },
         ActionDef {
             id: "core.sound",
-            name: "Play sound",
+            name: "Play audio",
             group: "Audio",
             description: "Plays a sound file (WAV, MP3, FLAC, OGG): a small soundboard. A press on a playing sound stops it, starts it over, or adds another copy; or the key stops every sound.",
             inputs: vec![Press],
@@ -240,7 +245,7 @@ pub fn catalog() -> Vec<ActionDef> {
                     help: Some(
                         "Windows: the music app this is for, e.g. Spotify. Its song shows even when a video played last, and a press opens it and plays when it is closed. Empty: whatever plays (a music app first).",
                     ),
-                    ..p("player", "Music app", ParamKind::Text { multiline: false }, json!(""))
+                    ..p("player", "Music app", ParamKind::App, json!(""))
                 },
             ],
             icon: "music",
@@ -311,7 +316,7 @@ pub fn catalog() -> Vec<ActionDef> {
                 ParamDef {
                     when: Some(("source", vec!["ha"])),
                     help: Some("The entity whose state to show, e.g. sensor.living_room_temperature."),
-                    ..p("entity", "Entity", ParamKind::Text { multiline: false }, json!(""))
+                    ..p("entity", "Entity", ParamKind::Named { what: "ha.any".into() }, json!(""))
                 },
                 ParamDef {
                     when: Some(("source", vec!["command"])),
@@ -370,7 +375,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "OBS",
             description: "Switches OBS to a scene. The key lights up while that scene is live.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("Exactly as named in OBS."), ..p("scene", "Scene", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("Exactly as named in OBS."), ..p("scene", "Scene", ParamKind::Named { what: "obs.scene".into() }, json!("")) }],
             icon: "monitor",
         },
         ActionDef {
@@ -399,7 +404,7 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "Mutes or unmutes an audio source, e.g. the microphone. The key shows when it is muted.",
             inputs: vec![Press],
             params: vec![
-                ParamDef { help: Some("The audio source as named in the OBS mixer, e.g. Mic/Aux."), ..p("input", "Audio source", ParamKind::Text { multiline: false }, json!("Mic/Aux")) },
+                ParamDef { help: Some("The audio source as named in the OBS mixer, e.g. Mic/Aux."), ..p("input", "Audio source", ParamKind::Named { what: "obs.input".into() }, json!("Mic/Aux")) },
                 press_mode(),
             ],
             icon: "mic",
@@ -411,7 +416,7 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "The OBS mixer volume of a source: faders set it, knobs and the dial turn it.",
             inputs: vec![Turn, Slide],
             params: vec![
-                ParamDef { help: Some("The audio source as named in the OBS mixer."), ..p("input", "Audio source", ParamKind::Text { multiline: false }, json!("Desktop Audio")) },
+                ParamDef { help: Some("The audio source as named in the OBS mixer."), ..p("input", "Audio source", ParamKind::Named { what: "obs.input".into() }, json!("Desktop Audio")) },
                 p("step", "Step per detent (dB)", ParamKind::Number { min: 0.5, max: 6.0, step: 0.5 }, json!(1)),
             ],
             icon: "volume-2",
@@ -423,8 +428,8 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "Shows or hides a source in a scene, e.g. a camera or an overlay.",
             inputs: vec![Press],
             params: vec![
-                p("source", "Source", ParamKind::Text { multiline: false }, json!("")),
-                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("scene", "In scene", ParamKind::Text { multiline: false }, json!("")) },
+                p("source", "Source", ParamKind::Named { what: "obs.input".into() }, json!("")),
+                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("scene", "In scene", ParamKind::Named { what: "obs.scene".into() }, json!("")) },
             ],
             icon: "video",
         },
@@ -472,7 +477,7 @@ pub fn catalog() -> Vec<ActionDef> {
             inputs: vec![Press],
             params: vec![ParamDef {
                 help: Some("Leave empty for the transition chosen in OBS, or name one, e.g. Fade."),
-                ..p("transition", "Transition", ParamKind::Text { multiline: false }, json!(""))
+                ..p("transition", "Transition", ParamKind::Named { what: "obs.transition".into() }, json!(""))
             }],
             icon: "skip-forward",
         },
@@ -482,7 +487,10 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "OBS",
             description: "Switches OBS to another scene collection. The key lights up while it is the current one.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("Exactly as named in OBS (Scene Collection menu)."), ..p("collection", "Scene collection", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef {
+                help: Some("Exactly as named in OBS (Scene Collection menu)."),
+                ..p("collection", "Scene collection", ParamKind::Named { what: "obs.collection".into() }, json!(""))
+            }],
             icon: "layers",
         },
         ActionDef {
@@ -491,7 +499,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "OBS",
             description: "Switches OBS to another of its profiles (output and stream settings). The key lights up while it is the current one.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("Exactly as named in OBS (Profile menu)."), ..p("profile", "OBS profile", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("Exactly as named in OBS (Profile menu)."), ..p("profile", "OBS profile", ParamKind::Named { what: "obs.profile".into() }, json!("")) }],
             icon: "settings",
         },
         ActionDef {
@@ -501,8 +509,8 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "Turns a filter of a source or scene on or off. The key lights up while the filter is on.",
             inputs: vec![Press],
             params: vec![
-                ParamDef { help: Some("The source or scene that has the filter."), ..p("source", "Source", ParamKind::Text { multiline: false }, json!("")) },
-                p("filter", "Filter", ParamKind::Text { multiline: false }, json!("")),
+                ParamDef { help: Some("The source or scene that has the filter."), ..p("source", "Source", ParamKind::Named { what: "obs.input".into() }, json!("")) },
+                p("filter", "Filter", ParamKind::Named { what: "obs.filter".into() }, json!("")),
             ],
             icon: "sparkles",
         },
@@ -513,7 +521,7 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "Saves a PNG of a source or of the live scene.",
             inputs: vec![Press],
             params: vec![
-                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("source", "Source", ParamKind::Text { multiline: false }, json!("")) },
+                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("source", "Source", ParamKind::Named { what: "obs.input".into() }, json!("")) },
                 ParamDef { help: Some("Leave empty for the OBS recording folder."), ..p("folder", "Folder", ParamKind::Text { multiline: false }, json!("")) },
             ],
             icon: "camera",
@@ -524,7 +532,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "Streamlabs",
             description: "Switches Streamlabs Desktop to a scene. The key lights up while that scene is live.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("Exactly as named in Streamlabs."), ..p("scene", "Scene", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("Exactly as named in Streamlabs."), ..p("scene", "Scene", ParamKind::Named { what: "streamlabs.scene".into() }, json!("")) }],
             icon: "monitor",
         },
         ActionDef {
@@ -588,8 +596,8 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "Shows or hides a source in a scene, e.g. a camera or an overlay.",
             inputs: vec![Press],
             params: vec![
-                p("source", "Source", ParamKind::Text { multiline: false }, json!("")),
-                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("scene", "In scene", ParamKind::Text { multiline: false }, json!("")) },
+                p("source", "Source", ParamKind::Named { what: "streamlabs.source".into() }, json!("")),
+                ParamDef { help: Some("Leave empty for the scene that is live."), ..p("scene", "In scene", ParamKind::Named { what: "streamlabs.scene".into() }, json!("")) },
             ],
             icon: "video",
         },
@@ -599,7 +607,10 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "Streamlabs",
             description: "Mutes or unmutes an audio source of the Streamlabs mixer. The key shows when it is muted.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("As named in the Streamlabs mixer, e.g. Mic/Aux."), ..p("input", "Audio source", ParamKind::Text { multiline: false }, json!("Mic/Aux")) }],
+            params: vec![ParamDef {
+                help: Some("As named in the Streamlabs mixer, e.g. Mic/Aux."),
+                ..p("input", "Audio source", ParamKind::Named { what: "streamlabs.audio".into() }, json!("Mic/Aux"))
+            }],
             icon: "mic",
         },
         ActionDef {
@@ -609,7 +620,7 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "The Streamlabs mixer volume of a source: faders set it, knobs and the dial turn it.",
             inputs: vec![Turn, Slide],
             params: vec![
-                ParamDef { help: Some("As named in the Streamlabs mixer."), ..p("input", "Audio source", ParamKind::Text { multiline: false }, json!("Desktop Audio")) },
+                ParamDef { help: Some("As named in the Streamlabs mixer."), ..p("input", "Audio source", ParamKind::Named { what: "streamlabs.audio".into() }, json!("Desktop Audio")) },
                 p("step", "Step per detent (%)", ParamKind::Number { min: 1.0, max: 20.0, step: 1.0 }, json!(2)),
             ],
             icon: "volume-2",
@@ -676,7 +687,7 @@ pub fn catalog() -> Vec<ActionDef> {
             inputs: vec![Press],
             params: vec![
                 ParamDef { help: Some("Leave empty to keep the current title."), ..p("title", "Title", ParamKind::Text { multiline: false }, json!("")) },
-                ParamDef { help: Some("As named on Twitch, e.g. Just Chatting. Leave empty to keep it."), ..p("game", "Game", ParamKind::Text { multiline: false }, json!("")) },
+                ParamDef { help: Some("As named on Twitch, e.g. Just Chatting. Leave empty to keep it."), ..p("game", "Game", ParamKind::Named { what: "twitch.category".into() }, json!("")) },
             ],
             icon: "type",
         },
@@ -723,7 +734,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "Spotify",
             description: "Adds the playing track to a playlist of yours.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("The playlist's link (Share > Copy link) or id."), ..p("playlist", "Playlist", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("The playlist's link (Share > Copy link) or id."), ..p("playlist", "Playlist", ParamKind::Named { what: "spotify.playlist".into() }, json!("")) }],
             icon: "list-checks",
         },
         ActionDef {
@@ -732,7 +743,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "Home Assistant",
             description: "Turns a light, switch, fan, cover or media player on or off. The key lights up while it is on.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("The entity id, e.g. light.desk or switch.kettle."), ..p("entity", "Entity", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("The entity id, e.g. light.desk or switch.kettle."), ..p("entity", "Entity", ParamKind::Named { what: "ha.any".into() }, json!("")) }],
             icon: "lightbulb",
         },
         ActionDef {
@@ -741,7 +752,7 @@ pub fn catalog() -> Vec<ActionDef> {
             group: "Home Assistant",
             description: "Runs a scene or a script.",
             inputs: vec![Press],
-            params: vec![ParamDef { help: Some("e.g. scene.movie_night or script.good_night."), ..p("entity", "Scene or script", ParamKind::Text { multiline: false }, json!("")) }],
+            params: vec![ParamDef { help: Some("e.g. scene.movie_night or script.good_night."), ..p("entity", "Scene or script", ParamKind::Named { what: "ha.scene".into() }, json!("")) }],
             icon: "sparkles",
         },
         ActionDef {
@@ -751,7 +762,7 @@ pub fn catalog() -> Vec<ActionDef> {
             description: "A light's brightness: faders set it, knobs and the dial turn it, a knob press toggles the light.",
             inputs: vec![Turn, Slide, Press],
             params: vec![
-                ParamDef { help: Some("e.g. light.desk."), ..p("entity", "Light", ParamKind::Text { multiline: false }, json!("")) },
+                ParamDef { help: Some("e.g. light.desk."), ..p("entity", "Light", ParamKind::Named { what: "ha.light".into() }, json!("")) },
                 p("step", "Step per detent (%)", ParamKind::Number { min: 1.0, max: 25.0, step: 1.0 }, json!(5)),
             ],
             icon: "sun",
@@ -879,7 +890,7 @@ pub fn catalog() -> Vec<ActionDef> {
         },
         ActionDef {
             id: TOGGLE,
-            name: "Toggle",
+            name: "Multi action switch",
             group: "HubDeck",
             description: "Runs the first steps on one press and the second on the next, e.g. start and stop. The key shows which one comes next.",
             inputs: vec![Press],
@@ -900,16 +911,16 @@ pub fn catalog() -> Vec<ActionDef> {
         },
         ActionDef {
             id: "core.text",
-            name: "Type text",
+            name: "Text",
             group: "System",
             description: "Types a snippet of text, e.g. an email address or a signature.",
             inputs: vec![Press],
-            params: vec![p("text", "Text", ParamKind::Text { multiline: true }, json!(""))],
+            params: vec![ParamDef { help: Some("{date} and {time} become today's date and the time when the key is pressed."), ..p("text", "Text", ParamKind::Text { multiline: true }, json!("")) }],
             icon: "type",
         },
         ActionDef {
             id: MULTI,
-            name: "Multi-action",
+            name: "Multi action",
             group: "HubDeck",
             description: "Runs several actions one after another, with a pause before each if you want one.",
             inputs: vec![Press],
@@ -947,7 +958,7 @@ pub fn catalog() -> Vec<ActionDef> {
             id: AGENT,
             name: "Session",
             group: "Claude Code",
-            description: "One Claude Code session per key, in the order they started: blue while it works, orange blinking when it needs your permission, green when it is your turn. A press brings its terminal to the front. Connect Claude Code in Settings first.",
+            description: "One Claude Code session per key, in the order they started: blue while it works, orange blinking when it needs your permission, green when it is your turn. A press says on the dial which session it is and what it waits for. Connect Claude Code in Settings first.",
             inputs: vec![Press],
             params: vec![p("slot", "Session number", ParamKind::Number { min: 1.0, max: 15.0, step: 1.0 }, json!(1))],
             icon: "bot",
@@ -956,7 +967,7 @@ pub fn catalog() -> Vec<ActionDef> {
             id: AGENTS,
             name: "All sessions",
             group: "Claude Code",
-            description: "The dial (or a knob) goes through your Claude Code sessions: turn to pick one, the screen tells what it does, press to bring it to the front.",
+            description: "The dial (or a knob) goes through your Claude Code sessions: turn to pick one, the screen tells what it does and what it waits for.",
             inputs: vec![Press, Turn],
             params: vec![],
             icon: "bot",
@@ -969,6 +980,25 @@ pub fn catalog() -> Vec<ActionDef> {
             inputs: vec![Press],
             params: vec![p("page", "Page", ParamKind::Page, json!(""))],
             icon: "folder",
+        },
+        // as Stream Deck has them (owner, 2026-10-16: names and habits as in the most popular decks)
+        ActionDef {
+            id: "core.nextPage",
+            name: "Next page",
+            group: "HubDeck",
+            description: "Shows the next page of keys; after the last one, the main page again.",
+            inputs: vec![Press],
+            params: vec![],
+            icon: "skip-forward",
+        },
+        ActionDef {
+            id: "core.previousPage",
+            name: "Previous page",
+            group: "HubDeck",
+            description: "Shows the page of keys before this one; before the main page, the last one.",
+            inputs: vec![Press],
+            params: vec![],
+            icon: "arrow-left",
         },
         ActionDef {
             id: "core.profile",

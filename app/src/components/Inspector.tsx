@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState } from "../deck";
-import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, inWindow, newBinding, POPULAR_ACTIONS, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
+import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, inWindow, newBinding, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type AppInfo, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
 import { localizeAction, specialKeyName, t, useLanguage, type Key } from "../i18n";
-import { Icon } from "./Icon";
+import { hasIcon, Icon } from "./Icon";
 import { IconPicker } from "./IconPicker";
 import { EffectFields } from "./Panels";
+import { ActionChooser, ActionIcon } from "./ActionChooser";
 import { demoParam } from "../demo/params";
 
 // `?demo&gesture=hold` opens the hold tab of the selected control (screenshots)
@@ -138,6 +139,114 @@ export function InstalledPicker({ games, onPick }: { games: boolean; onPick: (it
   );
 }
 
+/** `C:\\x\\Spotify.exe`, `Spotify.app`, `spotify` -> `spotify`: how HubDeck matches an app. */
+const appStem = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/\.(exe|app)$/, "");
+
+/** `Spotify.app` / `spotify.exe` -> `Spotify` / `spotify`, for showing. */
+const appShown = (name: string) => name.split(/[\\/]/).pop()!.replace(/\.(exe|app)$/i, "");
+
+/**
+ * An app chosen from a list (open now, used lately, installed) with icons and a search, not a
+ * name to guess (owner, 2026-10-15: "jak użytkownik ma wiedzieć jaką apkę może wybrać?");
+ * typing a name stays as a small fallback for an app that is not listed.
+ */
+function AppField({ id, value, onChange, onPicked, foreground }: { id: string; value: string; onChange: (v: unknown) => void; onPicked?: (value: string, look: { label: string }) => void; foreground: string }) {
+  useLanguage();
+  const [open, setOpen] = useState(!value);
+  const [typing, setTyping] = useState(false);
+  const [query, setQuery] = useState("");
+  const [apps, setApps] = useState<AppInfo[]>([]);
+  const [installed, setInstalled] = useState<InstalledItem[] | null>(null);
+  useEffect(() => {
+    api.apps().then(setApps, () => {});
+  }, [foreground]);
+  useEffect(() => {
+    if (open && installed === null) api.installed(false).then((all) => setInstalled(all.apps), () => setInstalled([]));
+  }, [open, installed]);
+  const q = query.trim().toLowerCase();
+  const fits = (name: string) => !q || name.toLowerCase().includes(q);
+  const label = (a: AppInfo) => a.name ?? appShown(a.exe);
+  // the control's label follows the app picked, so the deck and its drawing say whose sound it is
+  // (owner, 2026-10-15: the fader still said "Volume")
+  const pick = (name: string, shown = appShown(name)) => {
+    if (onPicked) onPicked(name, { label: shown });
+    else onChange(name);
+    setOpen(false);
+    setQuery("");
+  };
+  // apps sending sound now come first: a volume is mostly for one of them
+  const playing = apps.filter((a) => a.playing && fits(label(a)));
+  const openNow = apps.filter((a) => a.running && !a.playing && fits(label(a)));
+  const recent = apps.filter((a) => !a.running && fits(label(a)));
+  const listed = new Set(apps.map((a) => appStem(a.exe)));
+  const more = (installed ?? []).filter((i) => !listed.has(appStem(i.exe || i.target || i.name)) && fits(i.name)).slice(0, 60);
+  const chosen = value ? apps.find((a) => appStem(a.exe) === appStem(value)) : undefined;
+  const row = (key: string, name: string, icon: string | undefined, onPick: () => void, sub?: string) => (
+    <button key={key} type="button" className="menu-row compact" onClick={onPick}>
+      <span className="menu-ic is-plain">{icon ? <img src={icon} alt="" width={20} height={20} /> : <Icon name="app-window" />}</span>
+      <span className="menu-text">
+        <b>{name}</b>
+        {sub && <small>{sub}</small>}
+      </span>
+    </button>
+  );
+  if (typing) {
+    return (
+      <>
+        <input id={id} className="input mono" autoFocus value={value} onChange={(e) => onChange(e.target.value)} placeholder={IS_MAC ? "Spotify" : "spotify.exe"} />
+        <button type="button" className="link-btn" onClick={() => (setTyping(false), setOpen(true))}>
+          {t("param.listApps")}
+        </button>
+      </>
+    );
+  }
+  return (
+    <>
+      <div className="row">
+        <button id={id} type="button" className={`input grow app-choice${value ? "" : " is-empty"}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {value && (chosen?.icon ? <img src={chosen.icon} alt="" width={18} height={18} /> : <Icon name="app-window" />)}
+          <span>{value ? (chosen ? label(chosen) : appShown(value)) : t("param.chooseApp")}</span>
+          <Icon name="chevron-down" />
+        </button>
+      </div>
+      {open && (
+        <div className="field">
+          <input className="input" autoFocus placeholder={t("installed.searchApps")} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="menu-list" style={{ maxHeight: 280, overflowY: "auto" }}>
+            {playing.length > 0 && <div className="pop-label">{t("param.playingNow")}</div>}
+            {playing.map((a) => row(`p-${a.exe}`, label(a), a.icon, () => pick(a.exe, label(a))))}
+            {openNow.length > 0 && <div className="pop-label">{t("profile.appsOpen")}</div>}
+            {openNow.map((a) => row(`o-${a.exe}`, label(a), a.icon, () => pick(a.exe, label(a)), a.title && a.title !== label(a) ? a.title : undefined))}
+            {recent.length > 0 && <div className="pop-label">{t("profile.appsRecent")}</div>}
+            {recent.map((a) => row(`r-${a.exe}`, label(a), a.icon, () => pick(a.exe, label(a))))}
+            {installed === null && <p className="help">{t("installed.scanning")}</p>}
+            {more.length > 0 && <div className="pop-label">{t("param.installedApps")}</div>}
+            {more.map((i) => row(`i-${i.target}`, i.name, i.icon, () => pick(i.exe || appShown(i.target) || i.name, i.name)))}
+            {q && installed !== null && playing.length + openNow.length + recent.length + more.length === 0 && <p className="help">{t("param.appNotFound")}</p>}
+          </div>
+        </div>
+      )}
+      <div className="row wrap">
+        {/* the app that was in front a moment ago, one click (never in the field's place) */}
+        {foreground && appStem(foreground) !== appStem(value) && (
+          <button type="button" className="link-btn" onClick={() => pick(foreground)}>
+            {t("param.useApp", { app: (() => { const a = apps.find((x) => appStem(x.exe) === appStem(foreground)); return a ? label(a) : appShown(foreground); })() })}
+          </button>
+        )}
+        <button type="button" className="link-btn" onClick={() => setTyping(true)}>
+          {t("param.typeApp")}
+        </button>
+      </div>
+    </>
+  );
+}
+
 /**
  * A token kept in the system's credential store (Live value): the param holds only its name, made
  * up the first time one is saved; the token itself never enters the profile.
@@ -223,16 +332,20 @@ function ParamField({
   onChange,
   view,
   onPicked,
+  siblings,
 }: {
   def: ParamDef;
   value: unknown;
   onChange: (v: unknown) => void;
   view: EngineView;
+  /** The other params of the same binding (an OBS filter is listed for the source picked). */
+  siblings?: Record<string, unknown>;
   /** An installed app or game (or a named shortcut) was picked: the param's value and the look it brings. */
   onPicked?: (value: string, look: { image?: string; icon?: string; label: string }) => void;
 }) {
-  const [picking, setPicking] = useState(false);
   const id = `param-${def.key}`;
+  // an empty app or game field opens its list at once: picking is the next step (variant A)
+  const [picking, setPicking] = useState(value == null || value === "");
   const str = value == null ? "" : String(value);
   let field: React.ReactNode;
   switch (def.type) {
@@ -337,6 +450,10 @@ function ParamField({
     case "steps":
       field = <StepsEditor steps={Array.isArray(value) ? (value as Step[]) : []} onChange={onChange} view={view} />;
       break;
+    case "named":
+      // an OBS filter is listed for the source picked next to it
+      field = <NamedField id={id} value={str} onChange={onChange} what={def.what} arg={def.what === "obs.filter" ? String(siblings?.source ?? "") : undefined} />;
+      break;
     case "audioDevice":
       field = <AudioDeviceField id={id} value={str} onChange={onChange} empty={def.key === "device" ? undefined : t("audio.keep")} />;
       break;
@@ -353,17 +470,7 @@ function ParamField({
       field = <PlaceField id={id} value={str} onChange={onChange} />;
       break;
     case "app":
-      field = (
-        <>
-          <input id={id} className="input mono" value={str} onChange={(e) => onChange(e.target.value)} placeholder="spotify.exe" />
-          {/* the app that was in front a moment ago, as a small shortcut under the field (never in its place) */}
-          {view.state?.foreground && view.state.foreground.toLowerCase() !== str.toLowerCase() && (
-            <button className="link-btn" onClick={() => onChange(view.state!.foreground)}>
-              {t("param.useApp", { app: view.state.foreground.replace(/\.exe$/i, "") })}
-            </button>
-          )}
-        </>
-      );
+      field = <AppField id={id} value={str} onChange={onChange} onPicked={onPicked} foreground={view.state?.foreground ?? ""} />;
       break;
   }
   return (
@@ -457,7 +564,7 @@ function StepsEditor({ steps, onChange, view }: { steps: Step[]; onChange: (s: S
             {def?.params
               .filter((p) => p.type !== "steps" && (!p.when || p.when[1].includes(String(step.params[p.when[0]] ?? ""))))
               .map((p) => (
-                <ParamField key={p.key} def={p} value={step.params[p.key]} view={view} onChange={(v) => set(i, { ...step, params: { ...step.params, [p.key]: v } })} />
+                <ParamField key={p.key} def={p} value={step.params[p.key]} view={view} siblings={step.params} onChange={(v) => set(i, { ...step, params: { ...step.params, [p.key]: v } })} />
               ))}
           </div>
         );
@@ -482,6 +589,90 @@ function StepsEditor({ steps, onChange, view }: { steps: Step[]; onChange: (s: S
 }
 
 /** A speaker or microphone picked from the active devices; a saved one that is unplugged stays. */
+/** A scene or source OBS knows, from its list while it is connected (owner, 2026-10-15: names
+ * are picked, not typed); typed while it is not. */
+/** Which service a list field comes from, for "Connect ... to pick from its list". */
+const SERVICE_NAMES: Record<string, string> = { obs: "OBS", streamlabs: "Streamlabs", ha: "Home Assistant", spotify: "Spotify", twitch: "Twitch" };
+
+/**
+ * A name a connected service knows, picked from its list (`names_list`): OBS scenes, sources,
+ * transitions, filters; Streamlabs scenes and sources; Home Assistant entities; Spotify playlists;
+ * Twitch categories as you type (owner, 2026-10-15/16: lists, not names from memory). While the
+ * service is not connected the name is typed, and a typed name stays possible.
+ */
+function NamedField({ id, value, onChange, what, arg }: { id: string; value: string; onChange: (v: string) => void; what: string; arg?: string }) {
+  useLanguage();
+  type Name = { value: string; label: string };
+  const [names, setNames] = useState<Name[] | null>(null);
+  const [typing, setTyping] = useState(false);
+  const search = what === "twitch.category";
+  const ask = useCallback((text?: string) => invoke<Name[] | null>("names_list", { what, arg: text ?? arg ?? null }).then(setNames, () => setNames(null)), [what, arg]);
+  useEffect(() => {
+    ask(search ? value : undefined);
+    // a list read over the network (Home Assistant, Spotify) comes a moment after the first ask
+    const again = window.setTimeout(() => ask(search ? value : undefined), 1500);
+    return () => window.clearTimeout(again);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ask]);
+  const service = SERVICE_NAMES[what.split(".")[0]] ?? what;
+  if (search) {
+    // a search: type, and the matching names come as suggestions
+    const listId = `${id}-names`;
+    return (
+      <>
+        <input
+          id={id}
+          className="input"
+          list={listId}
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            window.setTimeout(() => ask(e.target.value), 350);
+          }}
+        />
+        <datalist id={listId}>
+          {(names ?? []).map((n) => (
+            <option key={n.value} value={n.value}>
+              {n.label}
+            </option>
+          ))}
+        </datalist>
+        <p className="help">{names ? t("param.searchHint") : t("param.notConnected", { service })}</p>
+      </>
+    );
+  }
+  if (!names || typing) {
+    return (
+      <>
+        <input id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} />
+        {names ? (
+          <button type="button" className="link-btn" onClick={() => setTyping(false)}>
+            {t("param.pickName")}
+          </button>
+        ) : (
+          <p className="help">{t("param.notConnected", { service })}</p>
+        )}
+      </>
+    );
+  }
+  return (
+    <>
+      <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{t("param.obsPick")}</option>
+        {value && !names.some((n) => n.value === value) && <option value={value}>{value}</option>}
+        {names.map((n) => (
+          <option key={n.value} value={n.value}>
+            {n.label}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="link-btn" onClick={() => setTyping(true)}>
+        {t("param.typeName")}
+      </button>
+    </>
+  );
+}
+
 function AudioDeviceField({ id, value, onChange, empty }: { id: string; value: string; onChange: (v: string) => void; empty?: string }) {
   useLanguage();
   const [devices, setDevices] = useState<[{ name: string }[], { name: string }[]] | null>(null);
@@ -579,7 +770,7 @@ function ModesEditor({ modes, onChange, view }: { modes: Mode[]; onChange: (m: M
             {def?.params
               .filter((p) => p.type !== "modes" && (!p.when || p.when[1].includes(String(mode.params[p.when[0]] ?? ""))))
               .map((p) => (
-                <ParamField key={p.key} def={p} value={mode.params[p.key]} view={view} onChange={(v) => set(i, { ...mode, params: { ...mode.params, [p.key]: v } })} />
+                <ParamField key={p.key} def={p} value={mode.params[p.key]} view={view} siblings={mode.params} onChange={(v) => set(i, { ...mode, params: { ...mode.params, [p.key]: v } })} />
               ))}
           </div>
         );
@@ -843,7 +1034,7 @@ function DialLooks({ bound, onPick }: { bound: boolean; onPick: (b: Binding) => 
 }
 
 /** One suggestion: the key or dial face it gives (drawn by the engine), else its icon and label. */
-function SuggestionChip({ binding, screen, about, onPick }: { binding: Binding; screen: "key" | "dial" | null; about: string; onPick: () => void }) {
+function SuggestionChip({ binding, screen, about, onPick, icons }: { binding: Binding; screen: "key" | "dial" | null; about: string; onPick: () => void; icons?: EngineView["icons"] }) {
   const svg = usePreview(screen ?? "key", screen ? binding.look : undefined);
   return (
     <button className="sugg" onClick={onPick} title={about} aria-label={about}>
@@ -851,7 +1042,14 @@ function SuggestionChip({ binding, screen, about, onPick }: { binding: Binding; 
         <span className={`sugg-face is-${screen}`} dangerouslySetInnerHTML={{ __html: svg }} />
       ) : (
         <span className="sugg-ic">
-          <Icon name={binding.look.icon?.startsWith("game:") ? "gamepad-2" : binding.look.icon ?? "zap"} />
+          {/* a key icon outside the interface set: drawn from the key icons, else a plain mark */}
+          {binding.look.icon?.startsWith("game:") ? (
+            <Icon name="gamepad-2" />
+          ) : binding.look.icon && !hasIcon(binding.look.icon) && icons?.find((i) => i.name === binding.look.icon) ? (
+            <svg className="i" viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: icons.find((i) => i.name === binding.look.icon)!.svg.replace(/^<svg[^>]*>|<\/svg>$/g, "") }} />
+          ) : (
+            <Icon name={binding.look.icon && hasIcon(binding.look.icon) ? binding.look.icon : "zap"} />
+          )}
         </span>
       )}
       {/* a key or dial picture already shows its label */}
@@ -861,7 +1059,7 @@ function SuggestionChip({ binding, screen, about, onPick }: { binding: Binding; 
 }
 
 /** What fits this control: from the profile's app, its kind of app and generally useful ones. */
-function Suggestions({ profile, control, kind, bound, onPick, actions }: { profile: { id: string; apps?: string[]; controls: Record<string, Binding> }; control: string; kind: string; bound: boolean; onPick: (b: Binding) => void; actions: ActionDef[] }) {
+function Suggestions({ profile, control, kind, bound, onPick, actions, icons }: { profile: { id: string; apps?: string[]; controls: Record<string, Binding> }; control: string; kind: string; bound: boolean; onPick: (b: Binding) => void; actions: ActionDef[]; icons?: EngineView["icons"] }) {
   const [items, setItems] = useState<Binding[]>([]);
   const [replaced, setReplaced] = useState(false);
   const used = Object.keys(profile.controls).length;
@@ -892,7 +1090,7 @@ function Suggestions({ profile, control, kind, bound, onPick, actions }: { profi
   const grid = (
     <div className="sugg-grid">
       {items.map((b, i) => (
-        <SuggestionChip key={`${b.action}${i}${JSON.stringify(b.params)}`} binding={b} screen={screen} about={about(b)} onPick={() => pick(b)} />
+        <SuggestionChip key={`${b.action}${i}${JSON.stringify(b.params)}`} binding={b} screen={screen} about={about(b)} onPick={() => pick(b)} icons={icons} />
       ))}
     </div>
   );
@@ -942,7 +1140,7 @@ function SdInspector({ control, action, settings }: { control: string; action: s
   );
 }
 
-export function Inspector({ live, selected, view, fresh, onDismissFresh }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void }) {
+export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenPlugins }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void; onOpenPlugins?: () => void }) {
   useLanguage();
   const profile = view.profile;
   const page = view.state?.page ?? null;
@@ -952,6 +1150,8 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
   const control = selected ? controlId(selected.kind, selected.index, page, activeGesture) : null;
   const stored = control && profile ? profile.controls[control] ?? null : null;
   const [draft, setDraft] = useState<Binding | null>(stored);
+  // "Change": the chooser over a control that already does something
+  const [choosing, setChoosing] = useState(false);
   const saver = useDebouncedSave((b) => {
     if (profile && control) api.setBinding(profile.id, control, b).catch((e) => console.error("binding_set", e));
   });
@@ -960,6 +1160,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
   useEffect(() => {
     saver.flush();
     setDraft(stored);
+    setChoosing(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [control, profile?.id]);
   // another control starts on its plain press
@@ -1011,14 +1212,23 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
         </aside>
       );
     }
+    // nothing selected: every action, to drag onto any control, as other decks' apps show it
+    // (owner's pick 1a, 2026-10-16); a click on an action only says to drag it or pick a control
+    const all = (view.catalog?.actions ?? []).map(localizeAction);
     return (
       <aside className="inspector sectioned">
-        <div className="empty">
-          <span className="eic">
-            <Icon name="pointer" />
-          </span>
-          <b>{t("inspector.nothingSelected")}</b>
-          <span>{t("inspector.empty")}</span>
+        <div className="sec">
+          {all.length > 0 ? (
+            <ActionChooser view={view} kind="keys" gesture="tap" fitting={all} others={[]} browse onPick={() => {}} onCopy={() => {}} onOpenPlugins={onOpenPlugins} />
+          ) : (
+            <div className="empty">
+              <span className="eic">
+                <Icon name="pointer" />
+              </span>
+              <b>{t("inspector.nothingSelected")}</b>
+              <span>{t("inspector.empty")}</span>
+            </div>
+          )}
         </div>
       </aside>
     );
@@ -1041,8 +1251,25 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
   const isAdvanced = (p: ParamDef) => ADVANCED_PARAMS.has(p.key) || ADVANCED_PARAMS.has(`${draft?.action}:${p.key}`);
   const basic = shownParams.filter((p) => !isAdvanced(p));
   const advanced = shownParams.filter(isAdvanced);
-  const popular = fitting.filter((a) => POPULAR_ACTIONS.includes(a.id)).sort((a, b) => POPULAR_ACTIONS.indexOf(a.id) - POPULAR_ACTIONS.indexOf(b.id));
-  const groups = [...new Set(fitting.map((a) => a.group))];
+  // what this deck's other controls do and fits here: copied as it is, look and all
+  const others: Binding[] = [];
+  const seen = new Set<string>();
+  for (const [id, b] of Object.entries(profile?.controls ?? {})) {
+    // one chip per name: three "Now playing" looks read as one thing to the user
+    const k = (b.look.label || fitting.find((a) => a.id === b.action)?.name || b.action).replace(/\s+/g, " ").trim().toLowerCase();
+    if (id === control || !b.action || seen.has(k) || !fitting.some((a) => a.id === b.action) || others.length >= 8) continue;
+    seen.add(k);
+    others.push(b);
+  }
+  const pickAction = (def: ActionDef) => {
+    const fresh = newBinding(def);
+    // the label and icon say what the control does, so they follow the new action; the
+    // colors, style and picture the user picked stay (Ctrl+Z brings the old label back)
+    update({ ...fresh, look: draft ? { ...draft.look, label: fresh.look.label, icon: fresh.look.icon } : fresh.look }, 0);
+    setChoosing(false);
+  };
+  const suggestions = (bound: boolean) =>
+    profile && activeGesture === "tap" && selected.kind !== "dial" ? <Suggestions profile={profile} control={control} kind={selected.kind} bound={bound} onPick={(b) => (update(b, 0), setChoosing(false))} actions={view.catalog?.actions ?? []} icons={view.icons} /> : null;
   const gestureHelp = GESTURES.find(([g]) => g === activeGesture)?.[2];
   const showGestureTabs = activeGesture !== "tap" || (["hold", "double"] as Gesture[]).some((g) => !!profile?.controls[controlId(selected.kind, selected.index, page, g)]);
   const canAccel = !!action?.inputs.includes("turn") && selected.kind !== "faders" && selected.kind !== "keys" && activeGesture === "tap";
@@ -1100,50 +1327,51 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
       {profile && activeGesture === "tap" && selected.kind === "dial" && <DialLooks bound={!!draft} onPick={(b) => update(b, 0)} />}
 
       <div className="field">
-        <label htmlFor="action" className="label">
-          {t("inspector.action")}
-        </label>
-        <select
-          id="action"
-          className="input"
-          value={draft?.action ?? ""}
-          onChange={(e) => {
-            const def = fitting.find((a) => a.id === e.target.value);
-            if (!def) return update(null, 0);
-            const fresh = newBinding(def);
-            // the label and icon say what the control does, so they follow the new action; the
-            // colors, style and picture the user picked stay (Ctrl+Z brings the old label back)
-            update({ ...fresh, look: draft ? { ...draft.look, label: fresh.look.label, icon: fresh.look.icon } : fresh.look }, 0);
-          }}
-        >
-          <option value="">{t("inspector.nothing")}</option>
-          {draft && draft.action && !action && <option value={draft.action}>{t("inspector.missingOption", { id: draft.action })}</option>}
-          {popular.length > 0 && (
-            <optgroup label={t("library.popular")}>
-              {popular.map((a) => (
-                <option key={`p-${a.id}`} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {groups.map((g) => (
-            <optgroup key={g} label={g}>
-              {fitting
-                .filter((a) => a.group === g && !POPULAR_ACTIONS.includes(a.id))
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {/* OBS and Streamlabs both have a Scene, a Record...: the closed box shows only the name */}
-                    {fitting.some((b) => b.name === a.name && b.group !== a.group) ? `${a.group}: ${a.name}` : a.name}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
-        {action && <p className="help">{action.description}</p>}
+        {draft && !choosing ? (
+          <div className="action-card">
+            {action ? (
+              <ActionIcon action={action} view={view} />
+            ) : (
+              <span className="library-icon" aria-hidden="true">
+                <Icon name="zap" />
+              </span>
+            )}
+            <div className="grow">
+              <b id="action-name" data-action={draft.action}>
+                {action ? action.name : draft.action ? t("inspector.missingOption", { id: draft.action }) : t("inspector.nothing")}
+              </b>
+              {action && <small title={action.description}>{action.description}</small>}
+            </div>
+            <button type="button" className="tool" onClick={() => setChoosing(true)}>
+              {t("chooser.change")}
+            </button>
+          </div>
+        ) : (
+          <ActionChooser
+            view={view}
+            kind={selected.kind}
+            gesture={activeGesture}
+            fitting={fitting}
+            current={draft?.action}
+            others={others}
+            ideas={suggestions(false)}
+            onPick={pickAction}
+            onCopy={(b) => (update(structuredClone(b), 0), setChoosing(false))}
+            onIdea={(idea) => {
+              setChoosing(false);
+              // power keys go on the hold, so a brush of the key does not shut the computer down
+              if (idea.hold && profile) {
+                api.setBinding(profile.id, controlId(selected.kind, selected.index, page, "hold"), structuredClone(idea.binding)).then(() => setGesture("hold"), (e) => console.error(e));
+              } else update(structuredClone(idea.binding), 0);
+            }}
+            onClear={draft ? () => (update(null, 0), setChoosing(false)) : undefined}
+            onCancel={draft ? () => setChoosing(false) : undefined}
+            onOpenPlugins={onOpenPlugins}
+          />
+        )}
         {/* an empty action is a look without an action (made so by an assistant), not a missing plugin */}
         {draft && draft.action && !action && view.catalog && <div className="banner-inline">{t("inspector.missing", { plugin: draft.action.split("/")[0] })}</div>}
-        {canGesture && !showGestureTabs && (
+        {canGesture && !showGestureTabs && (draft ? !choosing : true) && (
           <div className="row wrap gesture-links">
             <button className="link-btn" onClick={() => setGesture("hold")}>
               {t("gesture.addHold")}
@@ -1154,22 +1382,24 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
           </div>
         )}
       </div>
-      {profile && activeGesture === "tap" && selected.kind !== "dial" && <Suggestions profile={profile} control={control} kind={selected.kind} bound={!!draft} onPick={(b) => update(b, 0)} actions={view.catalog?.actions ?? []} />}
+      {draft && !choosing && suggestions(true)}
 
       {draft &&
+        !choosing &&
         basic.map((p) => (
             <ParamField
               key={p.key}
               def={p}
               value={draft.params[p.key]}
               view={view}
+              siblings={draft.params}
               onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: namedLabel(draft, p.key, v, view) ?? draft.look.label } })}
               onPicked={(v, look) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: look.label, ...(look.image ? { image: look.image } : {}), ...(look.icon ? { icon: look.icon, image: undefined } : {}) } })}
             />
           ))}
 
       {/* a Stream Deck plugin's own settings page */}
-      {draft && control && draft.action.includes("/") && <SdInspector key={`${control}|${draft.action}`} control={control} action={draft.action} settings={draft.params} />}
+      {draft && !choosing && control && draft.action.includes("/") && <SdInspector key={`${control}|${draft.action}`} control={control} action={draft.action} settings={draft.params} />}
       {draft && selected && selected.kind !== "keys" && draft.action.includes("/") && action?.inputs.includes("turn") && (
         <label className="check" title={t("inspector.swapTurnsHelp")}>
           <input type="checkbox" checked={!!draft.swapTurns} onChange={(e) => update({ ...draft, swapTurns: e.target.checked || undefined }, 0)} />
@@ -1178,11 +1408,11 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
       )}
 
       {/* every rarely changed option in one place, also "speed up when turned fast" */}
-      {draft && (advanced.length > 0 || canAccel) && (
+      {draft && !choosing && (advanced.length > 0 || canAccel) && (
         <details className="more-opts" open={!!draft.accel || advanced.some((p) => draft.params[p.key] !== undefined && JSON.stringify(draft.params[p.key]) !== JSON.stringify(p.default)) || undefined}>
           <summary>{t("inspector.moreOptions")}</summary>
           {advanced.map((p) => (
-            <ParamField key={p.key} def={p} value={draft.params[p.key]} view={view} onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v } })} />
+            <ParamField key={p.key} def={p} value={draft.params[p.key]} view={view} siblings={draft.params} onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v } })} />
           ))}
           {canAccel && (
             <label className="check">
@@ -1195,7 +1425,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh }: { liv
 
       </div>
 
-      {draft && activeGesture === "tap" && (
+      {draft && !choosing && activeGesture === "tap" && (
         <div className="sec">
           <h3 className="sec-title">{t("inspector.look")}</h3>
       {draft && !hasScreen && activeGesture === "tap" && <ControlLook look={draft.look} led={selected.kind === "knobs" || selected.kind === "faders"} onChange={(look) => update({ ...draft, look })} />}

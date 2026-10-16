@@ -107,6 +107,14 @@ pub struct SceneInfo {
     pub items: Vec<(String, String, String, bool)>,
 }
 
+/// Every source's name, and the ones with sound (they carry `muted`), for the window's lists.
+pub fn source_names(result: &Value) -> (Vec<super::names::Name>, Vec<super::names::Name>) {
+    let items = || result.as_array().into_iter().flatten();
+    let all = items().filter_map(|s| s["name"].as_str()).map(super::names::Name::same).collect();
+    let audio = items().filter(|s| s["muted"].is_boolean() || s["audio"] == true).filter_map(|s| s["name"].as_str()).map(super::names::Name::same).collect();
+    (all, audio)
+}
+
 /// Read a scene model as the API returns it (`id`, `name`, `nodes` with `sceneItemId`,
 /// `sourceId`, `name`, `visible`); folders have no source and are skipped.
 pub fn scene_from(v: &Value) -> Option<SceneInfo> {
@@ -457,12 +465,16 @@ impl Worker {
             Then::ActiveScene => self.active_scene = result.as_str().map(str::to_string),
             Then::Scenes => {
                 self.scenes = result.as_array().into_iter().flatten().filter_map(scene_from).collect();
+                super::names::set("streamlabs.scene", self.scenes.iter().map(|s| super::names::Name::same(&s.name)).collect());
                 if let Some(id) = self.active_scene.clone() {
                     self.scene_switched(&id);
                 }
             }
             Then::Sources => {
                 self.sources = result.as_array().into_iter().flatten().filter_map(|s| Some((s["name"].as_str()?.to_string(), s["sourceId"].as_str().or(s["id"].as_str())?.to_string()))).collect();
+                let (all, audio) = source_names(result);
+                super::names::set("streamlabs.source", all);
+                super::names::set("streamlabs.audio", audio);
                 for s in result.as_array().into_iter().flatten() {
                     if let (Some(name), Some(muted)) = (s["name"].as_str(), s["muted"].as_bool()) {
                         self.state(&format!("sl:mute:{name}"), muted);
@@ -548,5 +560,11 @@ mod tests {
         assert_eq!(s.name, "Gaming");
         assert_eq!(s.items, vec![("Camera".into(), "i1".into(), "cam".into(), false)], "folders are skipped");
         assert!(scene_from(&json!({"name": "no id"})).is_none());
+        // SourcesService.getSources: an audio source carries `muted` (and `audio`), an image does not
+        let (all, audio) = source_names(
+            &json!([{"sourceId": "a", "name": "Mic/Aux", "type": "wasapi_input_capture", "audio": true, "muted": false}, {"sourceId": "b", "name": "Logo", "type": "image_source", "audio": false}]),
+        );
+        assert_eq!(all.len(), 2);
+        assert_eq!(audio, [super::super::names::Name::same("Mic/Aux")]);
     }
 }
