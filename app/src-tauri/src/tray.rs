@@ -59,7 +59,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
-        "open" => show_main(app),
+        "open" | "update" => show_main(app),
         "games" => {
             if let Some(engine) = app.try_state::<Engine>() {
                 engine.lock().games_request = Some(true);
@@ -149,7 +149,8 @@ pub fn refresh(app: &AppHandle) {
     let paused = app.state::<Deck>().is_paused();
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
     let profiles: Vec<String> = state.profiles.iter().map(|p| format!("{}={}", p.id, p.name)).collect();
-    let signature = format!("{profiles:?}|{:?}|{paused}|{autostart}|{}", state.active, state.pinned);
+    let update = crate::update::available_version();
+    let signature = format!("{profiles:?}|{:?}|{paused}|{autostart}|{}|{update:?}", state.active, state.pinned);
     {
         let mut shown = SHOWN.lock().unwrap_or_else(|e| e.into_inner());
         if *shown == signature {
@@ -167,7 +168,12 @@ pub fn refresh(app: &AppHandle) {
         let pause = CheckMenuItemBuilder::with_id("pause", "Pause deck").checked(paused).build(app)?;
         let pin = CheckMenuItemBuilder::with_id("pin", "Pin this profile (no automatic switching)").checked(state.pinned).build(app)?;
         let autostart = CheckMenuItemBuilder::with_id("autostart", AUTOSTART_TEXT).checked(autostart).build(app)?;
-        let mut menu = MenuBuilder::new(app).text("open", "Open HubDeck");
+        let mut menu = MenuBuilder::new(app);
+        // a newer version found: first in the menu; it opens the window, whose banner installs it
+        if let Some(v) = &update {
+            menu = menu.text("update", format!("Update to HubDeck {v}...")).separator();
+        }
+        let mut menu = menu.text("open", "Open HubDeck");
         if crate::engine::games::GAMES_ENABLED {
             menu = menu.text("games", "Play games on the deck");
         }

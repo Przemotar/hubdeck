@@ -405,6 +405,7 @@ pub fn run() {
             tray::diagnostics_save,
             tray::diagnostics_brief,
             update::update_check,
+            update::update_available,
             update::update_install,
             update::update_previous,
             update::update_rollback,

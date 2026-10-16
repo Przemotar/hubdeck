@@ -159,23 +159,55 @@ pub fn update_settings_set(engine: State<'_, Engine>, check_at_start: bool) -> R
     s.store.save_settings().map_err(|e| e.to_string())
 }
 
-/// At start: look once in the background and tell the window; never installs anything.
+/// A newer version found by the last check, kept for the window and the tray: the window is
+/// made only when it is opened, so the event at start reached nobody (owner, 2026-10-16: "nie
+/// widzę info o update").
+static AVAILABLE: std::sync::Mutex<Option<UpdateInfo>> = std::sync::Mutex::new(None);
+
+/// How often HubDeck looks again while it runs: it can stay in the tray for days.
+const CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+
+/// The newer version found, if any (the window asks when it opens).
+#[tauri::command]
+pub fn update_available() -> Option<UpdateInfo> {
+    AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The newer version for the tray menu.
+pub fn available_version() -> Option<String> {
+    AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|i| i.version.clone())
+}
+
+/// At start and then every few hours: look in the background, keep what was found, tell the window
+/// and the tray; never installs anything.
 pub fn check_at_start(app: &AppHandle) {
     let wanted = app.state::<Engine>().lock().store.settings.check_updates;
     if !wanted || !enabled(app) || cfg!(debug_assertions) {
         return;
     }
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        match update_check(app.clone()).await {
-            Ok(Some(info)) => {
-                log::info!("HubDeck {} is available", info.version);
-                let _ = app.emit(AVAILABLE_EVENT, info);
+    std::thread::Builder::new()
+        .name("update check".into())
+        .spawn(move || {
+            loop {
+                if app.state::<Engine>().lock().store.settings.check_updates {
+                    match tauri::async_runtime::block_on(update_check(app.clone())) {
+                        Ok(Some(info)) => {
+                            let new = AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()).replace(info.clone()).as_ref() != Some(&info);
+                            if new {
+                                log::info!("HubDeck {} is available", info.version);
+                                let _ = app.emit(AVAILABLE_EVENT, info);
+                                crate::tray::refresh(&app);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => log::info!("update check: {e}"),
+                    }
+                }
+                std::thread::sleep(CHECK_EVERY);
             }
-            Ok(None) => {}
-            Err(e) => log::info!("update check: {e}"),
-        }
-    });
+        })
+        .ok();
 }
 
 #[cfg(test)]

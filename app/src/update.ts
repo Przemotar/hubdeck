@@ -31,6 +31,8 @@ export function useUpdateAvailable(): [UpdateInfo | null, () => void] {
     if (!inTauri()) return;
     let un: (() => void) | undefined;
     let cancelled = false;
+    // found before the window opened (it is made only when opened): ask for it
+    invoke<UpdateInfo | null>("update_available").then((i) => !cancelled && i && setInfo(i), () => {});
     listen<UpdateInfo>("update://available", (e) => setInfo(e.payload)).then((u) => (cancelled ? u() : (un = u)));
     return () => {
       cancelled = true;
