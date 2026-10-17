@@ -52,9 +52,11 @@ ureq = { version = "3.4.2", features = ["json"] }
 midir = "0.11.0"
 tiny_http = "0.12.0"
 rodio = "0.20"
-tauri-plugin-updater = "2"
+# the "zip" feature only serves Windows updates packed in a .zip (HubDeck ships setup.exe; macOS uses
+# its own .tar.gz code) and pulled in zip 4 with RUSTSEC-2026-0367..0369 (2026-10-17)
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-process = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 # the #[interface] macro (IPolicyConfig for the default audio device) refers to windows_core

@@ -868,7 +868,7 @@ pub fn without_bom(bytes: &[u8]) -> &[u8] {
 fn unwrap_zipped(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     use std::io::Read as _;
     let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) else { return bytes.into() };
-    let names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/"))).collect();
+    let names: Vec<String> = (0..zip.len()).filter_map(|i| zip.by_index(i).ok().map(|f| f.name().unwrap_or_default().replace('\\', "/"))).collect();
     if names.iter().any(|n| n.split('/').any(|p| p.ends_with(".sdPlugin"))) {
         return bytes.into();
     }
@@ -894,7 +894,7 @@ pub fn install_root(bytes: &[u8]) -> Result<String, String> {
     let bytes = &*unwrap_zipped(bytes);
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("not a Stream Deck plugin file: {e}"))?;
     (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/")))
+        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().unwrap_or_default().replace('\\', "/")))
         .find_map(|n| n.split('/').find(|p| p.ends_with(".sdPlugin")).map(|p| p.trim_end_matches(".sdPlugin").to_string()))
         .ok_or_else(|| "no <uuid>.sdPlugin folder inside".to_string())
 }
@@ -907,7 +907,7 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("not a Stream Deck plugin file: {e}"))?;
     // a zip made on Windows may separate folders with backslashes (Weather, 2026-10-16)
     let root = (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().replace('\\', "/")))
+        .filter_map(|i| zip.by_index(i).ok().map(|f| f.name().unwrap_or_default().replace('\\', "/")))
         .find_map(|n| n.split('/').find(|p| p.ends_with(".sdPlugin")).map(str::to_string))
         .ok_or("no <uuid>.sdPlugin folder inside")?;
     let target = plugins_dir.join(&root);
@@ -916,7 +916,7 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
     for i in 0..zip.len() {
         let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
         // the path after `<uuid>.sdPlugin/`, as plain parts: nothing may climb out (`..`, a drive)
-        let name = f.name().replace('\\', "/");
+        let name = f.name().unwrap_or_default().replace('\\', "/");
         let parts: Vec<&str> = name.split('/').filter(|p| !p.is_empty()).collect();
         let Some(at) = parts.iter().position(|p| *p == root) else { continue };
         let rel = &parts[at + 1..];

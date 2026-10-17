@@ -104,7 +104,7 @@ pub fn unpack(bytes: &[u8], store: &mut dyn FnMut(&[u8], &str) -> Option<String>
         if entry.is_dir() {
             continue;
         }
-        let name = entry.name().replace('\\', "/");
+        let name = entry.name().unwrap_or_default().replace('\\', "/");
         let picture = name.strip_prefix(IMAGES_DIR).filter(|n| safe_name(n)).map(str::to_string);
         if name != PROFILE_ENTRY && picture.is_none() {
             continue;

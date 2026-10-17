@@ -31,7 +31,7 @@ pub fn import(bytes: &[u8], file_name: &str, store_image: &mut dyn FnMut(&[u8], 
         if entry.is_dir() {
             continue;
         }
-        let name = entry.name().replace('\\', "/");
+        let name = entry.name().unwrap_or_default().replace('\\', "/");
         let mut data = Vec::new();
         entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
         let base = name.rsplit('/').next().unwrap_or(&name).to_string();

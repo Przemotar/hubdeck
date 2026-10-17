@@ -156,7 +156,7 @@ fn read_files(path: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
         let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("not an icon pack (a folder or a zip): {e}"))?;
         for i in 0..zip.len() {
             let entry = zip.by_index(i).map_err(|e| e.to_string())?;
-            let name = entry.name().replace('\\', "/");
+            let name = entry.name().unwrap_or_default().replace('\\', "/");
             if entry.is_dir() || entry.size() > MAX_FILE || name.split('/').any(|p| p == "..") {
                 continue;
             }
