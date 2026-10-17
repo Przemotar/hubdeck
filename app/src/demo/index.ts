@@ -423,9 +423,18 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   sd_catalog: () => [
     { id: "me.amankhanna.oadiscord", name: "Discord", author: "nekename", description: "Mute, deafen and voice channels in the Discord desktop app", repository: "https://github.com/OpenActionPlugins/discord", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, tried: "Windows" },
     { id: "com.example.hue", name: "Philips Hue", author: "someone", description: "Turn Hue lights and scenes on and off, set brightness with a dial", repository: "https://github.com/example/hue", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },
+    { id: "elgato:e-1", name: "Volume Controller", author: "Elgato", description: "Adjust the volume of your apps and hardware with a key press or dial turn.", repository: "", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, elgato: "https://marketplace.elgato.com/product/volume-controller", popular: 1, elgatoOnly: true },
     { id: "com.example.clock", name: "World clock", author: "someone else", description: "Time zones on the keys", repository: "https://github.com/example/clock", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: true },
   ],
   sd_catalog_install: ({ id }) => id,
+  sd_stream_deck: () => [
+    { id: "com.fredemmott.audiooutputswitch", name: "Audio Switcher", author: "Fred Emmott", version: "3.2.1", icon: null, problem: null },
+    { id: "com.example.store-only", name: "com.example.store-only", author: "", version: "", icon: null, problem: "this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it" },
+  ],
+  sd_import: ({ id }) => id,
+  sd_peek: () => ({ id: "com.fredemmott.audiooutputswitch", name: "Audio Switcher", author: "Fred Emmott", version: "3.2.1", icon: null, problem: null }),
+  sd_opened: () => [],
+  sd_install: ({ path }) => String(path),
   gallery_list: () => {
     if (demoParam("gallery") === "offline") throw new Error("offline");
     return GALLERY;

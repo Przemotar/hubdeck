@@ -58,6 +58,7 @@ pub mod recorder;
 pub mod render;
 mod saver;
 pub mod sdcatalog;
+pub mod sdlocal;
 pub mod sdplugins;
 pub mod secrets;
 mod seek;

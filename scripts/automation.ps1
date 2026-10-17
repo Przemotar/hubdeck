@@ -7,10 +7,12 @@
 #   scripts/automation.ps1 -Fresh     # copy the real data again first
 #   scripts/automation.ps1 -Stop      # stop the test copy (Vite stays: other copies use it)
 #   scripts/automation.ps1 -StopVite  # stop the shared Vite server too
+#   scripts/automation.ps1 -Open <f>  # start it as a double click on a plugin file would
 param(
     [string]$Dir = "$env:TEMP\hubdeck-automation",
     [int]$CdpPort = 9444,
     [string]$Modules = "",
+    [string]$Open = "",
     [switch]$Fresh,
     [switch]$Stop,
     [switch]$StopVite
@@ -68,7 +70,7 @@ if (-not $vite) {
 $env:HUBDECK_AUTOMATION = $Dir
 $env:HUBDECK_CDP_PORT = "$CdpPort"
 if ($Modules) { $env:HUBDECK_VIRTUAL_MODULES = $Modules }
-$app = Start-Process -PassThru -WindowStyle Hidden $exe
+$app = if ($Open) { Start-Process -PassThru -WindowStyle Hidden $exe -ArgumentList "`"$Open`"" } else { Start-Process -PassThru -WindowStyle Hidden $exe }
 $pids += $app.Id
 $pids | Set-Content $pidFile
 

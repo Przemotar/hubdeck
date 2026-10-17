@@ -881,6 +881,14 @@ fn unwrap_zipped(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     }
 }
 
+/// Why a plugin Elgato encrypted cannot run here.
+pub const ENCRYPTED: &str = "this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it";
+
+/// Files that start with "ELGATO" are encrypted for Elgato's app (RME TotalMix 5.5.1, 2026-10-17).
+pub fn is_encrypted(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"ELGATO")
+}
+
 /// The plugin uuid a `.streamDeckPlugin` file holds (its `<uuid>.sdPlugin` folder).
 pub fn install_root(bytes: &[u8]) -> Result<String, String> {
     let bytes = &*unwrap_zipped(bytes);
@@ -933,9 +941,17 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
     let raw = std::fs::read(tmp.join("manifest.json")).unwrap_or_default();
     let Some(manifest) = serde_json::from_slice::<Value>(without_bom(&raw)).ok() else {
         let _ = std::fs::remove_dir_all(&tmp);
-        // files that start with "ELGATO" are encrypted for Elgato's app (RME TotalMix 5.5.1, 2026-10-17)
-        return Err(if raw.starts_with(b"ELGATO") { "this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it" } else { "the plugin has no readable manifest.json" }.into());
+        return Err(if is_encrypted(&raw) { ENCRYPTED } else { "the plugin has no readable manifest.json" }.into());
     };
+    // a readable manifest with its program encrypted (the folder is still `.<uuid>.sdPlugin.part`)
+    let mut named = manifest.clone();
+    if named.get("UUID").and_then(Value::as_str).is_none_or(str::is_empty) {
+        named["UUID"] = Value::from(root.trim_end_matches(".sdPlugin"));
+    }
+    if read(&named, &tmp).is_ok_and(|sd| std::fs::read(tmp.join(&sd.code_path)).is_ok_and(|b| is_encrypted(&b))) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(ENCRYPTED.into());
+    }
     if !is_sd_manifest(&manifest) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err("not a Stream Deck plugin manifest".into());

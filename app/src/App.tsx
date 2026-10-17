@@ -11,7 +11,9 @@ import { api, useEngine } from "./engine";
 import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
-import { ArrangePanel, Banner, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
+import { ArrangePanel, Banner, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
 import { Guide, guideSeen } from "./components/Guide";
@@ -109,6 +111,37 @@ export default function App() {
     showInspector();
     setGuideOpen(true);
   };
+  // plugin files opened with HubDeck (a double click, Open with) or dropped on the window: one at a
+  // time, each asked about before it installs
+  const [pluginFiles, setPluginFiles] = useState<string[]>(DEMO_PANEL === "pluginfile" ? ["C:\Users\you\Downloads\com.fredemmott.audiooutputswitch.streamDeckPlugin"] : []);
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const add = (files: string[]) => files.length > 0 && setPluginFiles((now) => [...now, ...files.filter((f) => !now.includes(f))]);
+    const take = () => api.sdOpened().then(add, () => {});
+    take();
+    const none = () => () => {};
+    const offOpened = listen("engine://plugin-file", take).catch(none);
+    const isPlugin = (p: string) => /\.(streamdeckplugin|zip)$/i.test(p);
+    let offDrop: Promise<() => void>;
+    try {
+      offDrop = getCurrentWebview().onDragDropEvent((e) => {
+      const ev = e.payload;
+      if (ev.type === "enter") setDropping(ev.paths.some(isPlugin));
+      else if (ev.type === "leave") setDropping(false);
+      else if (ev.type === "drop") {
+        setDropping(false);
+        add(ev.paths.filter(isPlugin));
+      }
+      }).catch(none);
+    } catch {
+      offDrop = Promise.resolve(none());
+    }
+    return () => {
+      offOpened.then((f) => f());
+      offDrop.then((f) => f());
+    };
+  }, []);
   const setupPending = !!view.state && !view.state.onboarded;
   const tourShown = (tourOpen || setupPending) && !arranging && !builderOpen;
   // leaving arrange mode confirms every module as it is shown, touched or not
@@ -276,6 +309,13 @@ export default function App() {
         </Sheet>
       )}
       {guideOpen && !tourShown && <Guide onClose={() => setGuideOpen(false)} />}
+      {pluginFiles.length > 0 && <PluginFileSheet key={pluginFiles[0]} path={pluginFiles[0]} onClose={() => setPluginFiles((now) => now.slice(1))} />}
+      {dropping && (
+        <div className="drop-overlay" aria-hidden="true">
+          <Icon name="plug" />
+          {t("plugins.dropHere")}
+        </div>
+      )}
     </div>
   );
 }

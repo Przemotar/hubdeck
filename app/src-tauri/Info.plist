@@ -7,5 +7,21 @@
 	<string>HubDeck sets the volume of each app from your knobs and faders: it plays each app's sound at the level you turn to. Nothing is recorded or sent anywhere.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>HubDeck shows what Spotify or Music plays (cover, title) and controls playback from your deck.</string>
+	<!-- .streamDeckPlugin files list HubDeck under Open With; Elgato's Stream Deck app stays their app -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Stream Deck plugin</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>streamDeckPlugin</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+	</array>
 </dict>
 </plist>

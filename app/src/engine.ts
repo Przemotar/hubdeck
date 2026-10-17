@@ -415,6 +415,24 @@ export interface CatalogPlugin {
   aiAssisted: boolean;
   /** Checked in HubDeck on these systems ("Windows", "Windows, macOS"); null = not tried yet. */
   tried?: string | null;
+  /** Its page on Elgato Marketplace, when it is there. */
+  elgato?: string | null;
+  /** Its place among Elgato Marketplace's most downloaded plugins (1 = most). */
+  popular?: number | null;
+  /** Only through Elgato's Stream Deck app: no open file to install here. */
+  elgatoOnly?: boolean;
+}
+
+/** A Stream Deck plugin on this computer: in the Stream Deck app's folder, or a file opened with HubDeck. */
+export interface LocalPlugin {
+  id: string;
+  name: string;
+  author: string;
+  version: string;
+  /** Its icon as a data URI. */
+  icon?: string | null;
+  /** Why HubDeck cannot run it; null: it can. */
+  problem?: string | null;
 }
 
 export interface PluginInfo {
@@ -683,6 +701,14 @@ export const api = {
   sdCatalog: () => invoke<CatalogPlugin[]>("sd_catalog"),
   /** Download a catalog plugin and install it; returns its id. */
   sdCatalogInstall: (id: string) => invoke<string>("sd_catalog_install", { id }),
+  /** The plugins Elgato's Stream Deck app installed on this computer. */
+  sdStreamDeck: () => invoke<LocalPlugin[]>("sd_stream_deck"),
+  /** Copy one of the Stream Deck app's plugins into HubDeck and start it; returns its id. */
+  sdImport: (id: string) => invoke<string>("sd_import", { id }),
+  /** What a plugin file holds, without installing it. */
+  sdPeek: (path: string) => invoke<LocalPlugin>("sd_peek", { path }),
+  /** Plugin files opened with HubDeck (a double click) since the window last asked. */
+  sdOpened: () => invoke<string[]>("sd_opened"),
   /** The tour: what HubDeck suggests the deck is mostly for, from what it sees. */
   tourSuggest: (language: string) => invoke<TourSuggestion>("tour_suggest", { language }),
   tourDone: () => invoke<boolean>("tour_done"),

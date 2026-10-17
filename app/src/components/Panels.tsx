@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -2900,6 +2900,7 @@ function PluginsList() {
         <p className="help">{t("plugins.sdHelp")}</p>
         {message && <p className="help">{message}</p>}
       </section>
+      <SdFromStreamDeck installed={new Set(plugins.map((p) => p.id))} onInstalled={() => api.plugins().then(setPlugins, () => {})} />
       <SdCatalog installed={new Set(plugins.map((p) => p.id))} onInstalled={() => api.plugins().then(setPlugins, () => {})} />
       <section className="sec">
         <h3 className="sec-title">
@@ -2964,6 +2965,137 @@ function PluginsList() {
   );
 }
 
+/** The plugins Elgato's Stream Deck app installed on this computer, each used here with one click
+ * (a copy; files Elgato encrypted for its app say so). Nothing shows without the Stream Deck app. */
+function SdFromStreamDeck({ installed, onInstalled }: { installed: Set<string>; onInstalled: () => void }) {
+  useLanguage();
+  const [list, setList] = useState<LocalPlugin[]>([]);
+  const [state, setState] = useState<Record<string, "installing" | string>>({});
+  useEffect(() => {
+    api.sdStreamDeck().then(setList, () => {});
+  }, []);
+  if (list.length === 0) return null;
+  const use = (p: LocalPlugin) => {
+    setState((s) => ({ ...s, [p.id]: "installing" }));
+    api.sdImport(p.id).then(
+      () => (setState((s) => ({ ...s, [p.id]: "" })), onInstalled()),
+      (e) => setState((s) => ({ ...s, [p.id]: localizeError(String(e)) })),
+    );
+  };
+  return (
+    <section className="sec">
+      <h3 className="sec-title">{t("plugins.fromSd")}</h3>
+      <p className="help">{t("plugins.fromSdHelp")}</p>
+      <ul className="cards">
+        {list.map((p) => {
+          const s = state[p.id];
+          return (
+            <li key={p.id} className="card catalog-item">
+              {p.icon ? <img className="catalog-icon" src={p.icon} alt="" /> : <span className="catalog-icon" />}
+              <div className="grow">
+                <div className="row">
+                  <strong className="grow">{p.name}</strong>
+                  {installed.has(p.id) ? (
+                    <span className="pill is-ok">{t("plugins.isInstalled")}</span>
+                  ) : p.problem ? (
+                    <span className="pill">{t("plugins.cannotRun")}</span>
+                  ) : (
+                    <button className="tool small" disabled={s === "installing"} onClick={() => use(p)}>
+                      <Icon name="download" />
+                      {s === "installing" ? t("plugins.installing") : t("plugins.use")}
+                    </button>
+                  )}
+                </div>
+                {p.problem && !installed.has(p.id) && <div className="help">{localizeError(p.problem)}</div>}
+                <div className="meta">
+                  {p.author && <span>{t("plugins.byAuthor", { author: p.author })}</span>}
+                  {p.version && <span>{t("plugins.version", { version: p.version })}</span>}
+                </div>
+                {s && s !== "installing" && <div className="help catalog-err">{s}</div>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** A plugin file to install: opened with HubDeck (a double click) or dropped on the window. Says
+ * what is in it and asks first, as a plugin is a program that runs on this computer. */
+export function PluginFileSheet({ path, onClose }: { path: string; onClose: () => void }) {
+  useLanguage();
+  const [plugin, setPlugin] = useState<LocalPlugin | null>(null);
+  const [state, setState] = useState<"idle" | "installing" | "done" | string>("idle");
+  useEffect(() => {
+    setPlugin(null);
+    setState("idle");
+    api.sdPeek(path).then(setPlugin, (e) => setPlugin({ id: "", name: path, author: "", version: "", problem: String(e) }));
+  }, [path]);
+  const file = path.split(/[\\/]/).pop() ?? path;
+  const install = () => {
+    setState("installing");
+    api.sdInstall(path).then(
+      (id) => setState(t("plugins.installed1", { id: plugin?.name || id })),
+      (e) => setState(localizeError(String(e))),
+    );
+  };
+  const done = state !== "idle" && state !== "installing";
+  return (
+    <Sheet onClose={onClose}>
+      <aside className="inspector sectioned plugin-file">
+        <PanelHead title={t("plugins.fileTitle")} icon="plug" onClose={onClose} />
+        <section className="sec">
+          {!plugin ? (
+            <p className="help">{t("plugins.fileReading")}</p>
+          ) : (
+            <>
+              <div className="card catalog-item">
+                {plugin.icon ? <img className="catalog-icon" src={plugin.icon} alt="" /> : <span className="catalog-icon" />}
+                <div className="grow">
+                  <strong>{plugin.name}</strong>
+                  <div className="meta">
+                    {plugin.author && <span>{t("plugins.byAuthor", { author: plugin.author })}</span>}
+                    {plugin.version && <span>{t("plugins.version", { version: plugin.version })}</span>}
+                  </div>
+                  <div className="help">{t("plugins.fileFrom", { file })}</div>
+                </div>
+              </div>
+              {plugin.problem ? (
+                <p className="help catalog-err">
+                  {t("plugins.cannotRun")}: {localizeError(plugin.problem)}
+                </p>
+              ) : done ? (
+                <p className="help">{state}</p>
+              ) : (
+                <p className="help">{t("plugins.fileTrust")}</p>
+              )}
+              <div className="row">
+                <span className="grow" />
+                {plugin.problem || done ? (
+                  <button className="tool primary" onClick={onClose}>
+                    {t("profile.close")}
+                  </button>
+                ) : (
+                  <>
+                    <button className="tool" onClick={onClose}>
+                      {t("chooser.cancel")}
+                    </button>
+                    <button className="tool primary" disabled={state === "installing"} onClick={install}>
+                      <Icon name="download" />
+                      {state === "installing" ? t("plugins.installing") : t("plugins.install")}
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+      </aside>
+    </Sheet>
+  );
+}
+
 /** How many catalog plugins show before the user searches. */
 const CATALOG_SHOWN = 30;
 
@@ -2985,7 +3117,8 @@ function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInsta
     );
   };
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const found = Array.isArray(list) ? list.filter((p) => words.every((w) => `${p.name} ${p.author} ${p.description}`.toLowerCase().includes(w))) : [];
+  // plugins only Elgato's app installs show when searched for, to say why they cannot come here
+  const found = Array.isArray(list) ? list.filter((p) => (words.length > 0 || !p.elgatoOnly) && words.every((w) => `${p.name} ${p.author} ${p.description}`.toLowerCase().includes(w))) : [];
   return (
     <section className="sec">
       <h3 className="sec-title">{t("plugins.catalog")}</h3>
@@ -3022,6 +3155,8 @@ function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInsta
                         <strong className="grow">{p.name}</strong>
                         {installed.has(p.id) ? (
                           <span className="pill is-ok">{t("plugins.isInstalled")}</span>
+                        ) : p.elgatoOnly ? (
+                          <span className="pill">{t("plugins.elgatoOnly")}</span>
                         ) : (
                           <button className="tool small" disabled={s === "installing"} onClick={() => install(p)}>
                             <Icon name="download" />
@@ -3030,13 +3165,21 @@ function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInsta
                         )}
                       </div>
                       <div className="help">{p.description}</div>
+                      {p.elgatoOnly && !installed.has(p.id) && <div className="help">{t("plugins.elgatoOnlyHelp")}</div>}
                       <div className="meta">
-                        <span>{t("plugins.byAuthor", { author: p.author })}</span>
+                        {p.author && <span>{t("plugins.byAuthor", { author: p.author })}</span>}
                         {p.tried && <span className="is-ok">{t("plugins.tried", { systems: p.tried })}</span>}
                         {p.aiAssisted && <span>{t("plugins.aiAssisted")}</span>}
-                        <button className="link" onClick={() => api.openLink(p.repository).catch(() => {})}>
-                          {t("plugins.source")}
-                        </button>
+                        {p.repository && (
+                          <button className="link" onClick={() => api.openLink(p.repository).catch(() => {})}>
+                            {t("plugins.source")}
+                          </button>
+                        )}
+                        {p.elgato && (
+                          <button className="link" onClick={() => api.openLink(p.elgato!).catch(() => {})}>
+                            {t("plugins.elgatoPage")}
+                          </button>
+                        )}
                       </div>
                       {s && s !== "installing" && <div className="help catalog-err">{s}</div>}
                     </div>

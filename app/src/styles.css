@@ -3776,6 +3776,26 @@ button.chip.is-active {
 .catalog-err {
   color: var(--err);
 }
+/* a plugin file dragged over the window (it installs after a question) */
+.drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px dashed var(--acc);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg0) 82%, transparent);
+  color: var(--tx);
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.plugin-file .catalog-item {
+  margin-bottom: 12px;
+}
 .catalog-item .link {
   background: none;
   border: 0;

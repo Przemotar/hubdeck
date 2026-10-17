@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod assoc;
 mod automation;
 mod deck;
 mod engine;
@@ -239,7 +241,11 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
     if testing.is_none() {
         // first: a second start only shows the window of the running one
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            tray::show_main(app);
+            // a double click on a plugin file while HubDeck runs
+            engine::sdlocal::opened(app, engine::sdlocal::files_in(&args));
+        }));
     }
     let app = builder
         .plugin(log_plugin())
@@ -304,6 +310,8 @@ pub fn run() {
             if testing.is_some() {
                 // a test copy: virtual modules, no tray, no update check, the window off-screen
                 deck.spawn_virtual(app.handle().clone(), automation::virtual_modules());
+                // before the window, which takes them when it starts
+                engine::sdlocal::opened(app.handle(), engine::sdlocal::files_in(&std::env::args().collect::<Vec<_>>()));
                 automation::open_window(app.handle());
                 return Ok(());
             }
@@ -311,6 +319,10 @@ pub fn run() {
             system::watch_power(deck);
             tray::create(app.handle())?;
             update::check_at_start(app.handle());
+            // started by a double click on a plugin file
+            engine::sdlocal::opened(app.handle(), engine::sdlocal::files_in(&std::env::args().collect::<Vec<_>>()));
+            #[cfg(windows)]
+            assoc::register();
             if !std::env::args().any(|a| a == HIDDEN_ARG) {
                 tray::show_main(app.handle());
             }
@@ -369,6 +381,10 @@ pub fn run() {
             engine::share::gallery_list,
             engine::sdcatalog::sd_catalog,
             engine::sdcatalog::sd_catalog_install,
+            engine::sdlocal::sd_stream_deck,
+            engine::sdlocal::sd_import,
+            engine::sdlocal::sd_peek,
+            engine::sdlocal::sd_opened,
             engine::tour::tour_suggest,
             engine::nudge::tour_done,
             engine::tour::tour_start,
@@ -499,6 +515,13 @@ pub fn run() {
         // macOS: a click on the Dock icon brings the window back after it was closed with its X
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = &event {
+            tray::show_main(handle);
+        }
+        // macOS: a plugin file opened with HubDeck (double click, Open with, dropped on the Dock icon)
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = &event {
+            let files: Vec<String> = urls.iter().filter_map(|u| u.to_file_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect();
+            engine::sdlocal::opened(handle, engine::sdlocal::files_in(&files));
             tray::show_main(handle);
         }
         if let RunEvent::Exit = event {

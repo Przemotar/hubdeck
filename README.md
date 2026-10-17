@@ -62,9 +62,12 @@ where each one sits and how it is turned. One base at a time for now.
   and apps and walks you through it on the hardware. No AI needed.
 - **Profiles that follow the app in front**, with per-app volume, mute, media with cover art, OBS,
   Home Assistant, monitor brightness and system stats.
-- **Stream Deck plugins** run in HubDeck: a one-click catalog of about 200 open-source ones
-  (Settings > Plugins). Of 33 popular ones checked, 26 start and draw on Windows (marked "tried in
-  HubDeck"; [the list](docs/STREAMDECK-PLUGINS.md#tried)); tell us when one does not work.
+- **Stream Deck plugins** run in HubDeck: a one-click catalog of about 200 open-source ones plus
+  the 300 most downloaded on Elgato Marketplace (Settings > Plugins; 36 of Elgato's top 100 publish
+  an open file and install here), the plugins your Stream Deck app already has, and any
+  `.streamDeckPlugin` you open with HubDeck or drop on its window. Of 33 popular ones checked, 26
+  start and draw on Windows (marked "tried in HubDeck"; [the list](docs/STREAMDECK-PLUGINS.md#tried));
+  tell us when one does not work.
 - **Safe by design.** Firmware is never written; dangerous commands are refused in code. Nothing
   leaves your computer unless you turn it on ([PRIVACY.md](PRIVACY.md)).
 - **Light.** About 3 % of one CPU core and 40 MB of memory in the tray with a clock and meters on the keys; 9 % and 62 MB with 22 animations on the deck (Windows, measured before the release).
@@ -119,8 +122,9 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 - macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
   to restart that module by itself, and taking it off the base and putting it back always helps.
 - macOS 12 to 14.1: one app's own volume cannot be set (the system and the player can).
-- Elgato Marketplace plugins with copy protection do not run; plugins from their authors' own
-  pages do.
+- Elgato Marketplace plugins with copy protection do not run, also when the Stream Deck app has
+  them (Elgato keeps their files encrypted on disk); the catalog says which ones come only through
+  Elgato's app. Plugins from their authors' own pages run.
 - Twitch sign-in is off until the app registration is done. Linux is not supported.
 - A module that drops off USB when you press it (Windows plays its unplug sound, the keys go blank
   for a moment) has a loose contact with the base: take it off and put it back firmly.
@@ -160,9 +164,11 @@ registration), a shared profiles gallery, more than one base.
   system monitor (CPU, memory, GPU, temperatures, on macOS too); clock and timer; deck brightness.
 
 **Plugins made for Stream Deck**
-- Install a `.streamDeckPlugin`, or pick one from a catalog of about 200 open-source plugins
-  (Settings > Plugins: Discord, Spotify, OBS, Home Assistant, Philips Hue, Govee, VS Code and more),
-  and its actions join "What should it do?". 26 of 33 popular ones checked run on Windows
+- Install a `.streamDeckPlugin` (open it with HubDeck, drop it on the window, or pick it), use
+  the plugins Elgato's Stream Deck app already installed, or pick one from a catalog of about 200
+  open-source plugins and the 300 most downloaded on Elgato Marketplace (Settings > Plugins:
+  Discord, Spotify, OBS, Home Assistant, Philips Hue, Govee, VS Code and more), and its actions join
+  "What should it do?". 26 of 33 popular ones checked run on Windows
   ([the list](docs/STREAMDECK-PLUGINS.md#tried)). Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the panel on the right.
   Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
@@ -237,8 +243,9 @@ lights up on the deck.
 
 ![The tour: a deck made at once and walked through part by part](docs/images/hubdeck-tour.png)
 
-**Plugins**: about 200 open-source Stream Deck plugins one click away; each shows its CPU and
-memory, and you can stop and start it by hand.
+**Plugins**: about 200 open-source Stream Deck plugins and Elgato Marketplace's most downloaded
+one click away, and the ones your Stream Deck app has; each shows its CPU and memory, and you can
+stop and start it by hand.
 
 ![Settings > Plugins](docs/images/hubdeck-settings.png)
 

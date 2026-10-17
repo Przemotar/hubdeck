@@ -59,13 +59,27 @@ from the plugin folder by the local server, with that call made after load.
 ## Where users get plugins
 
 1. `.streamDeckPlugin` files from a plugin's own site or GitHub releases (most plugins are open
-   source and publish them).
-2. The OpenAction Marketplace (open-source catalog).
+   source and publish them). HubDeck installs one opened with it (on Windows it is listed under
+   Open with; it becomes the file's app only where nothing else opens these files, so Elgato's
+   Stream Deck app keeps them), dropped on its window, or picked in Settings > Plugins, after
+   showing its name, author and version.
+2. The catalog in Settings > Plugins: the OpenAction Marketplace (open-source) and the 300 most
+   downloaded plugins on Elgato Marketplace, most downloaded first. Of Elgato's top 100, 36 have an
+   open file from the same author (matched by hand on 2026-10-17: author and plugin id checked;
+   `ELGATO_OPEN` in `sdcatalog.rs`) and install with one click; the others show when searched for,
+   marked "Only in Elgato's app". Elgato's list is the public one its site reads; it is not
+   documented, so when it cannot be read the catalog has only the open-source plugins.
 3. Plugins the Stream Deck app already installed on the computer
    (`%APPDATA%\Elgato\StreamDeck\Plugins\`, `~/Library/Application Support/com.elgato.StreamDeck/Plugins/`):
-   HubDeck can offer to use them.
+   Settings > Plugins lists them, and "Use in HubDeck" copies one (the Stream Deck app keeps its
+   own).
 4. The Elgato Marketplace installs through the Stream Deck app with an Elgato account ("Open in
-   Stream Deck"). HubDeck does not get around that; paid or protected plugins stay with Elgato.
+   Stream Deck"). Since January 2026 its plugins are protected by Elgato's DRM, which Elgato says
+   is there so other vendors cannot run a plugin without its author's consent. Checked on
+   2026-10-17 with a plugin installed from the Marketplace (HWiNFO Deck Bridge): the Stream Deck
+   app keeps its `manifest.json` encrypted on disk (it starts with `ELGATO\x01`), so HubDeck
+   cannot know its actions. HubDeck says so and does not get around it; paid or protected plugins
+   stay with Elgato.
 
 ## How the MasterHUB modules map
 

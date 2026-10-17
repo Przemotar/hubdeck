@@ -175,8 +175,10 @@ for (const r of results) {
   );
 }
 // what must be zero: a persona with any of these failed
-const failed = results.filter((r) => r.error || (r.drafts ?? []).some((d) => d.unchecked.length || d.notAttached || d.wontOpen.length || d.promiseBroken || d.bare));
+// a persona that got no draft failed too: on 2026-10-17 the streamer ended at 16.7 s with nothing
+// (the machine busy with a release build), and its drafts came later into the next persona's copy
+const failed = results.filter((r) => r.error || !(r.drafts ?? []).length || (r.drafts ?? []).some((d) => d.unchecked.length || d.notAttached || d.wontOpen.length || d.promiseBroken || d.bare));
 if (failed.length) {
-  console.log(`FAILED: ${failed.map((r) => r.id).join(", ")} (unchecked shortcuts, unattached modules, keys that would not open, keys without an icon or promised pictures missing)`);
+  console.log(`FAILED: ${failed.map((r) => r.id).join(", ")} (no drafts, unchecked shortcuts, unattached modules, keys that would not open, keys without an icon or promised pictures missing; run alone, not beside a build)`);
   process.exitCode = 1;
 }

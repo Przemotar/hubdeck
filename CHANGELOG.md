@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.3
+
+- Stream Deck plugins from where you have them: the catalog in Settings > Plugins now also lists
+  the 300 most downloaded plugins on Elgato Marketplace, most downloaded first. 36 of its top 100
+  publish an open plugin file and install with one click; the others say they come only through
+  Elgato's app.
+- Plugins your Stream Deck app already installed show in Settings > Plugins; "Use in HubDeck"
+  copies one. Plugins Elgato encrypted for its own app say so (they cannot run anywhere else).
+- Open a `.streamDeckPlugin` with HubDeck (Windows lists it under Open with, without taking these
+  files from Elgato's app) or drop it on the window: HubDeck shows what it is and installs it when
+  you say so.
+
 ## 0.1.2
 
 - Stream Deck plugins from the catalog: of 33 popular ones checked, 26 now start and draw on
