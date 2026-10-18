@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModuleKind } from "../deck";
-import { type ActionDef, type Binding, type EngineView, type Gesture } from "../engine";
+import { type ActionDef, type Binding, type EngineView, type Gesture, newPluginIds, onNewPlugins, pluginGroup } from "../engine";
 import { groupName as localizeGroup, localizeAction, t, type Key } from "../i18n";
 import { Icon } from "./Icon";
 import { ACTION_MIME } from "./DeckView";
@@ -82,7 +82,10 @@ export function ActionChooser({
   onOpenPlugins,
   browse,
   onIdea,
+  focusGroup,
 }: {
+  /** Open this group and show it first, with a hint to drag (a plugin's "Use it"). */
+  focusGroup?: string | null;
   /** A key's ideas from other deck owners were picked (shown on keys only). */
   onIdea?: (idea: Idea) => void;
   view: EngineView;
@@ -104,7 +107,18 @@ export function ActionChooser({
   onOpenPlugins?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<string[]>([]);
+  const [open, setOpen] = useState<string[]>(focusGroup ? [focusGroup] : []);
+  const focusRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focusGroup) return;
+    setOpen((o) => (o.includes(focusGroup) ? o : [focusGroup, ...o]));
+    setQuery("");
+    window.setTimeout(() => focusRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
+  }, [focusGroup]);
+  // plugins installed in this session first, marked New
+  const [fresh, setFresh] = useState<string[]>(() => newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g));
+  useEffect(() => onNewPlugins(() => setFresh(newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g))), [view.catalog]);
+  useEffect(() => setFresh(newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g)), [view.catalog]);
   // browsing: a click cannot give an action to nothing, so the hint says to drag it (lit 2 s)
   const [nudged, setNudged] = useState(false);
   const choose = (a: ActionDef) => {
@@ -120,7 +134,8 @@ export function ActionChooser({
     return `${a.name} ${a.group} ${a.description} ${r?.name ?? ""} ${r?.group ?? ""} ${ALSO_CALLED[a.id] ?? ""}`.toLowerCase().includes(q);
   };
   const firsts = (browse ? [] : FIRST_PICKS[gesture === "tap" ? kind : "press"] ?? []).map((id) => fitting.find((a) => a.id === id)).filter((a): a is ActionDef => !!a);
-  const groups = [...new Set(fitting.map((a) => a.group))];
+  const all = [...new Set(fitting.map((a) => a.group))];
+  const groups = [...all.filter((g) => fresh.includes(g)), ...all.filter((g) => !fresh.includes(g))];
   const nameOf = (b: Binding) => {
     const def = raw.get(b.action);
     return b.look.label || (def ? localizeAction(def).name : b.action);
@@ -212,13 +227,23 @@ export function ActionChooser({
               const items = fitting.filter((a) => a.group === g);
               const isOpen = open.includes(g);
               return (
-                <section key={g} className="chooser-group">
+                <section key={g} className={`chooser-group${g === focusGroup ? " is-focus" : ""}`} ref={g === focusGroup ? focusRef : undefined}>
                   <button type="button" className="chooser-group-head" aria-expanded={isOpen} onClick={() => setOpen((o) => (isOpen ? o.filter((x) => x !== g) : [...o, g]))}>
                     <span className="library-icon" aria-hidden="true" style={{ "--h": groupHue(g) } as React.CSSProperties} dangerouslySetInnerHTML={{ __html: view.icons.find((i) => i.name === items[0]?.icon)?.svg ?? "" }} />
                     <span className="nm">{g}</span>
+                    {fresh.includes(g) && <span className="pill is-new">{t("chooser.new")}</span>}
                     <span className="n">{items.length}</span>
                     <Icon name={isOpen ? "chevron-down" : "chevron-right"} />
                   </button>
+                  {/* an arrow toward the deck, nudging a few times: where the actions go (owner, 2026-10-18) */}
+                  {isOpen && g === focusGroup && (
+                    <p className="help chooser-focus-hint">
+                      <span className="focus-arrow" aria-hidden="true">
+                        <Icon name="chevron-left" />
+                      </span>
+                      {t("chooser.focusHint")}
+                    </p>
+                  )}
                   {isOpen && <div className="chooser-list">{items.map(row)}</div>}
                 </section>
               );

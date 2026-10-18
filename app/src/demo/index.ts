@@ -169,6 +169,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     changed();
   },
   preview_svg: ({ screen, look }) => (fixture.previews as Record<string, string>)[`${screen}|${sortedJson(look)}`] ?? fallbackSvg(screen as string, look as never),
+  image_thumb: () => null,
+  pet_preview: () => [],
+  // the dialog plugin's confirm: the browser's own question, answered with the button's label
+  "plugin:dialog|message": ({ message, buttons }) => {
+    const ok = typeof buttons === "object" && buttons && "ok" in buttons ? String((buttons as { ok: unknown }).ok) : "Ok";
+    return buttons ? (window.confirm(String(message)) ? ok : "Cancel") : (window.alert(String(message)), ok);
+  },
+  deck_fonts: () => ["Arial", "Meiryo", "Segoe UI", "Yu Gothic"],
   screens_get: () => ({ brightness: 100, blankAfterMinutes: 0, blankWhenLocked: true }),
   integrations_get: () => ({ obsUrl: "ws://127.0.0.1:4455", obsPasswordSet: true, haUrl: "http://homeassistant.local:8123", haTokenSet: true, streamlabsUrl: "ws://127.0.0.1:59650", streamlabsTokenSet: false }),
   plugins_list: () => [
@@ -256,6 +264,12 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
         }
       : {},
   language_set: () => null,
+  languages_list: () => [],
+  language_file: () => {
+    throw new Error("no language files in the demo");
+  },
+  language_template: () => "languages/template.json",
+  languages_open_folder: () => null,
   dial_gallery: () => (fixture as unknown as { dialGallery?: unknown[] }).dialGallery ?? [],
   auto_seen: () => null,
   auto_set: () => null,
@@ -400,6 +414,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     if (found) found.name = name as string;
     changed();
   },
+  page_delete: ({ profile, page: id }) => {
+    const p = profiles.get(profile as string);
+    if (!p) return null;
+    p.pages = (p.pages ?? []).filter((x) => x.id !== id);
+    for (const c of Object.keys(p.controls)) if (c.startsWith(`${id as string}/`)) delete p.controls[c];
+    if (page === id) page = null;
+    changed();
+  },
   page_set: ({ page: id }) => {
     page = (id as string | null) ?? null;
     changed();
@@ -420,11 +442,14 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     beforeTour = null;
     changed();
   },
-  sd_catalog: () => [
-    { id: "me.amankhanna.oadiscord", name: "Discord", author: "nekename", description: "Mute, deafen and voice channels in the Discord desktop app", repository: "https://github.com/OpenActionPlugins/discord", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, tried: "Windows" },
-    { id: "com.example.hue", name: "Philips Hue", author: "someone", description: "Turn Hue lights and scenes on and off, set brightness with a dial", repository: "https://github.com/example/hue", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false },
-    { id: "elgato:e-1", name: "Volume Controller", author: "Elgato", description: "Adjust the volume of your apps and hardware with a key press or dial turn.", repository: "", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, elgato: "https://marketplace.elgato.com/product/volume-controller", popular: 1, elgatoOnly: true },
-    { id: "com.example.clock", name: "World clock", author: "someone else", description: "Time zones on the keys", repository: "https://github.com/example/clock", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: true },
+  // README pictures put the real catalog here (scripts/ui/readme-shots.mjs), else six samples
+  sd_catalog: () => (window as unknown as { __DEMO_CATALOG__?: unknown[] }).__DEMO_CATALOG__ ?? [
+    { id: "com.fredemmott.audiooutputswitch", name: "Audio Switcher", author: "Fred Emmott", description: "StreamDeck plugin for setting active audio devices", repository: "https://github.com/fredemmott/StreamDeck-AudioSwitcher", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "elgato", popular: 10, stars: 281, updated: "2024-05-13", systems: ["macOS", "Windows"], category: "Audio", dial: false, tried: "Windows" },
+    { id: "de.perdoctus.streamdeck.homeassistant", name: "Home Assistant", author: "Christoph Giesche", description: "Control your Home Assistant devices from StreamDeck", repository: "https://github.com/cgiesche/streamdeck-homeassistant", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "elgato", popular: 28, stars: 1059, updated: "2026-10-16", systems: ["macOS", "Windows"], category: "Smart home", dial: true, tried: "Windows" },
+    { id: "me.amankhanna.oadiscord", name: "Discord", author: "nekename", description: "An OpenAction plugin for controlling the Discord desktop client", repository: "https://github.com/OpenActionPlugins/discord", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "openaction", popular: null, stars: 40, updated: "2026-09-01", systems: ["Windows", "macOS"], category: "Communication", dial: false, tried: "Windows" },
+    { id: "com.moeilijk.hwinfo", name: "HWiNFO", author: "moeilijk", description: "Show HWiNFO sensor readings on your keys", repository: "https://github.com/moeilijk/hwinfo-streamdeck", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "openaction", popular: null, stars: 262, updated: "2026-10-16", systems: ["Windows"], category: "Monitoring", dial: false, tried: "Windows" },
+    { id: "com.refractored.mystreamtimer", name: "My Stream Timer", author: "Refractored LLC", description: "Start and control My Stream Timer app timers or independent file timers.", repository: "https://github.com/jamesmontemagno/MyStreamTimer", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "github", popular: null, stars: 104, updated: "2026-10-18", systems: ["macOS", "Windows"], category: "Productivity", dial: false, tried: null },
+    { id: "de.shells.osc", name: "Send OSC Command", author: "shells", description: "Send OpenSoundControl messages to any device or application", repository: "https://github.com/shells-dw/streamdeck-osc", icon: `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><rect width="36" height="36" rx="8" fill="#2a2a33"/><circle cx="18" cy="18" r="8" fill="#8b7cf6"/></svg>')}`, aiAssisted: false, source: "github", popular: null, stars: 38, updated: "2026-10-16", systems: ["Windows", "macOS"], category: "Developer", dial: true, tried: null },
   ],
   sd_catalog_install: ({ id }) => id,
   sd_stream_deck: () => [

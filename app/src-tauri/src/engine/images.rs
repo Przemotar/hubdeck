@@ -202,6 +202,39 @@ fn load(name: &str) -> Option<Arc<Picture>> {
     Some(picture)
 }
 
+/// A picture for a drawing that shows it every frame (Mochi's body): made at most `px` wide and
+/// high as a PNG data URI (a photo is decoded once here, not 25 times a second), with whether it
+/// has see-through parts (a cut-out keeps its own outline); a GIF's first frame, an SVG as it is.
+pub fn fitted(name: &str, px: u32) -> Option<(String, bool)> {
+    if !valid(name) {
+        return None;
+    }
+    let bytes = std::fs::read(dir()?.join(name)).ok()?;
+    if name.to_lowercase().ends_with(".svg") {
+        return Some((data_uri(mime(name), &bytes), true));
+    }
+    let img = image::load_from_memory(&bytes).ok()?;
+    let cut_out = img.to_rgba8().pixels().any(|p| p.0[3] < 128);
+    // a cut-out without its see-through margin, so it fills the body (owner's 2a, 2026-10-18)
+    let img = if cut_out { trimmed(img) } else { img };
+    let img = if img.width() > px || img.height() > px { img.resize(px, px, image::imageops::FilterType::Lanczos3) } else { img };
+    let mut png = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+    Some((data_uri("image/png", &png), cut_out))
+}
+
+/// A picture cropped to what is drawn on it (its pixels that are not see-through).
+fn trimmed(img: image::DynamicImage) -> image::DynamicImage {
+    let rgba = img.to_rgba8();
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0, 0);
+    for (x, y, p) in rgba.enumerate_pixels() {
+        if p[3] >= 16 {
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+        }
+    }
+    if x1 < x0 || y1 < y0 { img } else { img.crop_imm(x0, y0, x1 - x0 + 1, y1 - y0 + 1) }
+}
+
 /// Every frame of a GIF as a data URI (tests that draw what the engine draws).
 #[cfg(test)]
 pub fn gif_frame_uris(bytes: &[u8]) -> Vec<String> {

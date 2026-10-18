@@ -209,7 +209,7 @@ fn esc(t: &str) -> String {
 }
 
 fn text(x: f32, y: f32, size: f32, fill: &str, t: &str) -> String {
-    format!(r#"<text x="{x}" y="{y}" font-family="IBM Plex Sans" font-weight="600" font-size="{size}" fill="{fill}" text-anchor="middle">{}</text>"#, esc(t))
+    format!(r#"<text x="{x}" y="{y}" font-family="{}" font-weight="600" font-size="{size}" fill="{fill}" text-anchor="middle">{}</text>"#, super::render::font_family(), esc(t))
 }
 
 /// A ring from 12 o'clock filled to `frac`, for timers and lives.

@@ -2,12 +2,15 @@
 // zainstalowanie pluginow z elgato"). On a test copy of its own (virtual modules, never the focus):
 //   1. started with a plugin file as a double click starts it: the window asks, Install installs it;
 //   2. a file encrypted for Elgato's app says so and offers no Install;
-//   3. Settings > Plugins lists the Stream Deck app's plugins (when it is installed), encrypted ones
-//      with the reason, and "Use in HubDeck" copies a readable one;
-//   4. the catalog: Elgato's most downloaded first, a plugin only Elgato's app installs shows when
-//      searched for, with no Install; one only on GitHub installs.
+//   3. Settings > Plugins lists the Stream Deck app's readable plugins (when it is installed), the
+//      encrypted ones as one line (owner's 5a, 2026-10-18), and "Use in HubDeck" copies one;
+//   4. the Plugins tab (owner's pick A, 2026-10-18): Elgato Marketplace, OpenAction and GitHub with
+//      counts, nothing only Elgato's app installs, the filters and the sort do what they say, a
+//      GitHub plugin says "Not tried yet", one only on GitHub installs.
 // Screenshots in logs/plugin-sources-*.png, in the dark and the light look.
-//   node scripts/ui/plugin-sources.mjs
+//   node scripts/ui/plugin-sources.mjs [catalog.json]    # the catalog file (scripts/plugins/catalog.mjs);
+//                                                         # without it, the published one
+
 import { chromium } from "playwright-core";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -71,6 +74,7 @@ execFileSync("powershell", ["-NoProfile", "-Command", `Copy-Item '${mute}' '${mu
 fs.mkdirSync(path.join(sdDir, "com.elgato.tutorial.sdPlugin"));
 fs.writeFileSync(path.join(sdDir, "com.elgato.tutorial.sdPlugin", "manifest.json"), JSON.stringify({ Name: "Tutorial", CodePath: "app.html", Actions: [{ UUID: "com.elgato.tutorial.a" }] }));
 process.env.HUBDECK_STREAM_DECK_PLUGINS = sdDir;
+if (process.argv[2]) process.env.HUBDECK_PLUGIN_CATALOG = path.resolve(process.argv[2]);
 
 const results = [];
 const check = (what, ok, note = "") => (results.push({ what, ok, note }), console.log(`${ok ? "ok  " : "FAIL"} ${what}${note ? ` (${note})` : ""}`));
@@ -82,7 +86,7 @@ async function open(file) {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
   let page;
   for (let i = 0; i < 40 && !page; i++) {
-    page = browser.contexts()[0]?.pages().find((p) => /tauri.localhost|localhost:1420/.test(p.url()));
+    page = browser.contexts()[0]?.pages().find((p) => /tauri.localhost|localhost:1460/.test(p.url()));
     if (!page) await sleep(500);
   }
   page.on("pageerror", (e) => (errors++, console.log("page error:", e.message)));
@@ -120,8 +124,9 @@ try {
       const section = page.locator("section.sec", { hasText: "Plugins from the Stream Deck app" });
       await section.waitFor({ timeout: 5000 }).catch(() => {});
       check("Settings > Plugins lists the Stream Deck app's plugins", (await section.count()) === 1);
-      const enc = sd.find((p) => p.problem?.includes("encrypted"));
-      if (enc) check("an encrypted one says why it cannot run", ((await section.textContent()) ?? "").includes("encrypted for Elgato's Stream Deck app"));
+      const enc = sd.filter((p) => p.problem?.includes("encrypted"));
+      const sectionText = (await section.textContent()) ?? "";
+      if (enc.length) check("encrypted ones are one line, not cards", enc.every((p) => !sectionText.includes(p.id) && !sectionText.includes(p.name)) && /more from the Stream Deck app: Elgato encrypted/.test(sectionText), sectionText.slice(-160));
       await section.scrollIntoViewIfNeeded().catch(() => {});
       await shot(page, "3-stream-deck-app");
       const usable = sd.find((p) => !p.problem);
@@ -135,36 +140,51 @@ try {
       check("no Stream Deck app: no section", (await page.getByText("Plugins from the Stream Deck app").count()) === 0);
     }
 
-    // 4. the catalog with Elgato's names
-    await page.getByRole("button", { name: "Browse the catalog" }).click();
+    // 4. the Plugins tab
+    await page.getByRole("button", { name: "Browse plugins" }).click();
     const search = page.getByRole("searchbox", { name: "Search plugins" });
     await search.waitFor({ timeout: 30000 });
+    await page.locator(".plugin-card").first().waitFor({ timeout: 60000 }).catch(() => {});
     const catalog = await invoke("sd_catalog");
-    const elgato = catalog.filter((e) => e.popular);
-    check("Elgato's most downloaded join the catalog", elgato.length >= 250, `${elgato.length} of ${catalog.length}`);
-    check("Elgato's most downloaded come first", catalog[0].popular === 1 || catalog.slice(0, 3).some((e) => e.popular));
-    const catalogSection = page.locator("section.sec", { hasText: "Plugin catalog" });
-    const toSearch = () => page.evaluate(() => document.querySelector('input[type="search"]')?.scrollIntoView({ block: "start" }));
-    await toSearch();
-    const firstShown = (await catalogSection.locator(".catalog-item strong").first().textContent()) ?? "";
-    check("the list before a search has no plugin only Elgato's app installs", !catalog.find((e) => e.name === firstShown)?.elgatoOnly, firstShown);
+    const by = (src) => catalog.filter((e) => e.source === src).length;
+    check("the tab has Elgato Marketplace, OpenAction and GitHub", by("elgato") >= 30 && by("openaction") >= 100 && by("github") >= 50, `elgato ${by("elgato")}, openaction ${by("openaction")}, github ${by("github")}`);
+    check("nothing only Elgato's app installs", !catalog.some((e) => e.id.startsWith("elgato:") || (e.name === "Volume Controller" && e.author === "Elgato")));
+    const filters = page.locator(".plugins-filters");
+    const ghCount = Number(await filters.locator("label", { hasText: "GitHub" }).locator(".n").textContent());
+    check("the source counts are the catalog's", ghCount > 0 && ghCount <= by("github"), `GitHub ${ghCount}`);
+    const firstCard = (await page.locator(".plugin-card strong").first().textContent()) ?? "";
+    check("most popular first: Elgato's best ranked", catalog.filter((e) => e.popular).sort((a, b) => a.popular - b.popular)[0]?.name === firstCard, firstCard);
     await shot(page, "4-catalog");
-    await search.fill("Volume Controller");
+    const cards = () => page.locator(".plugin-card").count();
+    await filters.getByLabel("Tried in HubDeck").check();
     await sleep(300);
-    await toSearch();
-    const vc = page.locator(".catalog-item", { hasText: "Volume Controller" }).filter({ hasText: "Elgato" }).first();
-    const vcText = (await vc.textContent().catch(() => "")) ?? "";
-    check("a plugin only Elgato's app installs shows when searched for, without Install", vcText.includes("Only in Elgato's app") && (await vc.getByRole("button", { name: "Install" }).count()) === 0, vcText.slice(0, 120));
-    await shot(page, "5-elgato-only");
+    const triedTags = await page.locator(".plugin-card").evaluateAll((els) => els.every((el) => el.textContent.includes("Tried in HubDeck")));
+    check("Tried in HubDeck shows only tried ones", (await cards()) > 5 && triedTags, String(await cards()));
+    await filters.getByLabel("Tried in HubDeck").uncheck();
+    await filters.getByLabel("Uses the dial and knobs").check();
+    await sleep(300);
+    const dialTags = await page.locator(".plugin-card").evaluateAll((els) => els.every((el) => [...el.querySelectorAll(".pill")].some((p) => p.textContent === "Dial")));
+    check("Uses the dial shows only dial plugins", (await cards()) > 5 && dialTags, String(await cards()));
+    await filters.getByLabel("Uses the dial and knobs").uncheck();
+    for (const s of ["Elgato Marketplace", "OpenAction"]) await filters.getByLabel(s).uncheck();
+    await page.getByLabel("Sort").selectOption("updated");
+    await sleep(300);
+    const gh = await page.locator(".plugin-card").evaluateAll((els) => els.slice(0, 12).map((el) => el.textContent));
+    check("GitHub only: every card from GitHub, not tried yet", gh.length > 0 && gh.every((x) => x.includes("GitHub") && (x.includes("Not tried yet") || x.includes("Tried in HubDeck"))), gh[0]?.slice(0, 80));
+    await shot(page, "5-github");
+    for (const s of ["Elgato Marketplace", "OpenAction"]) await filters.getByLabel(s).check();
+    await page.getByLabel("Sort").selectOption("popular");
+    const toSearch = () => page.evaluate(() => document.querySelector('input[type="search"]')?.scrollIntoView({ block: "start" }));
     await search.fill("RAM");
     await sleep(300);
     await toSearch();
-    const ram = page.locator(".catalog-item", { hasText: "Michail" }).first();
+    const ram = page.locator(".plugin-card", { hasText: "Michail" }).first();
     await ram.getByRole("button", { name: "Install" }).click();
     await page.waitForFunction(() => !document.body.innerText.includes("Installing…"), null, { timeout: 60000 }).catch(() => {});
     await sleep(1500);
     const err = (await ram.locator(".catalog-err").textContent().catch(() => "")) ?? "";
     check("a plugin only on GitHub installs from the catalog", (await invoke("plugins_list")).some((p) => p.id === "eu.dirondin.streamdeck.ram"), err);
+    check("an installed plugin says so on its card", (await ram.locator(".pill.is-ok", { hasText: "Installed" }).count()) === 1);
     await shot(page, "6-github-only");
     await browser.close().catch(() => {});
   }

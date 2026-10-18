@@ -8,7 +8,7 @@ import path from 'node:path';
 
 const out = process.argv[2] || path.join(os.tmpdir(), 'hubdeck-tour-dial');
 fs.mkdirSync(out, { recursive: true });
-const base = process.env.HUBDECK_URL || 'http://localhost:1420/';
+const base = process.env.HUBDECK_URL || 'http://localhost:1460/';
 const cache = path.join(os.homedir(), process.platform === 'darwin' ? 'Library/Caches/ms-playwright' : process.platform === 'win32' ? 'AppData/Local/ms-playwright' : '.cache/ms-playwright');
 function find(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

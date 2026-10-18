@@ -53,6 +53,10 @@ pub enum ParamKind {
     Secret,
     /// A place for the weather, `Name|lat|lon`, picked with a city search.
     Place,
+    /// A picture in the pictures folder, by name; empty = none.
+    Picture,
+    /// How Mochi's body picture sits, `{size, x, y}`, with previews of its moods.
+    PetFit,
     /// A name a connected service knows, picked from its list (`names_list`): `what` is e.g.
     /// `obs.scene`, `obs.input`, `obs.filter` (of the param `source`), `streamlabs.audio`,
     /// `ha.light`, `spotify.playlist`, `twitch.category`. Typed names stay possible while the
@@ -1070,6 +1074,16 @@ pub fn catalog() -> Vec<ActionDef> {
                         ParamKind::Select { options: options(&[("pet", "Pets it"), ("feed", "Feeds it"), ("sleep", "Bed / wake up"), ("dial", "Puts it on the dial / takes it off")]) },
                         json!("pet"),
                     )
+                },
+                ParamDef {
+                    help: Some(
+                        "Your own picture for Mochi's body; its eyes, mouth and moods are drawn over it and every reaction stays. It keeps its own shape: use a PNG with a see-through background for a cut-out. Empty: Mochi's own.",
+                    ),
+                    ..p(super::pet::BODY_PARAM, "Its body", ParamKind::Picture, json!(""))
+                },
+                ParamDef {
+                    help: Some("Drag the picture in a preview to move it; the previews show Mochi happy, petted, hungry and asleep."),
+                    ..p(super::pet::FIT_PARAM, "Fit", ParamKind::PetFit, json!({"size": 100, "x": 0, "y": 0}))
                 },
             ],
             icon: "heart",

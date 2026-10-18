@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { confirmed } from "../confirm";
 import type { EngineView } from "../engine";
 import { iconPacks, type PackIcon, type PackInfo } from "../iconpacks";
 import { t, useLanguage } from "../i18n";
@@ -118,7 +119,9 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
           <button
             className="tool ghost small"
             onClick={() => {
-              if (window.confirm(t("icons.removePackConfirm"))) iconPacks.remove(pack).then(() => (loadPacks(), setCategory("interface")), (e) => setError(String(e)));
+              void confirmed(t("icons.removePackConfirm")).then((yes) => {
+                if (yes) iconPacks.remove(pack).then(() => (loadPacks(), setCategory("interface")), (e) => setError(String(e)));
+              });
             }}
           >
             <Icon name="trash" />

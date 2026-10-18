@@ -111,8 +111,8 @@ pub fn step_profile(ordered: &[String], current: Option<&str>, step: i32) -> Opt
 pub const NEXT_PAGE: &str = ":next";
 pub const PREVIOUS_PAGE: &str = ":previous";
 
-const TEST_COPY_RUNS: [&str; 10] =
-    ["core.page", "core.nextPage", "core.previousPage", "core.profile", "core.clock", "core.timer", "core.lighting", "core.deckBrightness", "core.dialGallery", "core.saver"];
+const TEST_COPY_RUNS: [&str; 11] =
+    ["core.page", "core.nextPage", "core.previousPage", "core.profile", "core.clock", "core.timer", "core.lighting", "core.deckBrightness", "core.dialGallery", "core.saver", "core.pet"];
 
 /// The app, to send keys, clicks and text from its main thread: on macOS 26 enigo's keyboard
 /// layout lookup (TSMGetInputSourceProperty) stops the app when called from any other thread

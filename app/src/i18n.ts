@@ -3,14 +3,29 @@ import type { ActionDef, ParamDef, PresetSummary } from "./engine";
 
 /**
  * UI translations. English is the app's language and the fallback for every missing text; Polish
- * is an optional overlay the user picks explicitly. The choice is kept in localStorage.
+ * is an optional overlay the user picks explicitly, and so is a language file of the user's own
+ * (`languages/<code>.json` in HubDeck's data folder; Discussions #3, 2026-10-18). The choice is kept
+ * in localStorage.
  */
 
-export type Lang = "en" | "pl";
+/** "en", "pl", or the code of a language file ("ja"). */
+export type Lang = string;
 
-/** Plural forms: English uses one / other, Polish one / few (2-4, not 12-14) / many. */
-type Plural = { one: string; few?: string; many?: string; other: string };
+/** Plural forms: English uses one / other, Polish one / few (2-4, not 12-14) / many; a language
+ * file uses its language's forms (Intl.PluralRules), falling back to other. */
+type Plural = { zero?: string; one?: string; two?: string; few?: string; many?: string; other: string };
 type Text = string | Plural;
+
+/** A language file: the window's words, and the actions', presets' and games' names it has. */
+export interface LanguagePack {
+  name?: string;
+  strings: Record<string, unknown>;
+  actions?: Record<string, ActionText>;
+  groups?: Record<string, string>;
+  presets?: Record<string, { name?: string; description?: string }>;
+  games?: Record<string, { name?: string; about?: string }>;
+  keys?: Record<string, string>;
+}
 
 const en = {
   // module and control names
@@ -88,6 +103,8 @@ const en = {
   "settings.calibrateHelp": "If the pictures on the keys look shifted, line them up with the key windows.",
   "stage.editLayout": "Edit layout",
   "stage.doneLayout": "Done",
+  "stage.saverOn": "Screensaver on the deck",
+  "stage.saverEnd": "End",
   "stage.editLayoutHelp": "Move or turn modules if the drawing does not match your desk.",
   "library.hintSelected": "Drag an action onto a control, or click one to give it to {control}.",
   "library.notHere": "not here",
@@ -99,6 +116,10 @@ const en = {
   "topbar.modules": { one: "{count} module", other: "{count} modules" },
   "topbar.turned": "turned {turn}°",
   "topbar.language": "Language",
+  "language.filesHelp": "Another language: put its file in the languages folder and pick it here. Make a language file writes every English text to start a translation from; anything a file leaves out shows in English.",
+  "language.makeFile": "Make a language file",
+  "language.openFolder": "Open languages folder",
+  "language.templateMade": "Every English text is in {path}. Rename it to the language's code (ja.json...), translate it, then pick it here.",
 
   // profile panel
   "profile.title": "Profile",
@@ -302,6 +323,16 @@ const en = {
   "param.browse": "Browse",
   "param.chooseProfile": "Choose a profile…",
   "param.mainPage": "Main page",
+  "param.pictureNone": "Pick a picture",
+  "param.pictureChange": "Change",
+  "param.pictureRemove": "Remove",
+  "petFit.happy": "Happy",
+  "petFit.petted": "Petted",
+  "petFit.hungry": "Hungry",
+  "petFit.asleep": "Asleep",
+  "petFit.size": "Size",
+  "petFit.reset": "Reset",
+  "petFit.drag": "Drag to move the picture",
   "param.lastApp": "Use the last app that was in front",
   "param.useApp": "Use {app} (in front a moment ago)",
   "param.chooseApp": "Choose an app",
@@ -375,6 +406,9 @@ const en = {
   "screens.appIconsFill": "Whole key",
   "screens.appIconsFillLabel": "Whole key with the name",
   "screens.appIconsHelp": "For keys whose picture is on Auto; a key can still choose its own.",
+  "screens.font": "Font on the deck",
+  "screens.fontOwn": "HubDeck's own (IBM Plex Sans)",
+  "screens.fontHelp": "For text on the keys and the dial. A letter the font lacks (Japanese, Chinese, Korean...) comes from another font on this computer that has it.",
   "look.fitAuto": "Auto",
   "look.fitIcon": "Like an icon",
   "look.fitFill": "Whole key",
@@ -703,6 +737,8 @@ const en = {
   "welcome.deskTitle": "Does this look like your desk?",
   "deck.edgeOpen": "Lights: style, brightness, reactions",
   "settings.lightsScreens": "Lights and screens",
+  "settings.text": "Text on the deck",
+  "screens.fontSample": "Sample labels in this font",
   "gesture.addDouble": "+ Add a double press",
   "gesture.addHold": "+ Add a hold action",
   "switching.example": "Example: Discord comes to the front, its profile comes in; you leave it, your home profile comes back.",
@@ -974,12 +1010,9 @@ const en = {
   "plugins.installSd": "Install a Stream Deck plugin…",
   "plugins.sdFile": "Stream Deck plugin",
   "plugins.catalog": "Plugin catalog",
-  "plugins.catalogHelp": "About 200 open-source plugins from the OpenAction Marketplace and the 300 most downloaded on Elgato Marketplace, most downloaded first. Open ones install from their author's GitHub; check what a plugin does before you install it.",
-  "plugins.catalogOpen": "Browse the catalog",
   "plugins.catalogSearch": "Search plugins",
   "plugins.catalogLoading": "Loading the catalog…",
   "plugins.catalogOffline": "The catalog cannot be reached. Check the connection and try again.",
-  "plugins.catalogMore": "{shown} of {count}: type to find more.",
   "plugins.catalogNone": "No plugin matches.",
   "plugins.install": "Install",
   "plugins.isInstalled": "Installed",
@@ -987,9 +1020,48 @@ const en = {
   "plugins.aiAssisted": "made with AI help",
   "plugins.tried": "tried in HubDeck ({systems})",
   "plugins.source": "Source",
-  "plugins.elgatoOnly": "Only in Elgato's app",
-  "plugins.elgatoOnlyHelp": "It comes only through Elgato Marketplace, which installs into Elgato's Stream Deck app. Got it there? It shows under “Plugins from the Stream Deck app”, and runs here unless Elgato encrypted it.",
   "plugins.elgatoPage": "Elgato Marketplace",
+  "pluginsTab.filters": "Filters",
+  "pluginsTab.source": "Source",
+  "pluginsTab.src.elgato": "Elgato Marketplace",
+  "pluginsTab.src.openaction": "OpenAction",
+  "pluginsTab.src.github": "GitHub",
+  "pluginsTab.worksWith": "Works with",
+  "pluginsTab.thisSystem": "This computer ({os})",
+  "pluginsTab.dial": "Uses the dial and knobs",
+  "pluginsTab.triedOnly": "Tried in HubDeck",
+  "pluginsTab.category": "Category",
+  "pluginsTab.all": "All",
+  "pluginsTab.cat.Audio": "Audio",
+  "pluginsTab.cat.Music": "Music",
+  "pluginsTab.cat.Streaming": "Streaming",
+  "pluginsTab.cat.Communication": "Calls and chat",
+  "pluginsTab.cat.Lighting": "Lighting",
+  "pluginsTab.cat.Smart home": "Smart home",
+  "pluginsTab.cat.Monitoring": "Monitoring",
+  "pluginsTab.cat.Productivity": "Productivity",
+  "pluginsTab.cat.Developer": "Developer",
+  "pluginsTab.cat.Gaming": "Gaming",
+  "pluginsTab.cat.Other": "Other",
+  "pluginsTab.sort": "Sort",
+  "pluginsTab.sortPopular": "Most popular",
+  "pluginsTab.sortUpdated": "Recently updated",
+  "pluginsTab.sortTried": "Tried in HubDeck first",
+  "pluginsTab.sortName": "Name",
+  "pluginsTab.help": "Free Stream Deck plugins that install here with one click. A plugin is a program that runs on this computer: check what it does before you install it.",
+  "pluginsTab.popElgato": "#{n} on Elgato",
+  "pluginsTab.stars": "★ {n}",
+  "pluginsTab.tried": "Tried in HubDeck",
+  "pluginsTab.notTried": "Not tried yet",
+  "pluginsTab.dialTag": "Dial",
+  "pluginsTab.updated": "updated {date}",
+  "pluginsTab.use": "Use it",
+  "chooser.new": "New",
+  "chooser.focusHint": "Drag an action onto a key, a knob or the dial; its settings show on the right.",
+  "pluginsTab.more": { one: "Show 1 more", other: "Show more ({count} left)" },
+  "plugins.browse": "Browse plugins",
+  "plugins.browseHelp": "The Plugins tab lists free Stream Deck plugins from Elgato Marketplace, OpenAction and GitHub that install here with one click.",
+  "plugins.locked": { one: "1 more from the Stream Deck app: Elgato encrypted it for its own app, so it runs only there.", other: "{count} more from the Stream Deck app: Elgato encrypted them for its own app, so they run only there." },
   "plugins.popular": "#{rank} on Elgato Marketplace",
   "plugins.fromSd": "Plugins from the Stream Deck app",
   "plugins.fromSdHelp": "Elgato's Stream Deck app is on this computer. HubDeck can use a copy of its plugins; the Stream Deck app keeps its own. Plugins Elgato encrypted for its app run only there.",
@@ -1333,6 +1405,8 @@ const pl: Partial<Record<Key, Text>> = {
   "settings.calibrateHelp": "Jeśli obrazki na klawiszach wyglądają na przesunięte, dopasuj je do okienek klawiszy.",
   "stage.editLayout": "Edytuj układ",
   "stage.doneLayout": "Gotowe",
+  "stage.saverOn": "Na decku wygaszacz",
+  "stage.saverEnd": "Zakończ",
   "stage.editLayoutHelp": "Przesuń lub obróć moduły, jeśli rysunek nie zgadza się z biurkiem.",
   "library.hintSelected": "Przeciągnij akcję na element albo kliknij ją, żeby przypisać do: {control}.",
   "library.notHere": "nie tutaj",
@@ -1344,6 +1418,10 @@ const pl: Partial<Record<Key, Text>> = {
   "topbar.modules": { one: "{count} moduł", few: "{count} moduły", many: "{count} modułów", other: "{count} modułu" },
   "topbar.turned": "obrót {turn}°",
   "topbar.language": "Język",
+  "language.filesHelp": "Inny język: włóż jego plik do folderu języków i wybierz go tutaj. Zrób plik językowy zapisuje wszystkie angielskie teksty jako początek tłumaczenia; czego plik nie ma, pokazuje się po angielsku.",
+  "language.makeFile": "Zrób plik językowy",
+  "language.openFolder": "Otwórz folder języków",
+  "language.templateMade": "Wszystkie angielskie teksty są w {path}. Zmień nazwę na kod języka (ja.json...), przetłumacz i wybierz go tutaj.",
 
   "profile.title": "Profil",
   "profile.close": "Zamknij",
@@ -1546,6 +1624,16 @@ const pl: Partial<Record<Key, Text>> = {
   "param.browse": "Przeglądaj",
   "param.chooseProfile": "Wybierz profil…",
   "param.mainPage": "Strona główna",
+  "param.pictureNone": "Wybierz obrazek",
+  "param.pictureChange": "Zmień",
+  "param.pictureRemove": "Usuń",
+  "petFit.happy": "Wesoły",
+  "petFit.petted": "Głaskany",
+  "petFit.hungry": "Głodny",
+  "petFit.asleep": "Śpi",
+  "petFit.size": "Rozmiar",
+  "petFit.reset": "Reset",
+  "petFit.drag": "Przeciągnij, żeby przesunąć obrazek",
   "param.lastApp": "Użyj ostatniej aplikacji z wierzchu",
   "param.useApp": "Użyj: {app} (była przed chwilą na wierzchu)",
   "param.chooseApp": "Wybierz aplikację",
@@ -1618,6 +1706,9 @@ const pl: Partial<Record<Key, Text>> = {
   "screens.appIconsFill": "Cały klawisz",
   "screens.appIconsFillLabel": "Cały klawisz z nazwą",
   "screens.appIconsHelp": "Dla klawiszy z obrazkiem na Auto; każdy klawisz może wybrać po swojemu.",
+  "screens.font": "Czcionka na decku",
+  "screens.fontOwn": "Własna HubDecka (IBM Plex Sans)",
+  "screens.fontHelp": "Dla tekstu na klawiszach i dialu. Znak, którego czcionka nie ma (japoński, chiński, koreański...), bierze się z innej czcionki na tym komputerze, która go ma.",
   "look.fitAuto": "Auto",
   "look.fitIcon": "Jak ikona",
   "look.fitFill": "Cały klawisz",
@@ -1945,6 +2036,8 @@ const pl: Partial<Record<Key, Text>> = {
   "welcome.deskTitle": "Czy tak wygląda Twój deck?",
   "deck.edgeOpen": "Światła: styl, jasność, reakcje",
   "settings.lightsScreens": "Światła i ekrany",
+  "settings.text": "Tekst na decku",
+  "screens.fontSample": "Przykładowe napisy w tej czcionce",
   "gesture.addDouble": "+ Dodaj podwójne naciśnięcie",
   "gesture.addHold": "+ Dodaj akcję na przytrzymanie",
   "switching.example": "Przykład: Discord wychodzi na wierzch, wchodzi jego profil; wychodzisz z niego, wraca Twój profil domowy.",
@@ -2214,12 +2307,9 @@ const pl: Partial<Record<Key, Text>> = {
   "plugins.installSd": "Zainstaluj wtyczkę Stream Decka…",
   "plugins.sdFile": "Wtyczka Stream Decka",
   "plugins.catalog": "Katalog wtyczek",
-  "plugins.catalogHelp": "Około 200 otwartych wtyczek z OpenAction Marketplace i 300 najczęściej pobieranych z Elgato Marketplace, od najpopularniejszych. Otwarte instalują się z GitHuba autora; sprawdź, co wtyczka robi, zanim ją zainstalujesz.",
-  "plugins.catalogOpen": "Przeglądaj katalog",
   "plugins.catalogSearch": "Szukaj wtyczek",
   "plugins.catalogLoading": "Wczytuję katalog…",
   "plugins.catalogOffline": "Nie da się połączyć z katalogiem. Sprawdź połączenie i spróbuj ponownie.",
-  "plugins.catalogMore": "{shown} z {count}: wpisz, żeby znaleźć więcej.",
   "plugins.catalogNone": "Żadna wtyczka nie pasuje.",
   "plugins.install": "Zainstaluj",
   "plugins.isInstalled": "Zainstalowana",
@@ -2227,9 +2317,48 @@ const pl: Partial<Record<Key, Text>> = {
   "plugins.aiAssisted": "zrobiona z pomocą AI",
   "plugins.tried": "sprawdzona w HubDecku ({systems})",
   "plugins.source": "Źródło",
-  "plugins.elgatoOnly": "Tylko w aplikacji Elgato",
-  "plugins.elgatoOnlyHelp": "Jest tylko w Elgato Marketplace, który instaluje do aplikacji Stream Deck od Elgato. Masz ją tam? Pojawi się w „Wtyczki z aplikacji Stream Deck” i zadziała tutaj, chyba że Elgato ją zaszyfrowało.",
   "plugins.elgatoPage": "Elgato Marketplace",
+  "pluginsTab.filters": "Filtry",
+  "pluginsTab.source": "Źródło",
+  "pluginsTab.src.elgato": "Elgato Marketplace",
+  "pluginsTab.src.openaction": "OpenAction",
+  "pluginsTab.src.github": "GitHub",
+  "pluginsTab.worksWith": "Działa z",
+  "pluginsTab.thisSystem": "Ten komputer ({os})",
+  "pluginsTab.dial": "Używa dialu i gałek",
+  "pluginsTab.triedOnly": "Sprawdzone w HubDecku",
+  "pluginsTab.category": "Kategoria",
+  "pluginsTab.all": "Wszystkie",
+  "pluginsTab.cat.Audio": "Dźwięk",
+  "pluginsTab.cat.Music": "Muzyka",
+  "pluginsTab.cat.Streaming": "Streaming",
+  "pluginsTab.cat.Communication": "Rozmowy i czat",
+  "pluginsTab.cat.Lighting": "Oświetlenie",
+  "pluginsTab.cat.Smart home": "Inteligentny dom",
+  "pluginsTab.cat.Monitoring": "Monitorowanie",
+  "pluginsTab.cat.Productivity": "Produktywność",
+  "pluginsTab.cat.Developer": "Programowanie",
+  "pluginsTab.cat.Gaming": "Gry",
+  "pluginsTab.cat.Other": "Inne",
+  "pluginsTab.sort": "Sortuj",
+  "pluginsTab.sortPopular": "Najpopularniejsze",
+  "pluginsTab.sortUpdated": "Ostatnio zmieniane",
+  "pluginsTab.sortTried": "Najpierw sprawdzone",
+  "pluginsTab.sortName": "Nazwa",
+  "pluginsTab.help": "Darmowe wtyczki do Stream Decka, które instalują się tutaj jednym kliknięciem. Wtyczka to program, który działa na tym komputerze: sprawdź, co robi, zanim ją zainstalujesz.",
+  "pluginsTab.popElgato": "#{n} w Elgato",
+  "pluginsTab.stars": "★ {n}",
+  "pluginsTab.tried": "Sprawdzona w HubDecku",
+  "pluginsTab.notTried": "Jeszcze nie sprawdzona",
+  "pluginsTab.dialTag": "Dial",
+  "pluginsTab.updated": "zmieniona {date}",
+  "pluginsTab.use": "Użyj",
+  "chooser.new": "Nowa",
+  "chooser.focusHint": "Przeciągnij akcję na klawisz, gałkę albo dial; jej ustawienia pokażą się po prawej.",
+  "pluginsTab.more": { one: "Pokaż jeszcze 1", few: "Pokaż więcej (zostały {count})", many: "Pokaż więcej (zostało {count})", other: "Pokaż więcej (zostało {count})" },
+  "plugins.browse": "Przeglądaj wtyczki",
+  "plugins.browseHelp": "Zakładka Wtyczki pokazuje darmowe wtyczki do Stream Decka z Elgato Marketplace, OpenAction i GitHuba, które instalują się tutaj jednym kliknięciem.",
+  "plugins.locked": { one: "Jeszcze 1 z aplikacji Stream Deck: Elgato zaszyfrowało ją dla swojej aplikacji, więc działa tylko tam.", few: "Jeszcze {count} z aplikacji Stream Deck: Elgato zaszyfrowało je dla swojej aplikacji, więc działają tylko tam.", many: "Jeszcze {count} z aplikacji Stream Deck: Elgato zaszyfrowało je dla swojej aplikacji, więc działają tylko tam.", other: "Jeszcze {count} z aplikacji Stream Deck: Elgato zaszyfrowało je dla swojej aplikacji, więc działają tylko tam." },
   "plugins.popular": "#{rank} w Elgato Marketplace",
   "plugins.fromSd": "Wtyczki z aplikacji Stream Deck",
   "plugins.fromSdHelp": "Na tym komputerze jest aplikacja Stream Deck od Elgato. HubDeck może używać kopii jej wtyczek; aplikacja Stream Deck zachowuje swoje. Wtyczki zaszyfrowane przez Elgato działają tylko tam.",
@@ -2837,7 +2966,15 @@ const ACTIONS_PL: Record<string, ActionText> = {
   "core.pet": {
     name: "Zwierzak na dialu",
     description: "Mochi mieszka na dialu: obróć, żeby się bawić, naciśnij, żeby pogłaskać, naciśnij dwa razy, żeby nakarmić, przytrzymaj, żeby położyć spać albo obudzić. Robi się głodny i smutny, gdy zostaje sam na kilka godzin, śpiący późnym wieczorem i śpi, gdy komputer jest zablokowany; nastrój widać w kolorze dialu. Nigdy nie umiera.",
-    params: { name: { label: "Imię" }, press: { label: "Naciśnięcie", options: { pet: "Głaszcze", feed: "Karmi", sleep: "Spać / wstawać" } } },
+    params: {
+      name: { label: "Imię" },
+      press: { label: "Naciśnięcie", options: { pet: "Głaszcze", feed: "Karmi", sleep: "Spać / wstawać", dial: "Stawia go na dialu / zdejmuje" } },
+      bodyFit: { label: "Dopasowanie", help: "Przeciągnij obrazek w podglądzie, żeby go przesunąć; podglądy pokazują Mochi wesołego, głaskanego, głodnego i śpiącego." },
+      body: {
+        label: "Jego ciało",
+        help: "Twój obrazek jako ciało Mochi; oczy, usta i nastroje rysują się na nim, a każda reakcja zostaje. Obrazek zachowuje swój kształt: na wycięty kształt użyj PNG z przezroczystym tłem. Puste: ciało Mochi.",
+      },
+    },
   },
   "core.pomodoro": {
     name: "Pomodoro",
@@ -3020,21 +3157,52 @@ const PRESETS_PL: Record<string, { name?: string; description?: string }> = {
 
 const STORAGE_KEY = "hubdeck.language";
 
-/** English unless the user picked Polish; a missing or unknown value is English. */
+/** The language picked last: "en", "pl" or a language file's code (its file is read by
+ * `restoreLanguage`; until then, and when it is gone, the window is in English). */
 function loadLanguage(): Lang {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "pl" ? "pl" : "en";
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored && /^[a-z0-9_-]{1,32}$/.test(stored) ? stored : "en";
   } catch {
     return "en";
   }
 }
 
-let lang: Lang = loadLanguage();
+const stored = loadLanguage();
+let lang: Lang = stored === "pl" ? "pl" : "en";
+/** The language file in use (null for English and Polish). */
+let pack: LanguagePack | null = null;
 const listeners = new Set<() => void>();
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 
-export function setLanguage(next: Lang) {
-  lang = next === "pl" ? "pl" : "en";
+/** The language file picked last, to read at start ("" for English or Polish). */
+export const storedLanguageFile = () => (stored === "en" || stored === "pl" ? "" : stored);
+
+/** Languages that come with HubDeck as files of their own, read when picked (owner, 2026-10-18:
+ * Japanese, translated by the builder agent; Discussions #3). By code: the language's own name and
+ * a loader that keeps the file out of the window's start. */
+export const BUILT_IN_LANGUAGES: Record<string, { name: string; load: () => Promise<LanguagePack> }> = {
+  ja: { name: "日本語", load: () => import("./locales/ja.json").then((m) => (m.default ?? m) as unknown as LanguagePack) },
+};
+
+/** A text of the current language: Polish, or a language file's (only a string or plural forms). */
+function own(key: Key): Text | undefined {
+  if (lang === "pl") return pl[key];
+  const v = pack?.strings[key];
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object" && typeof (v as Plural).other === "string") return v as Plural;
+  return undefined;
+}
+
+/** Switch to English, Polish, or a language file (`next` its code, `file` its contents). */
+export function setLanguage(next: Lang, file?: LanguagePack) {
+  if (next !== "en" && next !== "pl" && file?.strings && typeof file.strings === "object") {
+    lang = next;
+    pack = file;
+  } else {
+    lang = next === "pl" ? "pl" : "en";
+    pack = null;
+  }
   if (typeof document !== "undefined") document.documentElement.lang = lang;
   try {
     localStorage.setItem(STORAGE_KEY, lang);
@@ -3053,7 +3221,7 @@ const subscribe = (l: () => void) => {
 const snapshot = () => lang;
 
 /** Re-renders the component when the language changes; returns the current language. */
-export function useLanguage(): { lang: Lang; setLanguage: (l: Lang) => void } {
+export function useLanguage(): { lang: Lang; setLanguage: (l: Lang, file?: LanguagePack) => void } {
   useSyncExternalStore(subscribe, snapshot);
   return { lang, setLanguage };
 }
@@ -3061,6 +3229,13 @@ export function useLanguage(): { lang: Lang; setLanguage: (l: Lang) => void } {
 // ---- translating ----
 
 function pluralForm(n: number, l: Lang): keyof Plural {
+  if (l !== "en" && l !== "pl") {
+    try {
+      return new Intl.PluralRules(l).select(n);
+    } catch {
+      return n === 1 ? "one" : "other";
+    }
+  }
   if (l === "pl") {
     if (n === 1) return "one";
     const d = n % 10;
@@ -3097,7 +3272,7 @@ const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platfor
 
 /** The text for `key` in the current language, `{name}` filled from `vars`; `vars.count` picks the plural. */
 export function t(key: Key, vars?: Vars): string {
-  const text = (lang === "pl" ? pl[key] : undefined) ?? en[key];
+  const text = own(key) ?? en[key];
   // a key built at run time that the dictionary lacks: the key itself, never a crash (one missing
   // text blanked the whole window on macOS, 2026-10-15)
   if (text === undefined) return missing(key);
@@ -3107,7 +3282,7 @@ export function t(key: Key, vars?: Vars): string {
 
 /** Like `t`, but `vars` may hold React nodes (e.g. a colored word inside a sentence). */
 export function tNode(key: Key, vars: Record<string, ReactNode>): ReactNode {
-  const found = (lang === "pl" ? pl[key] : undefined) ?? en[key];
+  const found = own(key) ?? en[key];
   if (found === undefined) return missing(key);
   const text = pick(found);
   const parts = text.split(/\{(\w+)\}/g).map((p, i) => (i % 2 === 1 && p in vars ? vars[p] : p));
@@ -3133,16 +3308,20 @@ const GAMES_PL: Record<string, { name: string; about: string }> = {
 
 /** A game's name or description in the current language (English comes from the engine). */
 export function localizeGame(id: string, field: "name" | "about", english: string): string {
-  return (lang === "pl" ? GAMES_PL[id]?.[field] : undefined) ?? english;
+  return (lang === "pl" ? GAMES_PL[id]?.[field] : pack?.games?.[id]?.[field]) || english;
 }
 
 // ---- action catalog and presets ----
 
-export const actionName = (a: Pick<ActionDef, "id" | "name">) => (lang === "pl" && ACTIONS_PL[a.id]?.name) || a.name;
-export const groupName = (g: string) => (lang === "pl" && GROUPS_PL[g]) || g;
+/** The actions' and groups' words in the current language: Polish, a language file's, or none. */
+const actionTexts = (): Record<string, ActionText> | undefined => (lang === "pl" ? ACTIONS_PL : pack?.actions);
+const groupTexts = (): Record<string, string> | undefined => (lang === "pl" ? GROUPS_PL : pack?.groups);
+
+export const actionName = (a: Pick<ActionDef, "id" | "name">) => actionTexts()?.[a.id]?.name || a.name;
+export const groupName = (g: string) => groupTexts()?.[g] || g;
 
 function localizeParam(actionId: string, p: ParamDef): ParamDef {
-  const tr = ACTIONS_PL[actionId]?.params?.[p.key];
+  const tr = actionTexts()?.[actionId]?.params?.[p.key];
   if (!tr) return p;
   const out = { ...p, label: tr.label ?? p.label, help: p.help && (tr.help ?? p.help) } as ParamDef;
   if (out.type === "select" && tr.options) out.options = out.options.map(([v, l]) => [v, tr.options![v] ?? l]);
@@ -3151,8 +3330,9 @@ function localizeParam(actionId: string, p: ParamDef): ParamDef {
 
 /** The action with its name, group, description and params in the current language. */
 export function localizeAction(a: ActionDef): ActionDef {
-  if (lang !== "pl") return a;
-  const tr = ACTIONS_PL[a.id];
+  const texts = actionTexts();
+  if (!texts && !groupTexts()) return a;
+  const tr = texts?.[a.id];
   return {
     ...a,
     name: tr?.name ?? a.name,
@@ -3164,6 +3344,7 @@ export function localizeAction(a: ActionDef): ActionDef {
 
 /** Polish for the engine's most common messages (it writes them in English), by pattern. */
 const ERRORS_PL: [RegExp, string][] = [
+  [/^(.+): its author removed or moved its files on GitHub, so it cannot be installed$/, "$1: autor usunął albo przeniósł jej pliki na GitHubie, więc nie da się jej zainstalować"],
   [/^this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it$/, "ta wtyczka jest zaszyfrowana dla aplikacji Stream Deck od Elgato; inne aplikacje nie mogą jej odczytać"],
   [/^(.+) comes only through Elgato's Stream Deck app$/, "$1 jest dostępna tylko przez aplikację Stream Deck od Elgato"],
   [/^this plugin is made for (.+) only$/, "ta wtyczka jest zrobiona tylko dla: $1"],
@@ -3224,8 +3405,8 @@ export function localizeError(text: string): string {
 }
 
 export function localizePreset(p: PresetSummary): PresetSummary {
-  if (lang !== "pl") return p;
-  const tr = PRESETS_PL[p.id];
+  const tr = lang === "pl" ? PRESETS_PL[p.id] : pack?.presets?.[p.id];
+  if (!tr) return p;
   return { ...p, name: tr?.name ?? p.name, description: tr?.description ?? p.description };
 }
 
@@ -3269,8 +3450,34 @@ const KEY_NAMES_PL: Record<string, string> = {
   Right: "→ W prawo",
 };
 
+/** A language file to start a translation from: every English text of the window, and the
+ * actions', groups', presets', games' and special keys' names (English comes from the engine). */
+export function languageTemplate(actions: ActionDef[], presets: PresetSummary[], games: { id: string; name: string; about: string }[]): LanguagePack & { about: string } {
+  return {
+    name: "My language",
+    about: "Rename this file to the language's code (ja.json, de.json...), put the language's own name in \"name\" and translate the texts on the right. Leave {words} in braces as they are. A plural text has one / other (and zero, two, few, many where the language has them). Anything left out shows in English. Then pick it in Settings > General > Language.",
+    strings: en,
+    actions: Object.fromEntries(
+      actions.map((a) => [
+        a.id,
+        {
+          name: a.name,
+          description: a.description,
+          params: Object.fromEntries(
+            a.params.map((p) => [p.key, { label: p.label, ...(p.help ? { help: p.help } : {}), ...(p.type === "select" ? { options: Object.fromEntries(p.options) } : {}) }]),
+          ),
+        },
+      ]),
+    ),
+    groups: Object.fromEntries([...new Set(actions.map((a) => a.group))].map((g) => [g, g])),
+    presets: Object.fromEntries(presets.map((p) => [p.id, { name: p.name, description: p.description }])),
+    games: Object.fromEntries(games.map((g) => [g.id, { name: g.name, about: g.about }])),
+    keys: { ...KEY_NAMES },
+  };
+}
+
 export function specialKeyName(key: string): string {
   const num = /^Num(\d)$/.exec(key);
   if (num) return `Num ${num[1]}`;
-  return (lang === "pl" && KEY_NAMES_PL[key]) || KEY_NAMES[key] || key;
+  return (lang === "pl" ? KEY_NAMES_PL[key] : pack?.keys?.[key]) || KEY_NAMES[key] || key;
 }

@@ -308,10 +308,31 @@ pub fn state_look(action_id: &str, state: Option<bool>) -> Option<(Option<String
     a.states.get(i).cloned()
 }
 
+/// The system's version as Stream Deck gives it, dotted numbers ("10.0.19045", "14.5.0"): .NET
+/// plugins read it as a `Version` and stop at an empty one (Windows Display Settings, 2026-10-18:
+/// "The JSON value could not be converted ... $.application.platformVersion").
+fn platform_version() -> String {
+    let parts = |v: &str| v.split(|c: char| !c.is_ascii_digit()).filter(|p| !p.is_empty()).map(str::to_string).collect::<Vec<_>>();
+    let mut v = if cfg!(windows) {
+        // Windows 10 and 11 are both 10.0.<build>, as .NET's Environment.OSVersion says
+        let build = sysinfo::System::kernel_version().map(|k| parts(&k)).unwrap_or_default();
+        let mut v = vec!["10".to_string(), "0".to_string()];
+        v.extend(build.into_iter().take(1));
+        v
+    } else {
+        sysinfo::System::os_version().map(|o| parts(&o)).unwrap_or_default()
+    };
+    v.truncate(4);
+    while v.len() < 3 {
+        v.push("0".into());
+    }
+    v.join(".")
+}
+
 /// The `-info` argument and the registration info: the app, the system, the device.
 pub fn info(sd: &SdManifest) -> Value {
     json!({
-        "application": {"font": if cfg!(windows) { "Segoe UI" } else { ".AppleSystemUIFont" }, "language": "en", "platform": platform(), "platformVersion": "", "version": SD_VERSION},
+        "application": {"font": if cfg!(windows) { "Segoe UI" } else { ".AppleSystemUIFont" }, "language": "en", "platform": platform(), "platformVersion": platform_version(), "version": SD_VERSION},
         "plugin": {"uuid": sd.uuid, "version": sd.version},
         "devicePixelRatio": 2,
         "colors": {"buttonPressedBackgroundColor": "#303030FF", "buttonPressedBorderColor": "#646464FF", "buttonPressedTextColor": "#969696FF", "disabledColor": "#007AFF59", "highlightColor": "#007AFFFF", "mouseDownColor": "#2EA8FFFF"},
@@ -810,14 +831,67 @@ const CONNECT_SCRIPT: &str = r#"
   if (document.readyState === "complete") setTimeout(go, 0); else window.addEventListener("load", go);
   // a settings page in HubDeck's narrow inspector: shrink it to fit the width, tell the window its height
   if (!q.get("actionInfo") || window.parent === window) return;
+  // fields no wider than the panel, and no page stretched to the box: Stream Deck's styles give
+  // fields fixed widths and the page the box's full height, which ran past the panel and grew the
+  // box to its limit (owner's Toggle Audio Device, 2026-10-18; plugin-inspectors.mjs measures it)
+  function narrow() {
+    if (document.getElementById("hubdeck-fit")) return;
+    var s = document.createElement("style");
+    s.id = "hubdeck-fit";
+    // Stream Deck's sdpi.css also sizes fields by --sdpi-width (224 px beside a 100 px label) and
+    // its wrapper hides what runs past it and takes the box's height (HWiNFO, Audio Mute)
+    s.textContent = "html,body{overflow-x:hidden!important;min-height:0!important;height:auto!important;scrollbar-width:none}" +
+      "::-webkit-scrollbar{display:none}" +
+      ":root{--sdpi-width:min(224px,calc(100vw - 132px))!important}" +
+      ".sdpi-wrapper,.localbody{overflow:visible!important;height:auto!important;min-height:0!important;width:auto!important;max-width:100%!important}" +
+      "select,input,textarea,.sdpi-item-value{max-width:100%!important;min-width:0!important;box-sizing:border-box}" +
+      ".sdpi-item{max-width:100%}";
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  // where what is drawn ends: fields and the innermost elements (text, icons), not the boxes
+  // around them, which can be as tall as the frame or cut what runs past them
+  var DRAWN = { INPUT: 1, SELECT: 1, TEXTAREA: 1, BUTTON: 1, IMG: 1, CANVAS: 1, SVG: 1, HR: 1, VIDEO: 1 };
+  function drawnEdges() {
+    var right = 0, bottom = 0;
+    var all = [];
+    // web components (sdpi-components: Essentials for Spotify) draw in their own shadow roots
+    (function collect(root) {
+      var els = root.querySelectorAll("*");
+      for (var k = 0; k < els.length; k++) {
+        all.push(els[k]);
+        if (els[k].shadowRoot) collect(els[k].shadowRoot);
+      }
+    })(document.body);
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (!DRAWN[el.tagName.toUpperCase()] && el.children.length) continue;
+      if (el.parentElement && el.parentElement.closest("select,svg")) continue;
+      // what a closed <details> holds keeps its boxes but is not shown (HWiNFO's help texts)
+      if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) continue;
+      var r = el.getBoundingClientRect();
+      if (r.height > 0 && r.width > 0 && getComputedStyle(el).visibility !== "hidden") {
+        right = Math.max(right, r.right + window.scrollX);
+        bottom = Math.max(bottom, r.bottom + window.scrollY);
+      }
+    }
+    return { right: right, bottom: bottom };
+  }
   function fit() {
-    var root = document.documentElement;
-    root.style.overflowX = "hidden";
+    narrow();
     document.body.style.zoom = "";
-    var w = root.scrollWidth;
-    if (w > window.innerWidth + 2) document.body.style.zoom = String(window.innerWidth / w);
+    document.body.style.width = "";
+    var edges = drawnEdges();
+    var w = Math.ceil(Math.max(document.documentElement.scrollWidth, edges.right));
+    if (w > window.innerWidth + 2) {
+      // laid out as wide as it needs, then made smaller: a zoomed page laid out anew in the room
+      // the zoom gives grows again (sdpi-components)
+      document.body.style.width = w + "px";
+      edges = drawnEdges();
+      document.body.style.zoom = String(window.innerWidth / w);
+    }
     var z = parseFloat(document.body.style.zoom || "1");
-    window.parent.postMessage({ hubdeckInspectorHeight: Math.ceil(document.body.scrollHeight * z) + 12 }, "*");
+    window.parent.postMessage({ hubdeckInspectorHeight: Math.ceil(edges.bottom * z) + 12 }, "*");
   }
   window.addEventListener("load", function () {
     fit();
@@ -975,6 +1049,18 @@ pub fn install(bytes: &[u8], plugins_dir: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// .NET plugins read it as a Version: dotted numbers, three or four (Windows Display Settings).
+    #[test]
+    fn the_system_version_is_dotted_numbers() {
+        let v = platform_version();
+        let parts: Vec<&str> = v.split('.').collect();
+        assert!((3..=4).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())), "{v}");
+        if cfg!(windows) {
+            assert!(v.starts_with("10.0.") && v != "10.0.0", "{v}");
+        }
+        assert_eq!(info(&SdManifest::default())["application"]["platformVersion"], v);
+    }
 
     #[test]
     fn openaction_manifests_and_windows_zips_install() {

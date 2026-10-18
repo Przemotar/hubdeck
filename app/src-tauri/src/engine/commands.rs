@@ -312,6 +312,9 @@ pub struct Screens {
     /// How app icons show on keys (Settings > Screens).
     #[serde(default)]
     app_icons: String,
+    /// The font for text on the deck (empty = HubDeck's own).
+    #[serde(default)]
+    deck_font: String,
     /// The screensaver's effect (empty = none) and its idle minutes.
     #[serde(default)]
     saver: String,
@@ -327,6 +330,7 @@ pub fn screens_get(engine: State<'_, Engine>) -> Screens {
         blank_after_minutes: s.blank_after_minutes,
         blank_when_locked: s.blank_when_locked,
         app_icons: s.app_icons.clone(),
+        deck_font: s.deck_font.clone().unwrap_or_default(),
         saver: s.saver.clone(),
         saver_after_minutes: s.saver_after_minutes,
     }
@@ -344,10 +348,16 @@ pub fn screens_set(engine: State<'_, Engine>, screens: Screens) -> Res<()> {
         if screens.saver_after_minutes > 0 {
             s.store.settings.saver_after_minutes = screens.saver_after_minutes.min(240);
         }
-        let changed = !screens.app_icons.is_empty() && screens.app_icons != s.store.settings.app_icons;
+        let mut changed = !screens.app_icons.is_empty() && screens.app_icons != s.store.settings.app_icons;
         if changed {
             s.store.settings.app_icons = screens.app_icons.clone();
             super::render::set_app_icons(&screens.app_icons);
+        }
+        let font = Some(screens.deck_font.trim().to_string()).filter(|f| !f.is_empty());
+        if font != s.store.settings.deck_font {
+            super::render::set_deck_font(font.as_deref());
+            s.store.settings.deck_font = font;
+            changed = true;
         }
         s.store.save_settings().map_err(io)?;
         changed
@@ -356,6 +366,26 @@ pub fn screens_set(engine: State<'_, Engine>, screens: Screens) -> Res<()> {
         engine.changed(); // redraw the keys
     }
     Ok(())
+}
+
+/// Mochi with a binding's body picture in four moments (happy, petted, hungry, asleep), as SVG,
+/// for the body's Fit field (owner's 2a, 2026-10-18: "podgląd jak będzie wyglądać w różnych
+/// stanach").
+#[tauri::command]
+pub async fn pet_preview(params: serde_json::Value) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || super::pet::previews(&params)).await.unwrap_or_default()
+}
+
+/// A small picture from the pictures folder for the window (a field's preview), as a data URI.
+#[tauri::command]
+pub async fn image_thumb(name: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || super::images::fitted(&name, 96).map(|(uri, _)| uri)).await.ok().flatten()
+}
+
+/// The font families on this computer, for the deck's text (Settings > Screens).
+#[tauri::command]
+pub async fn deck_fonts() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(super::render::deck_fonts).await.unwrap_or_default()
 }
 
 /// Where the profiles live now.
@@ -843,6 +873,8 @@ pub fn page_rename(engine: State<'_, Engine>, profile: String, page: String, nam
 /// Remove a page and its keys; keys elsewhere that went to it now do nothing.
 #[tauri::command]
 pub fn page_delete(engine: State<'_, Engine>, profile: String, page: String) -> Res<()> {
+    // as before deleting a profile: a page and its keys can be brought back from Backups
+    super::backup::create(engine.data_dir(), "before delete").map_err(io)?;
     {
         let mut s = engine.lock();
         let mut p = s.store.profiles.get(&profile).cloned().ok_or_else(|| format!("no profile {profile}"))?;

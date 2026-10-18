@@ -45,7 +45,7 @@ $real = Join-Path $env:APPDATA "dev.hubdeck.app"
 if ($Fresh -and (Test-Path $Dir)) { Get-ChildItem $Dir -Exclude logs | Remove-Item -Recurse -Force }
 if (-not (Test-Path (Join-Path $Dir "settings.json"))) {
     New-Item -ItemType Directory -Force $Dir | Out-Null
-    foreach ($item in "profiles", "images", "settings.json", "placements.json", "apps.json", "installed.json", "games.json", "usage.json") {
+    foreach ($item in "profiles", "images", "settings.json", "placements.json", "apps.json", "installed.json", "games.json", "usage.json", "nudges.json", "pet.json", "taste.json") {
         $src = Join-Path $real $item
         if (Test-Path $src) { Copy-Item -Recurse -Force $src $Dir }
     }
@@ -55,15 +55,22 @@ New-Item -ItemType Directory -Force (Join-Path $Dir "logs") | Out-Null
 if (-not (Test-Path $exe)) { throw "build it first: cargo build -p hubdeck" }
 
 $pids = @()
-# a debug build loads the window from Vite (devUrl, port 1420)
-$vite = $null
-try { $vite = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://localhost:1420/ } catch {}
+# a debug build loads the window from Vite (devUrl, port 1460; other Tauri apps take 1420). Only
+# HubDeck's own page counts: anything else on the port is an error, never a window to test
+function Get-Vite {
+    try {
+        $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://localhost:1460/
+        if ($r.Content -notmatch "<title>HubDeck</title>") { throw "port 1460 serves another app's page, not HubDeck's: stop it first" }
+        $r
+    } catch [System.Net.WebException] { $null }
+}
+$vite = Get-Vite
 if (-not $vite) {
     $p = Start-Process -PassThru -WindowStyle Hidden -WorkingDirectory (Join-Path $root "app") cmd.exe -ArgumentList "/c", "pnpm dev > `"$env:TEMP\hubdeck-automation-vite.log`" 2>&1"
     $p.Id | Set-Content $vitePidFile
     for ($i = 0; $i -lt 30 -and -not $vite; $i++) {
         Start-Sleep -Milliseconds 500
-        try { $vite = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://localhost:1420/ } catch {}
+        $vite = Get-Vite
     }
 }
 

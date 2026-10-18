@@ -1,7 +1,7 @@
 // Walk the window as a user would and check that each click shows what it should: a fresh install's
 // tour from its desk check (Fix it goes and comes back, Yes, Skip), a key's editor, Settings is a page with Back, the left tabs switch,
 // panels never stay over the editor. Runs on any system against the browser demo (`pnpm dev` in
-// app/, the vite server on :1420), headless, no focus taken.
+// app/, the vite server on :1460), headless, no focus taken.
 //
 //   node scripts/ui/flows.mjs [out-dir]        # screenshots of every step land in out-dir
 //   CHROMIUM=/path/to/chrome node scripts/ui/flows.mjs   # a browser of your own
@@ -14,7 +14,7 @@ import path from 'node:path';
 
 const out = process.argv[2] || path.join(os.tmpdir(), 'hubdeck-flows');
 fs.mkdirSync(out, { recursive: true });
-const base = process.env.HUBDECK_URL || 'http://localhost:1420/';
+const base = process.env.HUBDECK_URL || 'http://localhost:1460/';
 
 /** A browser Playwright downloaded before, when none is given. */
 function findChromium() {

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { controlId, hasState, hubRainbow, pageReachable, pressable, RAINBOW_MS } from "./engine";
 import { clampToGrid, detachedKinds, keysOfKind, ownedKey, placeModules, rotatedSize } from "./layout";
-import { localizeError, localizeGame, setLanguage, specialKeyName, t } from "./i18n";
+import { actionName, BUILT_IN_LANGUAGES, languageTemplate, localizeAction, localizeError, localizeGame, localizePreset, setLanguage, specialKeyName, t } from "./i18n";
 import type { ModuleInfo } from "./deck";
 
 const mod = (kind: ModuleInfo["kind"], slot: string | null): ModuleInfo => ({ id: `${kind}:x`, kind, serial: "x", firmware: null, slot });
@@ -63,6 +63,56 @@ describe("texts", () => {
     expect(localizeGame("mole", "name", "Mole")).toBe("Krety");
     expect(localizeGame("unknown", "name", "Unknown")).toBe("Unknown");
     setLanguage("en");
+  });
+
+  it("uses a language file of the user's own, English for what it leaves out (Discussions #3)", () => {
+    const ja = {
+      name: "日本語",
+      strings: { "topbar.settings": "設定", "topbar.modules": { other: "{count} 個のモジュール" }, "topbar.plugins": 42 },
+      actions: { "core.nextPage": { name: "次のページ" } },
+      groups: { Media: "メディア" },
+      presets: { cs2: { name: "CS2 日本語" } },
+      games: { mole: { name: "モグラ" } },
+      keys: { PlayPause: "再生/一時停止" },
+    };
+    setLanguage("ja", ja);
+    expect(t("topbar.settings")).toBe("設定");
+    expect(t("topbar.modules", { count: 1 })).toBe("1 個のモジュール");
+    expect(t("topbar.plugins")).toBe("Plugins");
+    expect(t("topbar.calibrate")).toBe("Calibrate keys");
+    expect(actionName({ id: "core.nextPage", name: "Next page" })).toBe("次のページ");
+    expect(actionName({ id: "core.previousPage", name: "Previous page" })).toBe("Previous page");
+    expect(localizeAction({ id: "x", name: "X", group: "Media", description: "d", inputs: [], params: [], icon: "" }).group).toBe("メディア");
+    expect(localizePreset({ id: "cs2", name: "CS2", description: "e" } as never).name).toBe("CS2 日本語");
+    expect(localizeGame("mole", "name", "Mole")).toBe("モグラ");
+    expect(specialKeyName("PlayPause")).toBe("再生/一時停止");
+    expect(localizeError("this plugin is encrypted for Elgato's Stream Deck app; other apps cannot read it")).toContain("encrypted");
+    setLanguage("ja");
+    expect(t("topbar.settings")).toBe("Settings");
+    setLanguage("en");
+  });
+
+  it("has Japanese for every English text, with the same {words}", async () => {
+    const ja = await BUILT_IN_LANGUAGES.ja.load();
+    const en = languageTemplate([], [], []).strings as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" ? v : ((v as { other?: string })?.other ?? ""));
+    const words = (v: unknown) => [...text(v).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+    const missing = Object.keys(en).filter((k) => !(k in ja.strings));
+    expect(missing, "add these to app/src/locales/ja.json").toEqual([]);
+    const differ = Object.keys(en).filter((k) => words(en[k]) !== words(ja.strings[k]));
+    expect(differ).toEqual([]);
+    setLanguage("ja", ja);
+    expect(t("topbar.settings")).toBe("設定");
+    expect(t("topbar.modules", { count: 3 })).toBe("3 個のモジュール");
+    setLanguage("en");
+  });
+
+  it("makes a language file with every English text", () => {
+    const file = languageTemplate([{ id: "core.nextPage", name: "Next page", group: "HubDeck", description: "d", inputs: [], params: [{ key: "k", label: "L", type: "select", options: [["a", "A"]] } as never], icon: "" }], [], [{ id: "mole", name: "Mole", about: "a" }]);
+    expect(file.strings["topbar.settings"]).toBe("Settings");
+    expect(file.actions?.["core.nextPage"]).toEqual({ name: "Next page", description: "d", params: { k: { label: "L", options: { a: "A" } } } });
+    expect(file.groups).toEqual({ HubDeck: "HubDeck" });
+    expect(file.games?.mole?.name).toBe("Mole");
   });
 
   it("names the special keys for people, in both languages", () => {
@@ -134,5 +184,15 @@ describe("a page nothing on the deck opens (owner's pick 1a, 2026-10-16)", () =>
     expect(pageReachable({ pages, controls: { "keys.14": b("core.nextPage") } }, "p2")).toBe(false);
     expect(pageReachable({ pages, controls: { "p2/keys.10": b("core.previousPage") } }, "p1")).toBe(true);
     expect(pageReachable({ pages, controls: { "p1/keys.3": b("core.page", { page: "p2" }) } }, "p2")).toBe(true);
+  });
+});
+
+describe("questions before something that cannot be undone", () => {
+  // window.confirm in HubDeck's window returns a promise an `if` takes as yes (a profile was
+  // deleted without a question, 2026-10-18): confirmed() from confirm.ts waits for the answer
+  it("never uses window.confirm", () => {
+    const sources = import.meta.glob(["./**/*.{ts,tsx}", "!./demo/**", "!./**/*.test.ts"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    expect(Object.keys(sources).length).toBeGreaterThan(10);
+    expect(Object.entries(sources).filter(([, text]) => text.includes("window.confirm(")).map(([file]) => file)).toEqual([]);
   });
 });

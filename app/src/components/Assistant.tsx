@@ -907,17 +907,29 @@ function NudgeSwitch() {
   );
 }
 
+// whether a tour deck was kept, as last read: null until the first answer, so Get started draws
+// nothing in the tour's place rather than its big button for a moment (owner, 2026-10-18)
+let knownTourDone: boolean | null = null;
+let knownInfo: AssistantInfo | null = null;
+
+function useTourDone(when: unknown): boolean | null {
+  const [tourDone, setTourDone] = useState(knownTourDone);
+  useEffect(() => {
+    api.tourDone().then(
+      (done) => setTourDone((knownTourDone = done)),
+      () => setTourDone((knownTourDone = knownTourDone ?? false)),
+    );
+  }, [when]);
+  return tourDone;
+}
+
 /**
  * The user has set HubDeck up: a tour profile was kept, or there are two profiles of their own (not
  * drafts, not made at once for apps). Profiles then comes first in the left column and is open at
  * start; Get started stays as it is (owner's pick 2a, 2026-10-16; docs/FLOWS.md difference 3).
  */
 export function useSetUp(view: EngineView): boolean {
-  const [tourDone, setTourDone] = useState(false);
-  const count = view.state?.profiles.length ?? 0;
-  useEffect(() => {
-    api.tourDone().then(setTourDone, () => {});
-  }, [count]);
+  const tourDone = useTourDone(view.state?.profiles.length ?? 0);
   const own = view.state?.profiles.filter((p) => !p.draft && !p.ready).length ?? 0;
   return tourDone || own >= 2;
 }
@@ -929,9 +941,10 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
   const [draft, setDraft] = useState("");
   const [first, setFirst] = useState("");
   const [know, setKnow] = useState("");
-  // what it runs on: read again after every answer (the session and model appear then)
-  const [info, setInfo] = useState<AssistantInfo | null>(null);
-  const reload = () => api.assistantInfo(getLanguage()).then(setInfo, () => setInfo(null));
+  // what it runs on: read again after every answer (the session and model appear then); the last
+  // answer shows at once when the tab opens again, not "Looking for Claude Code..." for a moment
+  const [info, setInfo] = useState<AssistantInfo | null>(knownInfo);
+  const reload = () => api.assistantInfo(getLanguage()).then((i) => setInfo((knownInfo = i)), () => setInfo((knownInfo = null)));
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -945,10 +958,9 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
   const state = view.state;
   const drafts = state?.profiles.filter((p) => p.draft) ?? [];
   // the tour was done: its button turns into a row, and examples from the user's own deck show
-  const [tourDone, setTourDone] = useState(false);
+  const tourDone = useTourDone(state?.profiles.length);
   const [examples, setExamples] = useState<string[]>([]);
   useEffect(() => {
-    api.tourDone().then(setTourDone, () => {});
     api.tourSuggest(getLanguage()).then((s) => setExamples(examplesFor(s)), () => {});
   }, [state?.profiles.length]);
 
@@ -1044,7 +1056,7 @@ export function AssistantPanel({ view, onTour, onBuild }: { view: EngineView; on
           // step by step, the AI assistant (always open), then a suggestion; only the tour's look
           // changes once a tour deck was kept, and before that it is marked Recommended
           <div className="as-intro">
-            <h3 className="as-lets">{tourDone ? t("assistant.yourDeck") : t("assistant.letsSet")}</h3>
+            <h3 className="as-lets">{tourDone === null ? " " : tourDone ? t("assistant.yourDeck") : t("assistant.letsSet")}</h3>
             {onTour &&
               tourDone !== null &&
               (tourDone ? (

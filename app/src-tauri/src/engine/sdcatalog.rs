@@ -1,9 +1,10 @@
-//! The catalog of open-source plugins for Stream Deck and OpenAction (the OpenAction Marketplace's
-//! list, about 200 plugins), browsed in Settings > Plugins and installed with one click. The list
-//! and the plugin files come from GitHub; nothing is fetched until the user opens the catalog.
-//! Elgato Marketplace's most downloaded plugins join it by name: the ones whose authors publish an
-//! open plugin file install the same way; the others say they come only through Elgato's Stream
-//! Deck app (its Marketplace installs into that app, and many of its files are encrypted for it).
+//! The catalog of free Stream Deck plugins that install here with one click, browsed in the Plugins
+//! tab. It is one file built every day by `scripts/plugins/catalog.mjs` and published with the
+//! project's site: Elgato Marketplace's most downloaded whose authors publish an open file, the
+//! OpenAction Marketplace and GitHub repositories with a plugin file, with their stars, systems,
+//! category and dial support. When that file cannot be read, the OpenAction list and Elgato's are
+//! joined here as before. Plugins only Elgato's Stream Deck app installs are left out (owner,
+//! 2026-10-18: "pokażmy te które są dostępne i tyle"). Nothing is fetched until the tab opens.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -11,6 +12,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// The catalog built by `scripts/plugins/catalog.mjs`; `HUBDECK_PLUGIN_CATALOG` (a file) replaces it
+/// on a test copy.
+const HOSTED: &str = "https://przemotar.github.io/hubdeck/plugins.json";
 const CATALOG: &str = "https://openactionapi.github.io/plugins/catalogue.json";
 /// Plugin icons: `<ICONS><id>.png`.
 const ICONS: &str = "https://openactionapi.github.io/plugins/icons/";
@@ -23,82 +27,24 @@ const ELGATO_PAGE: &str = "https://marketplace.elgato.com/product/";
 const KEEP_FOR: Duration = Duration::from_secs(3600);
 const MAX_PLUGIN: u64 = 200 * 1024 * 1024;
 
-/// Catalog plugins checked in HubDeck, and on which systems: installed from the catalog, started,
-/// connected and drew a key (`scripts/ui/plugin-check.mjs`, 2026-10-16/17; Spotify on the owner's
-/// Mac deck, 2026-10-13). Not every action of each was pressed.
-const TRIED: &[(&str, &str)] = &[
-    ("com.ntanis.essentials-for-spotify", "Windows, macOS"),
-    ("me.amankhanna.oadiscord", "Windows"),
-    ("me.amankhanna.oasystem", "Windows"),
-    ("com.jk.weather", "Windows"),
-    ("de.perdoctus.streamdeck.homeassistant", "Windows"),
-    ("com.chrisregado.googlemeet", "Windows"),
-    ("fr.twitchat", "Windows"),
-    ("com.fredemmott.audiooutputswitch", "Windows"),
-    ("com.moeilijk.hwinfo", "Windows"),
-    ("com.elgato.philips-hue", "Windows"),
-    ("com.elgato.cpu", "Windows"),
-    ("de.tobimori.streamdeck.ifttt", "Windows"),
-    ("com.fredemmott.micmutetoggle", "Windows"),
-    ("org.tynsoe.streamdeck.wsproxy", "Windows"),
-    ("fun.shiro.ytmd", "Windows"),
-    ("com.jetbrains.ide", "Windows"),
-    ("cz.danol.discordmixer", "Windows"),
-    ("com.frostycoolslug.goxlr-utility", "Windows"),
-    ("org.xiphis.ohs", "Windows"),
-    ("com.github.mjbnz.sd-api-request", "Windows"),
-    ("com.marlburrow.uptime-kuma", "Windows"),
-    ("com.5e.hwinfo-reader", "Windows"),
-    ("com.geekyeggo.sounddeck", "Windows"),
-    ("dev.santiagomartin.devops", "Windows"),
-    ("tech.flighttracker.streamdeck", "Windows"),
-    ("com.start-automating.scriptdeck", "Windows"),
-];
+/// What the app and `scripts/plugins/catalog.mjs` share: the catalog plugins checked in HubDeck and
+/// on which systems, the Elgato Marketplace plugins whose authors publish an open file, and those
+/// that install but cannot run outside Elgato's app (left out, with why).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Shared {
+    tried: std::collections::HashMap<String, String>,
+    elgato_open: Vec<(String, String, Option<String>)>,
+    #[serde(default)]
+    wont_run: std::collections::HashMap<String, String>,
+}
 
-/// Elgato Marketplace plugins whose authors publish an open plugin file: Elgato's product id, the
-/// plugin's id, and its GitHub repository when the OpenAction catalog does not have it. Matched by
-/// hand on 2026-10-17 (author and plugin id checked; 36 of Elgato's 100 most downloaded).
-const ELGATO_OPEN: &[(&str, &str, Option<&str>)] = &[
-    ("cf41cd3d-ef80-4122-bef2-7f4fb82fcaac", "com.fredemmott.audiooutputswitch", None),
-    ("705c5433-1e05-4d8a-844f-b5914b7f642f", "com.fredemmott.micmutetoggle", None),
-    ("abaf7a76-225a-42db-b911-fc3f66f3878c", "cz.danol.discordmixer", None),
-    ("131c7cee-6a63-4e89-840e-156b0d17c0bb", "com.geekyeggo.sounddeck", None),
-    ("884c8c3e-8477-4ecb-99e0-f3101bbfa0aa", "de.perdoctus.streamdeck.homeassistant", None),
-    ("6cf535ec-acc0-436a-a7da-5a7697c56d0b", "com.javanpoirier.audiomixer", None),
-    ("27f49792-2de3-455f-8892-fd382716f548", "com.elgato.philips-hue", None),
-    ("ecbbfd1e-6a47-43b3-8056-3aa69d35e8e1", "com.geekyeggo.goveecontroller", None),
-    ("37c38d3a-a366-426b-a56d-d56c89e5960c", "com.dahnandpartners.ytticker", None),
-    ("d7164662-bf3f-41aa-9e16-cfc29c2212d4", "com.nthompson.gpu", None),
-    ("61254b24-a60c-4a87-acae-70c39eda8a19", "com.nicollasr.streamdeckvsc", None),
-    ("4dc3acfb-f1ae-496d-8c17-26975316af2d", "fun.shiro.ytmd", None),
-    ("a7db5477-c76c-49b1-bce1-b6039f2d41d2", "io.bitfocus.companion-plugin", None),
-    ("0ba9f87f-d5ec-44ca-98ac-6b95e6e477d3", "dev.cazzar.streamdeck.vtubestudio", None),
-    ("378b180d-1380-4a25-9528-19c482f5a7cf", "com.ntanis.essentials-for-spotify", None),
-    ("913e25f8-92d2-4cd2-973f-76b9d1cdc90e", "de.tobimori.streamdeck.ifttt", None),
-    ("6926228a-2efa-4fb9-849a-3f7d9ad86a9b", "dev.theca11.multiobs", None),
-    ("57b209e9-b4a7-4ca4-a0a5-53c79fe6bea1", "com.rgpaul.vlc", None),
-    ("9bfc5a15-c5b3-4865-9bec-1375cc65c25d", "fail.marc.onairclock", None),
-    ("cb3993d5-9e95-40bd-bb1d-22b3b499f5a7", "com.geekyeggo.windowsdisplaysettings", None),
-    ("00cb3238-508b-4e7d-a380-3b0c6b21417c", "com.victorgrycuk.colorpicker", None),
-    ("c81ceed8-448d-4649-925e-d84b58296f1e", "com.gallowaylabs.tomato", None),
-    ("48907651-231b-4981-917e-db58885a64f8", "com.exension.stocks", None),
-    ("45474a5c-6884-41cb-a896-411da79e0804", "com.viddie.dice", None),
-    ("af576388-8cbb-4d59-bdec-206dc3f4168e", "com.moeilijk.lhm", None),
-    ("d1e420bd-5437-421d-a7e1-378877908f76", "eu.dirondin.streamdeck.ram", Some("dirondin/streamdeck-ram")),
-    ("5316b393-1dbc-43a4-b9b4-ad3ba9f58ff3", "com.nagopy.streamdeck.tasktimer", None),
-    ("916c9a3f-453e-47f5-a194-5719448cdd41", "com.dlprows.focusvolumecontrol", None),
-    ("657b3d18-a53f-45ac-a787-12b7e1adbee7", "com.baptiewright.nanoleaf", None),
-    ("6e64a83c-f4c8-4769-b3a7-311d308295f5", "com.zergo0.teamspeak3integration", None),
-    ("820f1bb5-465d-408b-aabf-2d46a05a10d9", "fr.twitchat", None),
-    ("77f73a30-0336-4f4e-80b6-42e22a1a127e", "me.hckr.appswitcher", None),
-    ("737415fa-1957-489d-a62e-1becec068b6e", "co.meldstudio.streamdeck", Some("MeldStudio/streamdeck")),
-    ("ea8cc86d-1a3b-45de-893d-592d174089c9", "com.5e.hwinfo-reader", None),
-    ("1c4afa3d-157a-4d2f-91bc-eb71865dad1c", "tech.flighttracker.streamdeck", None),
-    ("29d301d8-e245-497e-97e0-23fb09542bb1", "com.davidgolunski.goveelightcontroller", None),
-];
+static SHARED: std::sync::LazyLock<Shared> = std::sync::LazyLock::new(|| serde_json::from_str(include_str!("sdcatalog.json")).expect("sdcatalog.json"));
 
-/// The id of a plugin that comes only through Elgato's Stream Deck app.
-const ELGATO_ONLY: &str = "elgato:";
+/// The systems a catalog plugin was checked on in HubDeck ("Windows", "Windows, macOS").
+fn tried(id: &str) -> Option<String> {
+    SHARED.tried.get(id).cloned()
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -120,8 +66,17 @@ pub struct Entry {
     pub elgato: Option<String>,
     /// Its place among Elgato Marketplace's most downloaded plugins (1 = most).
     pub popular: Option<u32>,
-    /// Only through Elgato's Stream Deck app: no open file to install here.
-    pub elgato_only: bool,
+    /// Where the catalog has it from: "elgato", "openaction" or "github".
+    pub source: String,
+    /// Its GitHub repository's stars and last change (YYYY-MM-DD), when known.
+    pub stars: Option<u32>,
+    pub updated: Option<String>,
+    /// The systems its manifest or Elgato names ("Windows", "macOS"); empty = not known.
+    pub systems: Vec<String>,
+    /// One of the tab's categories ("Audio", "Music", "Streaming"...).
+    pub category: Option<String>,
+    /// It has actions for the dial and the knobs (Stream Deck's encoders).
+    pub dial: bool,
 }
 
 /// Every field may be missing or null in the real catalog.
@@ -156,10 +111,15 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Entry>, String> {
                 description: r.description.unwrap_or_default(),
                 download_url: r.download_url.filter(|u| !u.is_empty()),
                 ai_assisted: r.flags.get("ai_assisted").and_then(Value::as_bool).unwrap_or(false),
-                tried: TRIED.iter().find(|(t, _)| *t == id).map(|(_, systems)| systems.to_string()),
+                tried: tried(&id),
                 elgato: None,
                 popular: None,
-                elgato_only: false,
+                source: "openaction".into(),
+                stars: None,
+                updated: None,
+                systems: Vec::new(),
+                category: None,
+                dial: false,
                 id,
             })
         })
@@ -207,14 +167,14 @@ fn norm(s: &str) -> String {
 }
 
 /// Elgato's most downloaded plugins (in order) joined to the catalog: a plugin matched by hand
-/// (`ELGATO_OPEN`) or by the same name and author marks its catalog entry (or comes in with its
-/// GitHub repository); any other becomes an entry that only Elgato's app installs.
+/// (`elgatoOpen` in `sdcatalog.json`) or by the same name and author marks its catalog entry (or
+/// comes in with its GitHub repository); the others come only through Elgato's app and stay out.
 fn merge_elgato(list: &mut Vec<Entry>, elgato: Vec<ElgatoRaw>) {
     for (rank, e) in elgato.into_iter().enumerate() {
         let popular = Some(rank as u32 + 1);
         let page = e.slug.as_deref().map(|s| format!("{ELGATO_PAGE}{s}"));
         let author = e.org_name.clone().unwrap_or_default();
-        let open = ELGATO_OPEN.iter().find(|(id, ..)| *id == e.id);
+        let open = SHARED.elgato_open.iter().find(|(id, ..)| *id == e.id);
         let at = match open {
             Some((_, plugin, _)) => list.iter().position(|c| c.id == *plugin),
             None => list.iter().position(|c| c.popular.is_none() && !author.is_empty() && norm(&c.name) == norm(&e.name) && norm(&c.author) == norm(&author)),
@@ -222,33 +182,109 @@ fn merge_elgato(list: &mut Vec<Entry>, elgato: Vec<ElgatoRaw>) {
         if let Some(at) = at {
             list[at].elgato = page;
             list[at].popular = popular;
+            list[at].source = "elgato".into();
             continue;
         }
-        let mut description = first_paragraph(e.description.as_deref().unwrap_or(""));
+        let Some((_, plugin, Some(repo))) = open else { continue };
         if e.variants.iter().any(|v| v["is_free"].as_bool() == Some(false)) {
-            description = format!("(paid) {description}");
+            continue;
         }
-        let (id, repository, elgato_only) = match open {
-            Some((_, plugin, Some(repo))) => (plugin.to_string(), format!("https://github.com/{repo}"), false),
-            _ => (format!("{ELGATO_ONLY}{}", e.id), String::new(), true),
-        };
         list.push(Entry {
-            tried: TRIED.iter().find(|(t, _)| *t == id).map(|(_, systems)| systems.to_string()),
-            id,
+            tried: tried(plugin),
+            id: plugin.clone(),
             name: e.name,
             author,
-            description,
-            repository,
+            description: first_paragraph(e.description.as_deref().unwrap_or("")),
+            repository: format!("https://github.com/{repo}"),
             icon: e.app_icon_cdn.unwrap_or_default(),
             download_url: None,
             ai_assisted: false,
             elgato: page,
             popular,
-            elgato_only,
+            source: "elgato".into(),
+            stars: None,
+            updated: None,
+            systems: Vec::new(),
+            category: None,
+            dial: false,
         });
     }
     // Elgato's most downloaded first, then the rest by name
     list.sort_by(|a, b| a.popular.unwrap_or(u32::MAX).cmp(&b.popular.unwrap_or(u32::MAX)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+}
+
+/// The catalog file built by `scripts/plugins/catalog.mjs` (`{ version, plugins: [...] }`).
+fn parse_hosted(bytes: &[u8]) -> Result<Vec<Entry>, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Raw {
+        id: String,
+        name: String,
+        #[serde(default)]
+        author: String,
+        #[serde(default)]
+        description: String,
+        #[serde(default)]
+        repository: String,
+        #[serde(default)]
+        icon: String,
+        #[serde(default)]
+        download_url: Option<String>,
+        #[serde(default)]
+        ai_assisted: bool,
+        #[serde(default)]
+        elgato: Option<String>,
+        #[serde(default)]
+        popular: Option<u32>,
+        #[serde(default)]
+        source: String,
+        #[serde(default)]
+        stars: Option<u32>,
+        #[serde(default)]
+        updated: Option<String>,
+        #[serde(default)]
+        systems: Vec<String>,
+        #[serde(default)]
+        category: Option<String>,
+        #[serde(default)]
+        dial: bool,
+    }
+    #[derive(Deserialize)]
+    struct File {
+        version: u32,
+        plugins: Vec<Value>,
+    }
+    let file: File = serde_json::from_slice(bytes).map_err(|e| format!("the plugin catalog is not readable: {e}"))?;
+    if file.version != 1 {
+        return Err(format!("the plugin catalog is a newer kind ({})", file.version));
+    }
+    // one odd entry does not cost the others
+    Ok(file
+        .plugins
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<Raw>(v).ok())
+        .filter(|r| !r.id.is_empty() && !r.name.trim().is_empty())
+        .map(|r| Entry {
+            // the app's own list of tried plugins is newer than a file built yesterday
+            tried: tried(&r.id),
+            id: r.id,
+            name: r.name,
+            author: r.author,
+            description: r.description,
+            repository: r.repository,
+            icon: r.icon,
+            download_url: r.download_url.filter(|u| !u.is_empty()),
+            ai_assisted: r.ai_assisted,
+            elgato: r.elgato,
+            popular: r.popular,
+            source: r.source,
+            stars: r.stars,
+            updated: r.updated,
+            systems: r.systems,
+            category: r.category,
+            dial: r.dial,
+        })
+        .collect())
 }
 
 /// Elgato Marketplace's most downloaded plugins; empty when its list cannot be read.
@@ -275,11 +311,32 @@ fn catalog() -> Result<Vec<Entry>, String> {
     {
         return Ok(list.clone());
     }
-    let elgato = std::thread::spawn(elgato_top);
-    let mut list = parse(&super::share::download(CATALOG, 4 * 1024 * 1024)?)?;
-    merge_elgato(&mut list, elgato.join().unwrap_or_default());
+    let hosted = match std::env::var_os("HUBDECK_PLUGIN_CATALOG") {
+        Some(file) => std::fs::read(file).map_err(|e| e.to_string()),
+        None => super::share::download(HOSTED, 8 * 1024 * 1024),
+    };
+    let list = match hosted.and_then(|b| parse_hosted(&b)) {
+        Ok(list) if !list.is_empty() => list,
+        failed => {
+            if let Err(e) = failed {
+                log::warn!("plugin catalog: {e}; the OpenAction and Elgato lists instead");
+            }
+            let elgato = std::thread::spawn(elgato_top);
+            let mut list = parse(&super::share::download(CATALOG, 4 * 1024 * 1024)?)?;
+            merge_elgato(&mut list, elgato.join().unwrap_or_default());
+            list
+        }
+    };
+    let list = runnable(list);
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), list.clone()));
     Ok(list)
+}
+
+/// Only plugins that run here (owner, 2026-10-18: "pokażmy te które są dostępne i tyle"); the
+/// hosted catalog leaves them out too, the app's own lists may not.
+fn runnable(mut list: Vec<Entry>) -> Vec<Entry> {
+    list.retain(|e| !SHARED.wont_run.contains_key(&e.id));
+    list
 }
 
 /// `owner/repo` of a GitHub repository address.
@@ -366,10 +423,10 @@ pub async fn sd_catalog_install(app: tauri::AppHandle, id: String) -> Result<Str
     use tauri::Emitter as _;
     let installed = tauri::async_runtime::spawn_blocking(move || {
         let entry = catalog()?.into_iter().find(|e| e.id == id).ok_or("not in the plugin catalog")?;
-        if entry.elgato_only {
-            return Err(format!("{} comes only through Elgato's Stream Deck app", entry.name));
-        }
-        let bytes = super::share::download(&file_url(&entry)?, MAX_PLUGIN)?;
+        // a repository its author removed answers 404 (YouTube Ticker, 2026-10-18): say that, not
+        // "http status: 404"
+        let gone = |e: String| if e.contains("404") { format!("{}: its author removed or moved its files on GitHub, so it cannot be installed", entry.name) } else { e };
+        let bytes = file_url(&entry).and_then(|url| super::share::download(&url, MAX_PLUGIN)).map_err(gone)?;
         let id = super::plugins::install_sd(&bytes)?;
         // a plugin made for another system installs but cannot run here: say so and take it out
         if let Some((sd, dir)) = super::plugins::sd_of(&id)
@@ -390,6 +447,14 @@ pub async fn sd_catalog_install(app: tauri::AppHandle, id: String) -> Result<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plugin that installs but cannot run here is not offered (Stocks, 2026-10-18).
+    #[test]
+    fn plugins_that_will_not_run_are_left_out() {
+        let hosted = br#"{"version":1,"plugins":[{"id":"com.exension.stocks","name":"Stocks","source":"github","repository":"https://github.com/a/b"},{"id":"com.jk.weather","name":"Weather","source":"github","repository":"https://github.com/c/d"}]}"#;
+        let list = runnable(parse_hosted(hosted).unwrap());
+        assert_eq!(list.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["com.jk.weather"]);
+    }
 
     /// Live: the real catalog, a plugin's release file and its folder inside (network).
     #[test]
@@ -440,17 +505,35 @@ mod tests {
         let mut list = parse(catalog).unwrap();
         merge_elgato(&mut list, parse_elgato(page).unwrap());
         let row = |id: &str| list.iter().find(|e| e.id == id).unwrap();
-        assert_eq!(list[0].id, "elgato:e-1", "Elgato's most downloaded first");
-        assert!(list[0].elgato_only && list[0].elgato.as_deref() == Some("https://marketplace.elgato.com/product/volume-controller-e-1"));
-        assert_eq!(list[0].description, "Ready to take control?");
+        assert!(!list.iter().any(|e| e.name == "Volume Controller"), "only in Elgato's app: left out");
         let switcher = row("com.fredemmott.audiooutputswitch");
-        assert_eq!((switcher.popular, switcher.elgato_only, switcher.name.as_str()), (Some(2), false, "Audio Output Switcher"), "matched by hand: the catalog's entry");
+        assert_eq!((switcher.popular, switcher.source.as_str(), switcher.name.as_str()), (Some(2), "elgato", "Audio Output Switcher"), "matched by hand: the catalog's entry");
+        assert_eq!(list[0].id, "com.fredemmott.audiooutputswitch", "Elgato's most downloaded first");
         let meld = row("co.meldstudio.streamdeck");
-        assert_eq!((meld.repository.as_str(), meld.elgato_only), ("https://github.com/MeldStudio/streamdeck", false), "only on GitHub");
+        assert_eq!((meld.repository.as_str(), meld.source.as_str()), ("https://github.com/MeldStudio/streamdeck", "elgato"), "only on GitHub");
         assert_eq!(row("com.x.timer").popular, Some(4), "same name and author");
-        assert!(row("elgato:e-5").elgato_only && row("elgato:e-5").description.starts_with("(paid)"), "same name, another author: not the catalog's Weather");
-        assert_eq!(row("com.y.weather").popular, None);
+        assert_eq!(list.iter().filter(|e| e.name == "Weather").count(), 1, "same name, another author and paid: not added");
+        assert_eq!((row("com.y.weather").popular, row("com.y.weather").source.as_str()), (None, "openaction"));
         assert_eq!(list.last().unwrap().id, "com.y.weather", "the rest by name after Elgato's");
+    }
+
+    #[test]
+    fn reads_the_hosted_catalog() {
+        let json = br#"{"version": 1, "plugins": [
+            {"id": "me.amankhanna.oadiscord", "name": "Discord", "author": "nekename", "repository": "https://github.com/OpenActionPlugins/discord", "source": "openaction", "stars": 40, "updated": "2026-09-01", "systems": ["Windows", "macOS"], "category": "Communication", "dial": true, "icon": "https://x/i.png"},
+            {"id": "com.x.new", "name": "New", "source": "github", "downloadUrl": "https://github.com/x/new/raw/a.streamDeckPlugin", "aiAssisted": true, "extra": [1]},
+            {"id": "", "name": "No id"},
+            {"name": "No id at all"},
+            {"id": "x.blank", "name": "  "}
+        ]}"#;
+        let list = parse_hosted(json).unwrap();
+        assert_eq!(list.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["me.amankhanna.oadiscord", "com.x.new"], "odd entries left out, the rest kept");
+        let d = &list[0];
+        assert_eq!((d.stars, d.updated.as_deref(), d.systems.len(), d.category.as_deref(), d.dial), (Some(40), Some("2026-09-01"), 2, Some("Communication"), true));
+        assert_eq!(d.tried.as_deref(), Some("Windows"), "tried comes from the app's own list");
+        assert!(list[1].ai_assisted && list[1].download_url.is_some() && list[1].systems.is_empty() && !list[1].dial);
+        assert!(parse_hosted(br#"{"version": 2, "plugins": []}"#).is_err(), "a newer kind is not guessed at");
+        assert!(parse_hosted(b"<html>").is_err());
     }
 
     /// Live: Elgato Marketplace's list joins the real catalog (network).
@@ -459,9 +542,9 @@ mod tests {
     fn elgato_live() {
         let list = catalog().unwrap();
         let elgato = list.iter().filter(|e| e.popular.is_some()).count();
-        let open = list.iter().filter(|e| e.popular.is_some_and(|p| p <= 100) && !e.elgato_only).count();
+        let open = list.iter().filter(|e| e.popular.is_some_and(|p| p <= 100)).count();
         println!("{} plugins, {elgato} from Elgato's list, {open} of its top 100 install here", list.len());
-        assert!(elgato >= 250 && open >= 36, "{elgato} / {open}");
+        assert!(elgato >= 36 && open >= 30, "{elgato} / {open}");
     }
 
     #[test]

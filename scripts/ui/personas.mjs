@@ -61,7 +61,7 @@ async function run(p) {
     // the window's page comes a few seconds after the start
     for (let i = 0; i < 60 && !page; i++) {
       browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`).catch(() => undefined);
-      page = browser?.contexts()[0]?.pages().find((x) => /tauri.localhost|localhost:1420/.test(x.url()));
+      page = browser?.contexts()[0]?.pages().find((x) => /tauri.localhost|localhost:1460/.test(x.url()));
       if (!page) {
         await browser?.close().catch(() => {});
         await new Promise((r) => setTimeout(r, 1000));

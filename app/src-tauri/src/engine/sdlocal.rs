@@ -205,9 +205,59 @@ pub fn sd_opened() -> Vec<String> {
     std::mem::take(&mut *OPENED.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
+/// A plugin file dropped on the window: the window sends its bytes (a dropped file has no path the
+/// window may read), kept here in a temp folder under its own name; returns that file's path, which
+/// then goes the way of an opened file (asked about, then installed).
+#[tauri::command]
+pub fn sd_drop_file(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    const MAX: usize = 200 * 1024 * 1024;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("no file came with the drop".into()) };
+    if bytes.len() > MAX {
+        return Err("the file is larger than 200 MB".into());
+    }
+    let name = request.headers().get("x-name").and_then(|v| v.to_str().ok()).map(percent_decode).unwrap_or_default();
+    let name = name.rsplit(['/', '\\']).next().unwrap_or("").trim().to_string();
+    let lower = name.to_lowercase();
+    if name.is_empty() || name.contains("..") || !(lower.ends_with(".streamdeckplugin") || lower.ends_with(".zip")) {
+        return Err(format!("{name} is not a Stream Deck plugin file"));
+    }
+    let dir = std::env::temp_dir().join("hubdeck-dropped").join(format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(&name);
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// `%E3%81%82` back to text (the window sends a file's name that way in a header).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropped_file_names_are_decoded() {
+        assert_eq!(percent_decode("com.x%20y.streamDeckPlugin"), "com.x y.streamDeckPlugin");
+        assert_eq!(percent_decode("%E6%97%A5.zip"), "日.zip");
+        assert_eq!(percent_decode("100%"), "100%");
+    }
 
     #[test]
     fn folders_are_read_zipped_and_refused_when_encrypted() {
@@ -243,5 +293,20 @@ mod tests {
         assert!(found.problem.unwrap().contains("encrypted"));
         assert!(import("../x").is_err());
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    /// The window's own drag and drop must stay on: with the system's drop handler on
+    /// (`dragDropEnabled`), Windows drags nothing inside the window, so no action could be dragged
+    /// onto a key (owner found it on 2026-10-18; a Playwright drag passes either way, it does not go
+    /// through Windows). Plugin files dropped on the window come through the window instead.
+    #[test]
+    fn the_windows_drag_and_drop_is_its_own() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        for w in conf["app"]["windows"].as_array().unwrap() {
+            assert_eq!(w["dragDropEnabled"], serde_json::json!(false), "window {}", w["title"]);
+        }
     }
 }

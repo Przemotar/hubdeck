@@ -382,7 +382,8 @@ function Keys({ ctx }: { ctx: Ctx }) {
   // the screensaver is drawn here, from the same effects as the deck's; its frames change only
   // SaverPanel, the keys show it through <use> (a tick that redrew the whole panel of keys took
   // WebView2 to 850 MB, 2026-10-16)
-  const saver = SAVER_IN_WINDOW ? useSaverShown() : null;
+  const shown = useSaverShown();
+  const saver = SAVER_IN_WINDOW ? shown : null;
   return (
     <>
       <ModuleBody ctx={ctx} w={400} h={300} />
@@ -431,7 +432,9 @@ function Keys({ ctx }: { ctx: Ctx }) {
                   mirror={
                     saver
                       ? { src: `#${id("ksaver")}`, rect: frame?.rects[i] ?? [(i % 5) * 96, Math.floor(i / 5) * 90.67, 96, 90.67], saver: true }
-                      : frame && frame.rects[i]
+                      : // while the deck shows its screensaver, the window shows what the keys do
+                        // (owner's pick 1a, 2026-10-18), not the screensaver's frames
+                        !shown && frame && frame.rects[i]
                         ? { src: `#${id("kpanel")}`, rect: frame.rects[i] }
                         : null
                   }

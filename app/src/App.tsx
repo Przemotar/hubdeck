@@ -7,13 +7,13 @@ import "./styles.css";
 import "./theme";
 import { useDeck, type ControlRef } from "./deck";
 import type { LeftTab } from "./components/Panels";
-import { api, useEngine } from "./engine";
+import { api, saverEnd, useEngine, useSaverShown } from "./engine";
 import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
+import { PluginsTab } from "./components/PluginsTab";
 import { ArrangePanel, Banner, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
 import { Guide, guideSeen } from "./components/Guide";
@@ -23,7 +23,7 @@ import { CalibrationPanel } from "./components/Calibration";
 import { detachedKinds, placeModules, placementKey, usePlacements } from "./layout";
 import { clearIdentify, identifyModule } from "./identify";
 import { useEditing } from "./editing";
-import { t, useLanguage } from "./i18n";
+import { BUILT_IN_LANGUAGES, setLanguage, storedLanguageFile, t, useLanguage } from "./i18n";
 import { demoParam } from "./demo/params";
 
 // `?demo&panel=profile|settings|plugins|calibrate` opens a side panel at start (screenshots)
@@ -33,12 +33,19 @@ const DEMO_SELECT = demoParam("select");
 
 export default function App() {
   const { lang } = useLanguage();
+  // a language file picked last time: read it once (the window is in English until then)
+  useEffect(() => {
+    const code = storedLanguageFile();
+    if (code && BUILT_IN_LANGUAGES[code]) BUILT_IN_LANGUAGES[code].load().then((file) => setLanguage(code, file), () => {});
+    else if (code && "__TAURI_INTERNALS__" in window) api.languageFile(code).then((file) => setLanguage(code, file), () => {});
+  }, []);
   // the deck shows some words itself (the dial gallery): in the window's language
   useEffect(() => {
     if ("__TAURI_INTERNALS__" in window) api.languageSet(lang).catch(() => {});
   }, [lang]);
   const live = useDeck();
   const view = useEngine();
+  const saverOn = !!useSaverShown();
   // less movement: the setting, taken from the system the first time
   const reducedMotion = view.state?.reducedMotion;
   useEffect(() => {
@@ -54,6 +61,9 @@ export default function App() {
   const [gamesOpen, setGamesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(DEMO_PANEL === "settings" || DEMO_PANEL === "plugins");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(DEMO_PANEL === "plugins" ? "plugins" : "general");
+  const [pluginsOpen, setPluginsOpen] = useState(DEMO_PANEL === "catalog");
+  // "Use it" in the Plugins tab: the deck, with the library open at that plugin's actions
+  const [focusPlugin, setFocusPlugin] = useState<{ id: string; at: number } | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(DEMO_PANEL === "gallery");
   const [newRequest, setNewRequest] = useState(0);
   // Get started is open when the app opens (owner, 2026-10-14); once set up, Profiles is
@@ -123,20 +133,41 @@ export default function App() {
     const none = () => () => {};
     const offOpened = listen("engine://plugin-file", take).catch(none);
     const isPlugin = (p: string) => /\.(streamdeckplugin|zip)$/i.test(p);
-    let offDrop: Promise<() => void>;
-    try {
-      offDrop = getCurrentWebview().onDragDropEvent((e) => {
-      const ev = e.payload;
-      if (ev.type === "enter") setDropping(ev.paths.some(isPlugin));
-      else if (ev.type === "leave") setDropping(false);
-      else if (ev.type === "drop") {
-        setDropping(false);
-        add(ev.paths.filter(isPlugin));
+    // a plugin file dropped on the window, through the window's own drag and drop: the system's
+    // (Tauri's dragDropEnabled) stops actions being dragged onto keys on Windows (owner found it,
+    // 2026-10-18), so the file's bytes go to the engine, which keeps them in a temp file
+    const files = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!files(e)) return;
+      depth++;
+      setDropping(true);
+    };
+    const over = (e: DragEvent) => {
+      if (files(e)) e.preventDefault();
+    };
+    const leave = (e: DragEvent) => {
+      if (files(e) && --depth <= 0) (depth = 0), setDropping(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!files(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDropping(false);
+      for (const f of [...(e.dataTransfer?.files ?? [])].filter((f) => isPlugin(f.name))) {
+        f.arrayBuffer().then((b) => api.sdDropFile(f.name, new Uint8Array(b))).then((path) => add([path]), () => {});
       }
-      }).catch(none);
-    } catch {
-      offDrop = Promise.resolve(none());
-    }
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    const offDrop = Promise.resolve(() => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    });
     return () => {
       offOpened.then((f) => f());
       offDrop.then((f) => f());
@@ -194,7 +225,8 @@ export default function App() {
         onOpenForApp={() => (setForAppOpen(true), setGalleryOpen(false), setSettingsOpen(false), setProfileOpen(false))}
         onOpenAssistant={() => setLeftTab("assistant")}
         onOpenTour={() => (setTourOpen(true), setSettingsOpen(false), setGalleryOpen(false), setForAppOpen(false), setProfileOpen(false))}
-        onOpenSettings={() => (setSettingsOpen((o) => !o), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
+        onOpenSettings={() => (setSettingsOpen((o) => !o), setPluginsOpen(false), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
+        onOpenPlugins={() => (setPluginsOpen((o) => !o), setSettingsOpen(false), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))}
         onOpenGames={() => (setGamesOpen((o) => !o), setSettingsOpen(false))}
       />
       <Banner
@@ -221,9 +253,13 @@ export default function App() {
         <main className="workspace">
           <Builder live={live} view={view} saved={saved} onPlace={save} onClose={() => setBuilderOpen(false)} />
         </main>
+      ) : pluginsOpen ? (
+        <main className="workspace">
+          <PluginsTab onClose={() => setPluginsOpen(false)} onInstalled={() => {}} onUse={(id) => (setPluginsOpen(false), setSelected(null), setFocusPlugin({ id, at: Date.now() }))} />
+        </main>
       ) : settingsOpen && !calibrating ? (
         <main className="workspace">
-          <SettingsPanel live={live} view={view} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} onCalibrate={() => (setCalibrating(true), setSettingsOpen(false))} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onBuild={() => (setBuilderOpen(true), setSettingsOpen(false))} />
+          <SettingsPanel live={live} view={view} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} onCalibrate={() => (setCalibrating(true), setSettingsOpen(false))} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onBuild={() => (setBuilderOpen(true), setSettingsOpen(false))} onBrowsePlugins={() => (setPluginsOpen(true), setSettingsOpen(false))} />
         </main>
       ) : (
       <main className={`workspace${arranging ? " is-arranging" : ""}`}>
@@ -244,6 +280,16 @@ export default function App() {
                 </button>
               </span>
             )}
+            {/* the deck shows its screensaver; the window shows the keys, says so, and can end it */}
+            {saverOn && (
+              <span className="chip" role="status">
+                <Icon name="sparkles" />
+                {t("stage.saverOn")}
+                <button className="link-btn" onClick={() => saverEnd()}>
+                  {t("stage.saverEnd")}
+                </button>
+              </span>
+            )}
             {live.deck.modules.length > 0 && (
               <button className={`chip layout-chip${arranging ? " is-active" : ""}`} onClick={toggleArrange} title={t("stage.editLayoutHelp")}>
                 <Icon name={arranging ? "check" : "layout-grid"} />
@@ -258,6 +304,8 @@ export default function App() {
             onSelect={(c) => {
               setSelected(c);
               showInspector();
+              // a click on the deck in the window is a touch: the screensaver ends
+              if (saverOn) saverEnd();
             }}
             saved={saved}
             onPlace={save}
@@ -288,7 +336,7 @@ export default function App() {
         ) : arranging ? (
           <ArrangePanel onDone={toggleArrange} live={live} saved={saved} onPlace={save} />
         ) : (
-          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} onOpenPlugins={() => (setSettingsSection("plugins"), setSettingsOpen(true), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} />
+          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} onOpenPlugins={() => (setPluginsOpen(true), setSettingsOpen(false), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} focusPlugin={focusPlugin} />
         )}
       </main>
       )}

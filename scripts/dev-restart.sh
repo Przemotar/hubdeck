@@ -13,7 +13,7 @@ fi
 [ -d "$DATA" ] && python3 -c "import time; print(int(time.time()*1000))" > "$DATA/released-at"
 pkill -f "tauri dev" 2>/dev/null
 # a vite server left from browser tests holds the port the dev app needs
-lsof -tiTCP:1420 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
+lsof -tiTCP:1460 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
 sleep 1
 mkdir -p logs
 (cd app && RUST_LOG="${RUST_LOG:-info}" nohup pnpm tauri dev --no-watch -- -- --hidden > ../logs/dev.log 2>&1 &)

@@ -492,6 +492,9 @@ pub struct Settings {
     /// name under it), `fill` (the whole key, no name), `fillLabel` (the whole key with the name).
     #[serde(default = "icon_mode")]
     pub app_icons: String,
+    /// The font for text on the deck, a family on this computer (None = HubDeck's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deck_font: Option<String>,
     /// During a call the deck shows the profile linked to the call app and stays on it.
     #[serde(default = "yes")]
     pub call_switch: bool,
@@ -583,6 +586,7 @@ impl Default for Settings {
             apps: Vec::new(),
             count_presses: false,
             app_icons: icon_mode(),
+            deck_font: None,
             language: english(),
             call_switch: true,
             reduced_motion: None,

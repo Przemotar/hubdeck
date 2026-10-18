@@ -24,7 +24,7 @@ ps("-Fresh");
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
 let page;
 for (let i = 0; i < 40 && !page; i++) {
-  page = browser.contexts()[0]?.pages().find((p) => /tauri.localhost|localhost:1420/.test(p.url()));
+  page = browser.contexts()[0]?.pages().find((p) => /tauri.localhost|localhost:1460/.test(p.url()));
   if (!page) await sleep(500);
 }
 const invoke = (cmd, args) => page.evaluate(([c, a]) => window.__TAURI_INTERNALS__.invoke(c, a), [cmd, args ?? {}]);

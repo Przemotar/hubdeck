@@ -247,6 +247,136 @@ function AppField({ id, value, onChange, onPicked, foreground }: { id: string; v
   );
 }
 
+/** The Mochi control whose body picture this one shows when it has none: the key named by its `from`, else the first with one. */
+function sharedPetBody(controls: Record<string, Binding>, here: string | null, own: Binding): { control: string; binding: Binding } | null {
+  const has = (b?: Binding) => b?.action === "core.pet" && !!String(b.params.body ?? "").trim();
+  if (has(own)) return null;
+  const from = String(own.params.from ?? "");
+  if (from && from !== here && has(controls[from])) return { control: from, binding: controls[from] };
+  const found = Object.entries(controls).find(([c, b]) => c !== here && has(b));
+  return found ? { control: found[0], binding: found[1] } : null;
+}
+
+type PetFit = { size: number; x: number; y: number };
+const PET_FIT: PetFit = { size: 100, x: 0, y: 0 };
+const PET_PREVIEW_PX = 150;
+
+/**
+ * How Mochi's body picture sits (owner's 2a, 2026-10-18: "podgląd jak będzie wyglądać w różnych
+ * stanach ... położenia i rozmiar"): the engine draws it happy, petted, hungry and asleep; the
+ * picture is dragged in the big preview, Size scales it, Reset puts it back. Shown at once while it
+ * changes, saved a moment after.
+ */
+function PetFitField({ id, value, siblings, onChange }: { id: string; value: unknown; siblings: Record<string, unknown>; onChange: (v: unknown) => void }) {
+  useLanguage();
+  const saved: PetFit = { ...PET_FIT, ...(value && typeof value === "object" ? (value as Partial<PetFit>) : {}) };
+  const [live, setLive] = useState<PetFit | null>(null);
+  const fit = live ?? saved;
+  const [shots, setShots] = useState<string[]>([]);
+  const body = String(siblings.body ?? "");
+  useEffect(() => {
+    const timer = window.setTimeout(() => api.petPreview({ ...siblings, bodyFit: fit }).then(setShots, () => setShots([])), 40);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [body, fit.size, fit.x, fit.y]);
+  const commit = useRef<number | undefined>(undefined);
+  const change = (next: PetFit) => {
+    setLive(next);
+    window.clearTimeout(commit.current);
+    commit.current = window.setTimeout(() => (onChange(next), setLive(null)), 300);
+  };
+  const clamp = (v: number) => Math.round(Math.max(-100, Math.min(100, v)));
+  const drag = useRef<{ x: number; y: number; from: PetFit; px: number } | null>(null);
+  const names = [t("petFit.happy"), t("petFit.petted"), t("petFit.hungry"), t("petFit.asleep")];
+  const src = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // four as big as the panel allows (owner, 2026-10-18: "takie małe - nie widać np. czy czapka
+  // nocna pasuje"); a drag on any of them moves the picture
+  return (
+    <div className="pet-fit">
+      <div className="pet-fit-shots">
+        {names.map((name, i) => (
+          <figure key={name}>
+            {shots[i] ? (
+              <img
+                src={src(shots[i])}
+                alt={name}
+                title={t("petFit.drag")}
+                draggable={false}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  drag.current = { x: e.clientX, y: e.clientY, from: fit, px: e.currentTarget.clientWidth || PET_PREVIEW_PX };
+                }}
+                onPointerMove={(e) => {
+                  const d = drag.current;
+                  if (!d) return;
+                  const k = 240 / d.px;
+                  change({ ...d.from, x: clamp(d.from.x + (e.clientX - d.x) * k), y: clamp(d.from.y + (e.clientY - d.y) * k) });
+                }}
+                onPointerUp={() => (drag.current = null)}
+              />
+            ) : (
+              <span className="pet-fit-empty" />
+            )}
+            <figcaption>{name}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="row">
+        <label className="pet-fit-size" htmlFor={id}>
+          {t("petFit.size")}
+        </label>
+        <input
+          id={id}
+          className="range grow"
+          type="range"
+          min={40}
+          max={200}
+          step={5}
+          value={fit.size}
+          style={{ "--fill": `${((fit.size - 40) / 160) * 100}%` } as React.CSSProperties}
+          onChange={(e) => change({ ...fit, size: Number(e.target.value) })}
+        />
+        <span className="pet-fit-value">{fit.size} %</span>
+        <button className="tool small ghost" disabled={fit.size === 100 && fit.x === 0 && fit.y === 0} onClick={() => change(PET_FIT)}>
+          {t("petFit.reset")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A picture from the pictures folder for an action (Mochi's body): pick, change, remove. */
+function PictureField({ id, value, onChange }: { id: string; value: string; onChange: (v: unknown) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [thumb, setThumb] = useState<string | null>(null);
+  useEffect(() => {
+    setThumb(null);
+    if (value) api.imageThumb(value).then(setThumb, () => {});
+  }, [value]);
+  const choose = () => {
+    setError(null);
+    pickImage().then((name) => name && onChange(name), (e) => setError(String(e)));
+  };
+  return (
+    <>
+      <div className="row wrap">
+        {value && (thumb ? <img className="picture-thumb" src={thumb} alt="" /> : <span className="picture-thumb" />)}
+        <button id={id} className="tool small" onClick={choose}>
+          <Icon name="image" />
+          {value ? t("param.pictureChange") : t("param.pictureNone")}
+        </button>
+        {value && (
+          <button className="tool small ghost" onClick={() => onChange("")}>
+            <Icon name="x" />
+            {t("param.pictureRemove")}
+          </button>
+        )}
+      </div>
+      {error && <p className="help catalog-err">{error}</p>}
+    </>
+  );
+}
+
 /**
  * A token kept in the system's credential store (Live value): the param holds only its name, made
  * up the first time one is saved; the token itself never enters the profile.
@@ -468,6 +598,14 @@ function ParamField({
       break;
     case "place":
       field = <PlaceField id={id} value={str} onChange={onChange} />;
+      break;
+    case "picture":
+      field = <PictureField id={id} value={str} onChange={onChange} />;
+      break;
+    case "petFit":
+      // nothing to fit without a body picture
+      if (!String(siblings?.body ?? "").trim()) return null;
+      field = <PetFitField id={id} value={value} siblings={siblings ?? {}} onChange={onChange} />;
       break;
     case "app":
       field = <AppField id={id} value={str} onChange={onChange} onPicked={onPicked} foreground={view.state?.foreground ?? ""} />;
@@ -1140,7 +1278,7 @@ function SdInspector({ control, action, settings }: { control: string; action: s
   );
 }
 
-export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenPlugins }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void; onOpenPlugins?: () => void }) {
+export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenPlugins, focusPlugin }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void; onOpenPlugins?: () => void; focusPlugin?: { id: string; at: number } | null }) {
   useLanguage();
   const profile = view.profile;
   const page = view.state?.page ?? null;
@@ -1219,7 +1357,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
       <aside className="inspector sectioned">
         <div className="sec">
           {all.length > 0 ? (
-            <ActionChooser view={view} kind="keys" gesture="tap" fitting={all} others={[]} browse onPick={() => {}} onCopy={() => {}} onOpenPlugins={onOpenPlugins} />
+            <ActionChooser key={focusPlugin?.at} view={view} kind="keys" gesture="tap" fitting={all} others={[]} browse onPick={() => {}} onCopy={() => {}} onOpenPlugins={onOpenPlugins} focusGroup={focusPlugin ? (all.find((a) => a.id.startsWith(`${focusPlugin.id}/`))?.group ?? null) : null} />
           ) : (
             <div className="empty">
               <span className="eic">
@@ -1273,6 +1411,18 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
   const gestureHelp = GESTURES.find(([g]) => g === activeGesture)?.[2];
   const showGestureTabs = activeGesture !== "tap" || (["hold", "double"] as Gesture[]).some((g) => !!profile?.controls[controlId(selected.kind, selected.index, page, g)]);
   const canAccel = !!action?.inputs.includes("turn") && selected.kind !== "faders" && selected.kind !== "keys" && activeGesture === "tap";
+  // Mochi is one pet: a Mochi control without a body picture of its own shows and changes the one
+  // set elsewhere, first on the key that put it on the dial (owner, 2026-10-18: the dial showed his
+  // picture and its settings "Pick a picture")
+  const petBody = draft?.action === "core.pet" && profile ? sharedPetBody(profile.controls, control, draft) : null;
+  const paramProps = (p: ParamDef) =>
+    petBody && (p.key === "body" || p.key === "bodyFit")
+      ? {
+          value: petBody.binding.params[p.key],
+          siblings: petBody.binding.params,
+          onChange: (v: unknown) => void api.setBinding(profile!.id, petBody.control, { ...petBody.binding, params: { ...petBody.binding.params, [p.key]: v } }).catch(() => {}),
+        }
+      : null;
   // on a dial or knob the first tab holds what turning does too
   const turns = selected.kind === "dial" || selected.kind === "knobs";
 
@@ -1394,6 +1544,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
               view={view}
               siblings={draft.params}
               onChange={(v) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: namedLabel(draft, p.key, v, view) ?? draft.look.label } })}
+              {...paramProps(p)}
               onPicked={(v, look) => update({ ...draft, params: { ...draft.params, [p.key]: v }, look: { ...draft.look, label: look.label, ...(look.image ? { image: look.image } : {}), ...(look.icon ? { icon: look.icon, image: undefined } : {}) } })}
             />
           ))}

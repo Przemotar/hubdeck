@@ -35,6 +35,7 @@ mod icons;
 mod idle;
 pub mod images;
 pub mod installed;
+pub mod languages;
 mod leds;
 mod lhm;
 pub mod live;
@@ -146,6 +147,9 @@ pub enum Msg {
     },
     /// Modules, orientation or placements changed: redraw everything.
     DeckChanged,
+    /// The user clicked the deck in the window, or End: the screensaver ends as at a touch of the
+    /// deck (owner's pick 1a, 2026-10-18).
+    WindowTouched,
     /// A profile or the active one changed: redraw everything.
     ProfilesChanged,
     /// The app in front (exe file name) and its window title.
@@ -226,6 +230,12 @@ static SAVER_SHOWN: std::sync::Mutex<Option<serde_json::Value>> = std::sync::Mut
 #[tauri::command]
 pub fn saver_shown() -> Option<serde_json::Value> {
     SAVER_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The deck was clicked in the window, or End: the screensaver ends, as at a touch of the deck.
+#[tauri::command]
+pub fn saver_end(engine: tauri::State<'_, Engine>) {
+    let _ = engine.sender().send(Msg::WindowTouched);
 }
 
 /// The key panel's last picture, the same way (keys with live values showed only their icon).
@@ -550,6 +560,7 @@ impl Engine {
         backup::daily(data_dir);
         let mut store = Store::load(data_dir);
         render::set_app_icons(&store.settings.app_icons);
+        render::set_deck_font(store.settings.deck_font.as_deref());
         guard::set_power(store.settings.assistant_power);
         demo::set_language(&store.settings.language);
         if store.profiles.is_empty() {
@@ -1584,6 +1595,15 @@ impl Worker {
                         self.update_leds();
                         self.dial_dirty = true;
                     }
+                    Msg::WindowTouched => {
+                        self.last_deck_input = Instant::now();
+                        if self.saver_on {
+                            self.lock().saver_preview = None;
+                            self.saver_on = false;
+                            log::info!("screensaver off (the window)");
+                            self.redraw_keys();
+                        }
+                    }
                     Msg::ProfilesChanged => {
                         self.want_integrations();
                         self.redraw_keys();
@@ -2077,7 +2097,7 @@ impl Worker {
                     self.dial_dirty = true;
                 }
                 if out.pet_dial {
-                    self.toggle_pet_dial();
+                    self.toggle_pet_dial(id.split(':').next().unwrap_or(id));
                 }
                 if let Some(effect) = out.saver {
                     let effect = if saver::EFFECTS.contains(&effect.as_str()) {
@@ -3630,7 +3650,7 @@ impl Worker {
     /// A key puts Mochi on the dial of the profile on screen, or takes it off and gives the dial
     /// back what it had (kept in `pet.json` by profile; owner, 2026-10-14: a Mochi switch on the
     /// Fun page).
-    fn toggle_pet_dial(&mut self) {
+    fn toggle_pet_dial(&mut self, from: &str) {
         const GESTURES: [&str; 3] = ["dial", "dial:double", "dial:hold"];
         let profile = {
             let s = self.lock();
@@ -3655,7 +3675,12 @@ impl Worker {
             for g in GESTURES {
                 p.controls.remove(g);
             }
-            p.controls.insert("dial".into(), face.binding.clone());
+            // the key that brought it: its body picture is Mochi's body on the dial
+            let mut binding = face.binding.clone();
+            if let Some(params) = binding.params.as_object_mut() {
+                params.insert(pet::FROM_PARAM.into(), serde_json::json!(from));
+            }
+            p.controls.insert("dial".into(), binding);
             // it comes onto the dial happy and full (owner's 2a, 2026-10-16), not as it was left
             self.pet.needs.joy = 1.0;
             self.pet.needs.fullness = 1.0;
@@ -3800,7 +3825,13 @@ impl Worker {
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == pet::ACTION) => {
                     let mood = self.pet.mood(self.locked, chrono::Timelike::hour(&chrono::Local::now()));
                     pet_rest = self.pet.moment.is_none_or(|(_, at)| at.elapsed() >= Duration::from_millis(2400));
-                    pet::dial_svg(&self.pet, mood, pet::loop_clock(), Instant::now(), rotation)
+                    // Mochi is one pet: a body picked on the key that brings it to the dial is its
+                    // body there too (owner, 2026-10-18: set on the Fun page's Mochi key, the dial
+                    // stayed purple)
+                    let body = binding
+                        .and_then(|b| pet::body_of(&b.params))
+                        .or_else(|| profile.as_ref().and_then(|p| pet::body_on(&p.controls, binding.map(|b| actions::param_str(&b.params, pet::FROM_PARAM)))));
+                    pet::dial_svg_with(&self.pet, mood, pet::loop_clock(), Instant::now(), rotation, body.as_ref())
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::POMODORO) => {
                     let b = binding.expect("checked");

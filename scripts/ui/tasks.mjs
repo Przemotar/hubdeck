@@ -1,7 +1,7 @@
 // The task test (owner, 2026-10-13: "czy sama apka nie jest przekombinowana?"): eight things a
 // newcomer does first, each done the shortest way the window offers, counting what it costs: clicks
 // (and picks in a list), fields typed, and screens passed through (a page, a panel or a picker that
-// replaces what was there). Runs headless against the browser demo (the vite server on :1420, i.e.
+// replaces what was there). Runs headless against the browser demo (the vite server on :1460, i.e.
 // the dev app or `pnpm dev` in app/), so it takes no focus. Run it before and after a
 // simplification: the numbers should go down, never up.
 //
@@ -15,7 +15,7 @@ import path from 'node:path';
 
 const out = process.argv[2] || path.join(os.tmpdir(), 'hubdeck-tasks');
 fs.mkdirSync(out, { recursive: true });
-const base = process.env.HUBDECK_URL || 'http://localhost:1420/';
+const base = process.env.HUBDECK_URL || 'http://localhost:1460/';
 
 function findChromium() {
   if (process.env.CHROMIUM) return process.env.CHROMIUM;

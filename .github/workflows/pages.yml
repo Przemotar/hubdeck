@@ -1,9 +1,13 @@
 # The project page (site/) on GitHub Pages: przemotar.github.io/hubdeck. Public repository only.
+# Every day it also builds the Plugins tab's catalog (site/plugins.json, scripts/plugins/catalog.mjs):
+# stars, systems and new plugins change without a release.
 name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "scripts/plugins/**", "app/src-tauri/src/engine/sdcatalog.json", ".github/workflows/pages.yml"]
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,6 +28,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # a failed build leaves the file out: the app then joins the OpenAction and Elgato lists itself
+      - name: Plugin catalog
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/plugins/catalog.mjs site/plugins.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

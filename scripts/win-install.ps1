@@ -1,5 +1,6 @@
 # Install the newest built HubDeck on this PC without taking the owner's focus (the Windows side of
-# scripts/mac-install.sh). Build first: cd app; pnpm tauri build --bundles nsis
+# scripts/mac-install.sh). Build first: scripts/test-build.ps1 (a test build, faster), or
+# cd app; pnpm tauri build --bundles nsis (a release build)
 #
 #   powershell -ExecutionPolicy Bypass -File scripts/win-install.ps1
 #
@@ -8,8 +9,9 @@
 # app starts in the tray (--hidden).
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$setup = Get-ChildItem "$root\target\release\bundle\nsis\*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $setup) { Write-Error "no installer in target\release\bundle\nsis: build first" }
+# the newest of a release build and a test build (scripts/test-build.ps1)
+$setup = Get-ChildItem "$root\target\release\bundle\nsis\*-setup.exe", "$root\target\test-build\release\bundle\nsis\*-setup.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $setup) { Write-Error "no installer in target\release or target\test-build: build first" }
 $data = "$env:APPDATA\dev.hubdeck.app"
 $exe = "$env:LOCALAPPDATA\HubDeck\hubdeck.exe"
 

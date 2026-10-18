@@ -5142,3 +5142,247 @@ button.lib-foot:focus-visible span {
 .help-pop .help {
   margin: 4px 10px 6px;
 }
+
+/* The Plugins tab (owner's pick A, 2026-10-18): filters left, search and sort, cards */
+.plugins-filters {
+  gap: 18px;
+  padding: 16px 14px;
+}
+.plugins-filters fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.plugins-filters legend {
+  padding: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.plugins-filters .check {
+  font-size: 13px;
+  color: var(--tx);
+}
+.plugins-filters fieldset .settings-nav-item {
+  height: 30px;
+}
+.plugins-filters .n {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--tx3);
+}
+.plugins-main {
+  padding: 16px 22px 24px;
+  gap: 12px;
+}
+.plugins-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.plugins-bar .input[type="search"] {
+  min-width: 220px;
+}
+.plugins-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--tx2);
+}
+.plugins-sort .input {
+  width: auto;
+}
+.plugin-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.card.plugin-card {
+  gap: 10px;
+  min-width: 0;
+}
+.plugin-card .row {
+  gap: 12px;
+  min-width: 0;
+}
+.plugin-card-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.plugin-card-name strong {
+  overflow-wrap: anywhere;
+}
+.plugin-card-about {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.plugin-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plugin-card-meta {
+  margin-top: auto;
+}
+.plugin-card-foot {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plugin-card-foot .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+@media (max-width: 900px) {
+  .plugins-filters {
+    width: 190px;
+  }
+}
+
+/* Mochi's body: four moods drawn by the engine, the big one dragged to move the picture */
+.pet-fit {
+  display: grid;
+  gap: 10px;
+}
+.pet-fit-shots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.pet-fit-shots figure {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  min-width: 0;
+}
+.pet-fit-shots img,
+.pet-fit-empty {
+  width: 100%;
+  max-width: 180px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--bg3);
+  cursor: grab;
+  touch-action: none;
+}
+.pet-fit-shots img:active {
+  cursor: grabbing;
+}
+.pet-fit-shots figcaption,
+.pet-fit-value {
+  font-size: 11px;
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.pet-fit-value {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a picture param's preview (Mochi's body) */
+.picture-thumb {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--bg3);
+}
+
+/* "Use it" from the Plugins tab: the plugin's group, open and lit, first in the library */
+.chooser-group.is-focus > .chooser-group-head {
+  box-shadow: inset 0 0 0 1.5px var(--acc);
+  border-radius: 8px;
+  /* lights up once when "Use it" brings the user here */
+  animation: focus-glow 1.6s ease-out 1;
+}
+@keyframes focus-glow {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--acc) 26%, transparent);
+    box-shadow: inset 0 0 0 1.5px var(--acc), 0 0 0 4px color-mix(in srgb, var(--acc) 30%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--acc), 0 0 0 0 transparent;
+  }
+}
+.chooser-focus-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 10px 6px;
+  color: var(--acc2);
+}
+/* toward the deck, on the left: a nudge three times, then still */
+.focus-arrow {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  animation: focus-nudge 0.9s ease-in-out 3;
+}
+.focus-arrow .i {
+  width: 15px;
+  height: 15px;
+}
+@keyframes focus-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-6px);
+  }
+}
+.reduce-motion .chooser-group.is-focus > .chooser-group-head,
+.reduce-motion .focus-arrow {
+  animation: none;
+}
+.pill.is-new {
+  color: var(--acc2);
+  background: color-mix(in srgb, var(--acc) 14%, transparent);
+}
+
+/* Settings > Text on the deck: labels as keys show them, in the chosen font */
+.font-sample {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.font-key {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 4px 10px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #1f1d26;
+  color: #f0eef6;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}

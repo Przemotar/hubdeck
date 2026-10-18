@@ -12,6 +12,59 @@ use super::profile::Look;
 
 const FONT: &[u8] = include_bytes!("../../assets/fonts/IBMPlexSans-SemiBold.ttf");
 pub const FONT_FAMILY: &str = "IBM Plex Sans";
+
+/// The fonts images are drawn with: HubDeck's own and the computer's, loaded once (memory-mapped,
+/// so the system's fonts cost address space, not memory). A letter HubDeck's font lacks (Japanese,
+/// Chinese, Korean...) comes from a system font that has it (Discussions #3, 2026-10-18).
+static FONTS: std::sync::LazyLock<std::sync::Arc<usvg::fontdb::Database>> = std::sync::LazyLock::new(|| {
+    let started = std::time::Instant::now();
+    let mut db = usvg::fontdb::Database::new();
+    db.load_font_data(FONT.to_vec());
+    db.load_system_fonts();
+    log::info!("fonts: {} faces in {:.0?}", db.len(), started.elapsed());
+    std::sync::Arc::new(db)
+});
+
+/// Settings > Screens: the font for text on the deck (None = HubDeck's own).
+#[cfg(not(test))]
+static DECK_FONT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+// one per test thread: a test that picks a font must not change the text of tests drawing beside
+// it (a test failed one run in two, 2026-10-18)
+#[cfg(test)]
+thread_local! {
+    static DECK_FONT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Use `family` for text on the deck; one this computer does not have falls back to HubDeck's own.
+pub fn set_deck_font(family: Option<&str>) {
+    let family = family.map(str::trim).filter(|f| !f.is_empty() && *f != FONT_FAMILY && deck_fonts().iter().any(|x| x == f)).map(str::to_string);
+    #[cfg(not(test))]
+    {
+        *DECK_FONT.write().unwrap_or_else(|e| e.into_inner()) = family;
+    }
+    #[cfg(test)]
+    DECK_FONT.with(|f| *f.borrow_mut() = family);
+}
+
+/// The font family text on the deck is drawn in, ready for an SVG attribute.
+pub fn font_family() -> String {
+    #[cfg(not(test))]
+    let chosen = DECK_FONT.read().unwrap_or_else(|e| e.into_inner()).clone();
+    #[cfg(test)]
+    let chosen = DECK_FONT.with(|f| f.borrow().clone());
+    match chosen.as_deref() {
+        Some(f) => escape(f),
+        None => FONT_FAMILY.to_string(),
+    }
+}
+
+/// The font families on this computer, by name (for the list in Settings > Screens).
+pub fn deck_fonts() -> Vec<String> {
+    let mut names: Vec<String> = FONTS.faces().filter_map(|f| f.families.first().map(|(name, _)| name.clone())).filter(|n| !n.starts_with('@') && !n.trim().is_empty()).collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names.dedup();
+    names
+}
 pub const DEFAULT_BG: &str = "#1f1d26";
 pub const DEFAULT_FG: &str = "#f0eef6";
 pub const KEY_PX: u32 = 72;
@@ -176,7 +229,8 @@ fn logo_image(uri: &str, x: f32, y: f32, size: f32) -> String {
 }
 
 fn text(x: f32, y: f32, size: f32, fg: &str, content: &str) -> String {
-    format!(r#"<text x="{x}" y="{y}" font-family="{FONT_FAMILY}" font-weight="600" font-size="{size}" fill="{fg}" text-anchor="middle">{}</text>"#, escape(content))
+    let family = font_family();
+    format!(r#"<text x="{x}" y="{y}" font-family="{family}" font-weight="600" font-size="{size}" fill="{fg}" text-anchor="middle">{}</text>"#, escape(content))
 }
 
 /// Width of `content` in px at `size`, measured with the font the images are drawn in (the shaped
@@ -190,21 +244,22 @@ fn text_width(content: &str, size: f32) -> f32 {
         return 0.0;
     }
     let widths = WIDTHS.get_or_init(Default::default);
-    if let Some(w) = widths.lock().unwrap_or_else(|e| e.into_inner()).get(content) {
+    let family = font_family();
+    // per font: another font has other widths
+    let key = format!("{family}\u{0}{content}");
+    if let Some(w) = widths.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         return w * size / 100.0;
     }
     let options = OPTIONS.get_or_init(|| Renderer::default().options);
-    let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="200"><text x="10" y="150" font-family="{FONT_FAMILY}" font-weight="600" font-size="100">{}</text></svg>"#,
-        escape(content)
-    );
+    let svg =
+        format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="20000" height="200"><text x="10" y="150" font-family="{family}" font-weight="600" font-size="100">{}</text></svg>"#, escape(content));
     // if shaping fails, a fair guess for this font: about 0.58 em a character
     let w = usvg::Tree::from_str(&svg, options).map(|t| t.root().abs_bounding_box().width()).unwrap_or(content.chars().count() as f32 * 58.0);
     let mut cache = widths.lock().unwrap_or_else(|e| e.into_inner());
     if cache.len() > 2000 {
         cache.clear(); // live values change; keep the cache small
     }
-    cache.insert(content.to_string(), w);
+    cache.insert(key, w);
     w * size / 100.0
 }
 
@@ -556,7 +611,7 @@ fn graph(metric: super::monitor::Metric, history: &[f32], x: f32, y: f32, w: f32
         out += &format!(r##"<polyline points="{}" fill="none" stroke="#c4b5fd" stroke-width="3" stroke-linejoin="round"/>"##, pts.join(" "));
     }
     let latest = history.last().map(|v| metric.format(*v)).unwrap_or_else(|| "–".into());
-    out += &format!(r#"<text x="{}" y="{}" font-family="{FONT_FAMILY}" font-weight="600" font-size="{}" fill="{DEFAULT_FG}">{} {}</text>"#, x + 14.0, y + h * 0.2, h * 0.14, metric.name(), latest);
+    out += &format!(r#"<text x="{}" y="{}" font-family="{}" font-weight="600" font-size="{}" fill="{DEFAULT_FG}">{} {}</text>"#, x + 14.0, y + h * 0.2, font_family(), h * 0.14, metric.name(), latest);
     out
 }
 
@@ -993,9 +1048,7 @@ const TILES_KEPT: usize = 400;
 
 impl Default for Renderer {
     fn default() -> Self {
-        let mut options = usvg::Options::default();
-        options.fontdb_mut().load_font_data(FONT.to_vec());
-        options.font_family = FONT_FAMILY.into();
+        let options = usvg::Options { fontdb: FONTS.clone(), font_family: FONT_FAMILY.into(), ..Default::default() };
         Self { options, tiles: Default::default() }
     }
 }
@@ -1212,6 +1265,70 @@ mod tests {
         assert_eq!((img.width(), img.height()), (72, 72));
         let dial = r.jpeg(&dial_svg(&Look::default(), Some((Some(0.42), "Volume")), 0)).unwrap();
         assert_eq!(image::load_from_memory(&dial).unwrap().width(), 240);
+    }
+
+    /// Japanese on a key: HubDeck's font has no such letters, a system font draws them
+    /// (Discussions #3, 2026-10-18). Windows has Yu Gothic and Meiryo, macOS Hiragino.
+    #[test]
+    fn letters_our_font_lacks_come_from_a_system_font() {
+        let r = Renderer::default();
+        let lit = |label: &str| {
+            let look = Look { label: Some(label.into()), bg: Some("#000000".into()), fg: Some("#ffffff".into()), ..Look::default() };
+            let img = image::load_from_memory(&r.jpeg(&key_svg(&look, 0)).unwrap()).unwrap().to_luma8();
+            img.pixels().filter(|p| p[0] > 128).count()
+        };
+        let (none, latin, japanese) = (lit(" "), lit("Mute"), lit("日本語"));
+        assert!(latin > none + 20, "{latin} vs {none}");
+        assert!(japanese > none + 20, "Japanese drawn: {japanese} lit pixels, {none} with no label");
+    }
+
+    /// Before and after for Discussions #3: the same Japanese keys drawn with HubDeck's font only
+    /// (0.1.3) and with the computer's fonts, side by side, into `HUBDECK_OUT` (a PNG).
+    #[test]
+    #[ignore]
+    fn japanese_before_after() {
+        let keys: String = ["ミュート", "配信開始", "日本語", "Mute"]
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                let look = Look { label: Some((*label).into()), icon: Some(["mic-off", "radio", "globe", "volume-x"][i].into()), ..Look::default() };
+                let svg = key_svg(&look, 0);
+                let body = svg[svg.find('>').unwrap() + 1..svg.rfind("</svg>").unwrap()].to_string();
+                format!(r#"<svg x="{}" y="0" width="72" height="72" viewBox="0 0 72 72">{body}</svg>"#, i * 80)
+            })
+            .collect();
+        let sheet = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="312" height="72">{keys}</svg>"#);
+        let draw = |opt: &usvg::Options| {
+            let tree = usvg::Tree::from_str(&sheet, opt).unwrap();
+            let mut pixmap = tiny_skia::Pixmap::new(312, 72).unwrap();
+            resvg::render(&tree, tiny_skia::Transform::from_scale(1.0, 1.0), &mut pixmap.as_mut());
+            pixmap
+        };
+        let mut before = usvg::Options::default();
+        before.fontdb_mut().load_font_data(FONT.to_vec());
+        let after = Renderer::default().options;
+        let (b, a) = (draw(&before), draw(&after));
+        let mut out = tiny_skia::Pixmap::new(312, 160).unwrap();
+        out.fill(tiny_skia::Color::from_rgba8(20, 20, 26, 255));
+        out.draw_pixmap(0, 0, b.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
+        out.draw_pixmap(0, 88, a.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
+        out.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
+    }
+
+    #[test]
+    fn a_chosen_font_draws_the_text() {
+        let fonts = deck_fonts();
+        assert!(fonts.iter().any(|f| f == FONT_FAMILY), "HubDeck's own font is on the list");
+        let Some(other) = fonts.iter().find(|f| ["Arial", "Segoe UI", "Helvetica"].contains(&f.as_str())).cloned() else { return };
+        let look = Look { label: Some("Mute".into()), ..Look::default() };
+        set_deck_font(Some(&other));
+        let svg = key_svg(&look, 0);
+        set_deck_font(Some("No Such Font Anywhere"));
+        let unknown = key_svg(&look, 0);
+        set_deck_font(None);
+        assert!(svg.contains(&format!(r#"font-family="{other}""#)), "the chosen font in the image");
+        assert!(unknown.contains(r#"font-family="IBM Plex Sans""#), "a font this computer lacks: our own");
+        assert!(key_svg(&look, 0).contains(r#"font-family="IBM Plex Sans""#));
     }
 
     #[test]
@@ -1578,6 +1695,29 @@ mod timing {
             let mean = diff as f64 / whole.as_raw().len() as f64;
             assert!(mean < 1.5, "rotation {rotation}: mean difference {mean:.2}");
         }
+    }
+
+    /// What the computer's fonts cost a key with a label: the same keys drawn with HubDeck's font
+    /// only and with the system's fonts too (2026-10-18: the gate's CPU went from 8.6 % to 11.5 %).
+    #[test]
+    #[ignore]
+    fn font_database_cost() {
+        let svgs: Vec<String> =
+            ["Mute", "Screenshot", "Next track", "Discord", "OBS scene 2"].iter().map(|l| key_svg(&Look { label: Some((*l).into()), icon: Some("camera".into()), ..Look::default() }, 0)).collect();
+        let mut own = usvg::Options::default();
+        own.fontdb_mut().load_font_data(FONT.to_vec());
+        own.font_family = FONT_FAMILY.into();
+        let all = Renderer::default().options;
+        let time = |opt: &usvg::Options| {
+            let n = 400;
+            let t = std::time::Instant::now();
+            for i in 0..n {
+                std::hint::black_box(usvg::Tree::from_str(&svgs[i % svgs.len()], opt).unwrap());
+            }
+            t.elapsed().as_secs_f64() * 1e6 / n as f64
+        };
+        let _ = (time(&own), time(&all));
+        eprintln!("parse+shape one key: own font {:.0} us, with the system's {:.0} us ({} faces)", time(&own), time(&all), all.fontdb.len());
     }
 
     #[test]

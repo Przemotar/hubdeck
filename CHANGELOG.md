@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.4
+
+- A **Plugins** tab in the top bar: about 300 Stream Deck plugins that install with one click, from
+  three sources (the open ones on Elgato Marketplace, the OpenAction catalog and GitHub
+  repositories that publish a plugin file), with filters (source, this computer, dial and knobs,
+  tried in HubDeck, category), search and sorting. Only plugins that can be installed are listed:
+  every repository and download is checked daily. After Install, **Use it** opens the deck with
+  the plugin's actions first in the library.
+- Dragging an action onto a key works again on Windows (broken since 0.1.3).
+- Plugin settings pages fit the panel: no fields past its edge, no empty space under them.
+- Plugins written in .NET start: HubDeck now tells plugins the system's version, as Stream Deck
+  does (Windows Display Settings stopped at once without it).
+- **Text on the deck** (Settings): any font on your computer for the text on keys and the dial;
+  letters HubDeck's font lacks (Japanese, Chinese, Korean) come from a system font instead of
+  empty boxes.
+- **Japanese** built in, and language files of your own (Settings > General > Make a language
+  file).
+- **Mochi with a body of your own**: pick a picture for the dial pet's body; its eyes, mouth, moods
+  and every reaction are drawn over it. The picture keeps its own shape (a PNG with a see-through
+  background for a cut-out). Fit shows it happy, petted, hungry and asleep, large; drag it, size it, Reset. Mochi has one body: its settings on the dial and on the key that brings it show the same picture. A picture
+  set on the key that puts Mochi on the dial is its body there too.
+- While the deck shows its screensaver, the window shows the keys as they are set and says so,
+  with End; a click on the deck in the window ends it.
+- Deleting a profile or a page, restoring a backup, going back a version and removing an icon pack
+  ask first and wait for your answer; before, they went ahead without the question. A deleted
+  profile is in Settings > Backups ("before delete"), and from now on a deleted page too.
+- Get started no longer shows the tour's big button for a moment when it opens.
+
 ## 0.1.3
 
 - Stream Deck plugins from where you have them: the catalog in Settings > Plugins now also lists

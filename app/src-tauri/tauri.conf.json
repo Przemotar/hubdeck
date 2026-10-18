@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "HubDeck",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "identifier": "dev.hubdeck.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1460",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
@@ -18,7 +18,8 @@
         "minWidth": 960,
         "minHeight": 640,
         "visible": false,
-        "create": false
+        "create": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

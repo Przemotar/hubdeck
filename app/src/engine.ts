@@ -1,3 +1,4 @@
+import type { LanguagePack } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -361,6 +362,8 @@ export interface Screens {
   blankWhenLocked: boolean;
   /** How app icons show on keys: like an icon with the name, the whole key, the whole key with the name. */
   appIcons?: "icon" | "fill" | "fillLabel";
+  /** The font for text on the deck, a family on this computer ("" = HubDeck's own). */
+  deckFont?: string;
   /** The screensaver's effect ("" = none) and after how many idle minutes it starts. */
   saver?: string;
   saverAfterMinutes?: number;
@@ -419,8 +422,17 @@ export interface CatalogPlugin {
   elgato?: string | null;
   /** Its place among Elgato Marketplace's most downloaded plugins (1 = most). */
   popular?: number | null;
-  /** Only through Elgato's Stream Deck app: no open file to install here. */
-  elgatoOnly?: boolean;
+  /** Where the catalog has it from. */
+  source: "elgato" | "openaction" | "github" | string;
+  /** Its GitHub repository's stars and last change (YYYY-MM-DD), when known. */
+  stars?: number | null;
+  updated?: string | null;
+  /** The systems its manifest or Elgato names ("Windows", "macOS"); empty = not known. */
+  systems: string[];
+  /** One of the tab's categories ("Audio", "Music", "Streaming"...). */
+  category?: string | null;
+  /** It has actions for the dial and the knobs. */
+  dial: boolean;
 }
 
 /** A Stream Deck plugin on this computer: in the Stream Deck app's folder, or a file opened with HubDeck. */
@@ -484,6 +496,8 @@ export type ParamDef = {
   | { type: "game" }
   | { type: "secret" }
   | { type: "place" }
+  | { type: "picture" }
+  | { type: "petFit" }
   | { type: "named"; what: string }
 );
 
@@ -506,6 +520,24 @@ export interface ActionDef {
   params: ParamDef[];
   icon: string;
 }
+
+/** Plugins installed in this session (Plugins tab): their actions come first in the library,
+ * marked New (owner's 1a, 2026-10-18: "Use it" after Install). */
+const newPlugins: string[] = [];
+const newPluginsListeners = new Set<() => void>();
+export function markPluginNew(id: string) {
+  if (!newPlugins.includes(id)) newPlugins.unshift(id);
+  newPluginsListeners.forEach((l) => l());
+}
+export const newPluginIds = () => newPlugins;
+export function onNewPlugins(l: () => void) {
+  newPluginsListeners.add(l);
+  return () => {
+    newPluginsListeners.delete(l);
+  };
+}
+/** The library group of a plugin's actions (its actions are `<plugin id>/<action>`). */
+export const pluginGroup = (actions: ActionDef[], pluginId: string) => actions.find((a) => a.id.startsWith(`${pluginId}/`))?.group ?? null;
 
 export interface Catalog {
   actions: ActionDef[];
@@ -647,6 +679,10 @@ export const api = {
   pressesCounting: () => invoke<boolean>("presses_counting"),
   pressesCountSet: (on: boolean) => invoke("presses_count_set", { on }),
   languageSet: (language: string) => invoke("language_set", { language }),
+  languages: () => invoke<{ code: string; name: string }[]>("languages_list"),
+  languageFile: (code: string) => invoke<LanguagePack>("language_file", { code }),
+  languageTemplate: (template: unknown) => invoke<string>("language_template", { template }),
+  languagesOpenFolder: () => invoke("languages_open_folder"),
   dialGallery: () => invoke<DialFace[]>("dial_gallery"),
   aiPrompt: (name: string, exe: string, target: string, picture: string | null, language: string) => invoke<string>("ai_prompt", { name, exe, target, picture, language }),
   /** Runs Claude Code with HubDeck's tools only; rejects with "no-cli" when it is not installed. */
@@ -666,6 +702,8 @@ export const api = {
   adaptProfile: (id: string) => invoke<Moved[]>("profile_adapt", { id }),
   setPage: (page: string | null) => invoke("page_set", { page }),
   importImage: (path: string) => invoke<string>("image_import", { path }),
+  imageThumb: (name: string) => invoke<string | null>("image_thumb", { name }),
+  petPreview: (params: Record<string, unknown>) => invoke<string[]>("pet_preview", { params }),
   appIcon: (path: string) => invoke<string>("app_icon", { path }),
   pin: (pinned: boolean) => invoke("profile_pin", { pinned }),
   lights: () => invoke<LightSettings>("lights_get"),
@@ -701,6 +739,8 @@ export const api = {
   sdCatalog: () => invoke<CatalogPlugin[]>("sd_catalog"),
   /** Download a catalog plugin and install it; returns its id. */
   sdCatalogInstall: (id: string) => invoke<string>("sd_catalog_install", { id }),
+  /** A plugin file dropped on the window: its bytes kept in a temp file; returns that file's path. */
+  sdDropFile: (name: string, bytes: Uint8Array) => invoke<string>("sd_drop_file", bytes, { headers: { "x-name": encodeURIComponent(name) } }),
   /** The plugins Elgato's Stream Deck app installed on this computer. */
   sdStreamDeck: () => invoke<LocalPlugin[]>("sd_stream_deck"),
   /** Copy one of the Stream Deck app's plugins into HubDeck and start it; returns its id. */
@@ -772,6 +812,7 @@ export const api = {
   setProfilesDir: (dir: string | null) => invoke("profiles_dir_set", { dir }),
   screens: () => invoke<Screens>("screens_get"),
   setScreens: (screens: Screens) => invoke("screens_set", { screens }),
+  deckFonts: () => invoke<string[]>("deck_fonts"),
   restoreBackup: (id: string) => invoke("backup_restore", { id }),
   playGames: (on: boolean) => invoke("games_play", { on }),
   wheel: () => invoke<string[]>("wheel_get"),
@@ -978,6 +1019,9 @@ function useLiveJpeg<F extends { jpeg: string }>(which: "keys" | "dial"): { fram
 
 /** The screensaver on the deck's keys now, for the window to draw it itself (src/saver.ts); null
  * while none runs. */
+/** End the screensaver on the deck, as a touch of the deck does. */
+export const saverEnd = () => (inTauri() ? invoke("saver_end").catch(() => {}) : Promise.resolve());
+
 export function useSaverShown(): { effect: string; color: string } | null {
   const [shown, setShown] = useState<{ effect: string; color: string } | null>(null);
   useEffect(() => {

@@ -62,12 +62,14 @@ where each one sits and how it is turned. One base at a time for now.
   and apps and walks you through it on the hardware. No AI needed.
 - **Profiles that follow the app in front**, with per-app volume, mute, media with cover art, OBS,
   Home Assistant, monitor brightness and system stats.
-- **Stream Deck plugins** run in HubDeck: a one-click catalog of about 200 open-source ones plus
-  the 300 most downloaded on Elgato Marketplace (Settings > Plugins; 36 of Elgato's top 100 publish
-  an open file and install here), the plugins your Stream Deck app already has, and any
-  `.streamDeckPlugin` you open with HubDeck or drop on its window. Of 33 popular ones checked, 26
-  start and draw on Windows (marked "tried in HubDeck"; [the list](docs/STREAMDECK-PLUGINS.md#tried));
-  tell us when one does not work.
+- **Stream Deck plugins** run in HubDeck: the Plugins tab lists about 300 that install with one
+  click (the open ones on Elgato Marketplace, the OpenAction catalog and GitHub), with filters and
+  search; also the plugins your Stream Deck app already has, and any `.streamDeckPlugin` you open
+  with HubDeck or drop on its window. Of 53 popular ones checked, 44 start and draw on Windows
+  (marked "tried in HubDeck"; [the list](docs/STREAMDECK-PLUGINS.md#tried)); tell us when one does
+  not work.
+- **Your language and your fonts.** English, Polish and Japanese built in, or a language file of
+  your own; any font on your computer for the text on the deck.
 - **Safe by design.** Firmware is never written; dangerous commands are refused in code. Nothing
   leaves your computer unless you turn it on ([PRIVACY.md](PRIVACY.md)).
 - **Light.** About 3 % of one CPU core and 40 MB of memory in the tray with a clock and meters on the keys; 9 % and 62 MB with 22 animations on the deck (Windows, measured before the release).
@@ -113,10 +115,19 @@ System Audio Recording: HubDeck plays that app's sound at the level you set and 
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
+### Platforms
+
+| System | Every release | On a real deck |
+|---|---|---|
+| Windows 10 and 11 | built and tested by CI | checked before every release (modules, window, a soak of memory and CPU) |
+| macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-15, a build before 0.1.0 |
+| Linux | not supported | |
+
+Something wrong on a Mac? Please [open an issue](https://github.com/Przemotar/hubdeck/issues): Mac
+reports are checked on a deck first.
+
 ### Known issues
 
-- macOS: this version's window was last tried on a Mac before its rebuild (2026-10-15); the macOS
-  build comes from CI and has not yet run on a Mac. Please report what you see.
 - The window shows the deck's animations (GIFs, the screensaver) at about 8 frames a second; the
   deck itself plays them at 15 or more.
 - macOS: after HubDeck restarts, the keys or the dial sometimes stop taking pictures; HubDeck tries
@@ -162,13 +173,16 @@ registration), a shared profiles gallery, more than one base.
   speakers or microphone; play sounds (a small soundboard).
 - Multimedia (play, pause, tracks), now playing with cover art, seek in 12 players; monitor brightness (DDC/CI);
   system monitor (CPU, memory, GPU, temperatures, on macOS too); clock and timer; deck brightness.
+- On the dial for fun and focus: Mochi, a pet that gets hungry, sleepy and happy (with a picture of
+  your own as its body if you like), Pomodoro and the weather; screensavers for the whole deck.
 
 **Plugins made for Stream Deck**
 - Install a `.streamDeckPlugin` (open it with HubDeck, drop it on the window, or pick it), use
-  the plugins Elgato's Stream Deck app already installed, or pick one from a catalog of about 200
-  open-source plugins and the 300 most downloaded on Elgato Marketplace (Settings > Plugins:
-  Discord, Spotify, OBS, Home Assistant, Philips Hue, Govee, VS Code and more), and its actions join
-  "What should it do?". 26 of 33 popular ones checked run on Windows
+  the plugins Elgato's Stream Deck app already installed, or pick one in the Plugins tab: about
+  300 from Elgato Marketplace's open ones, the OpenAction catalog and GitHub (Discord, Spotify,
+  OBS, Home Assistant, Philips Hue, VS Code and more), with filters for the source, this computer,
+  dial and knobs and what was tried in HubDeck. *Use it* after Install opens the deck with the
+  plugin's actions first, and they join "What should it do?". 44 of 53 popular ones checked run on Windows
   ([the list](docs/STREAMDECK-PLUGINS.md#tried)). Keys are a 5x3
   keypad, the dial and knobs are dials, the plugin's own settings page shows in the panel on the right.
   Many plugins are written in JavaScript and need [Node.js](https://nodejs.org) 20 or later
@@ -243,11 +257,10 @@ lights up on the deck.
 
 ![The tour: a deck made at once and walked through part by part](docs/images/hubdeck-tour.png)
 
-**Plugins**: about 200 open-source Stream Deck plugins and Elgato Marketplace's most downloaded
-one click away, and the ones your Stream Deck app has; each shows its CPU and memory, and you can
-stop and start it by hand.
+**Plugins**: about 300 Stream Deck plugins one click away in the Plugins tab, and the ones your
+Stream Deck app has; each shows its CPU and memory, and you can stop and start it by hand.
 
-![Settings > Plugins](docs/images/hubdeck-settings.png)
+![The Plugins tab: about 300 plugins, a search and the "Tried in HubDeck" filter](docs/images/hubdeck-plugins.gif)
 
 ## FAQ
 

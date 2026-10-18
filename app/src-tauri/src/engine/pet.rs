@@ -215,6 +215,76 @@ fn w(k: f32) -> f32 {
 /// glossy eyes, lids when sleepy, a tear when sad, hearts that sway up, a bitten cookie, a
 /// nightcap; still a drawing made by code, no picture files).
 pub fn dial_svg(pet: &Pet, mood: Mood, t: f32, now: Instant, rotation: i32) -> String {
+    dial_svg_with(pet, mood, t, now, rotation, None)
+}
+
+/// The action's param of a picture of the user's own for Mochi's body (Discussions #3; owner,
+/// 2026-10-18: "tylko ta grafika bez oczu i ust i emocji"): only the body changes, the face, the
+/// moods and every reaction are drawn over it as on Mochi.
+pub const BODY_PARAM: &str = "body";
+
+/// The param of how the body picture sits: `{size, x, y}`, size in percent, x and y in dial pixels.
+pub const FIT_PARAM: &str = "bodyFit";
+
+/// A body picture of the user's own and how it sits (owner's 2a, 2026-10-18: "położenie i
+/// rozmiar ... żeby sobie sam mógł dopasować ten obrazek").
+#[derive(Debug, Clone, PartialEq)]
+pub struct Body {
+    pub name: String,
+    /// 1.0 = as big as Mochi.
+    pub size: f32,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// The body picture in a binding's params; None: Mochi's own body.
+pub fn body_of(params: &serde_json::Value) -> Option<Body> {
+    let name = params.get(BODY_PARAM).and_then(|v| v.as_str()).map(str::trim).filter(|v| !v.is_empty())?;
+    let fit = params.get(FIT_PARAM);
+    let num = |k: &str, d: f64, lo: f64, hi: f64| fit.and_then(|f| f.get(k)).and_then(|v| v.as_f64()).unwrap_or(d).clamp(lo, hi) as f32;
+    Some(Body { name: name.to_string(), size: num("size", 100.0, 40.0, 200.0) / 100.0, x: num("x", 0.0, -100.0, 100.0), y: num("y", 0.0, -100.0, 100.0) })
+}
+
+/// Mochi with the body of these params in four moments: happy, petted, hungry, asleep (the Fit
+/// field's previews); empty without a body picture.
+pub fn previews(params: &serde_json::Value) -> Vec<String> {
+    let Some(body) = body_of(params) else { return Vec::new() };
+    let now = Instant::now();
+    let pet = |moment: Option<(Moment, f32)>| Pet { needs: Needs::default(), moment: moment.map(|(m, age)| (m, now - Duration::from_secs_f32(age))), look: 0.0, file: None };
+    [(pet(None), Mood::Happy), (pet(Some((Moment::Hearts, 0.6))), Mood::Happy), (pet(None), Mood::Hungry), (pet(None), Mood::Asleep)]
+        .iter()
+        .map(|(p, mood)| dial_svg_with(p, *mood, 0.3, now, 0, Some(&body)))
+        .collect()
+}
+
+/// The dial's param naming the key that put Mochi there.
+pub const FROM_PARAM: &str = "from";
+
+/// Mochi's body on the dial when the dial's own binding has none: the one set on the key that put
+/// it there (`from`), else on any Mochi key of the profile, in their order.
+pub fn body_on(controls: &std::collections::BTreeMap<String, super::profile::Binding>, from: Option<&str>) -> Option<Body> {
+    let mochi = |b: &&super::profile::Binding| b.action == ACTION;
+    from.and_then(|f| controls.get(f)).filter(mochi).and_then(|b| body_of(&b.params)).or_else(|| controls.values().filter(mochi).find_map(|b| body_of(&b.params)))
+}
+
+/// A body picture made once and kept, the last one used (the dial draws up to 25 frames a second).
+fn body_picture(name: &str) -> Option<(String, bool)> {
+    type Kept = Option<(String, Option<(String, bool)>)>;
+    static KEPT: std::sync::Mutex<Kept> = std::sync::Mutex::new(None);
+    let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((n, picture)) = kept.as_ref()
+        && n == name
+    {
+        return picture.clone();
+    }
+    // about the body's size: a bigger picture costs every frame and shows nothing more
+    let picture = super::images::fitted(name, 160);
+    *kept = Some((name.to_string(), picture.clone()));
+    picture
+}
+
+/// Mochi with a body picture of the user's own when `body` names one (see [`BODY_PARAM`]).
+pub fn dial_svg_with(pet: &Pet, mood: Mood, t: f32, now: Instant, rotation: i32, body: Option<&Body>) -> String {
     use std::f32::consts::PI;
     let (s, c) = (240.0_f32, 120.0_f32);
     let (top, bottom) = mood.sky();
@@ -264,9 +334,21 @@ pub fn dial_svg(pet: &Pet, mood: Mood, t: f32, now: Instant, rotation: i32) -> S
     // soft edges from gradients, not blur filters: a blur was 60% of a frame (2026-10-14)
     b += &format!(r##"<ellipse cx="120" cy="199" rx="{:.1}" ry="12" fill="url(#pshd)" opacity="{:.2}"/>"##, 60.0 * (1.0 - lift / 60.0), 0.55 - lift / 90.0);
     b += &format!(r#"<g transform="translate(0 {:.1}) rotate({tilt:.1} 120 196) translate(120 196) scale({sx:.3} {sy:.3}) translate(-120 -196)">"#, -lift);
-    b += &format!(r#"<path d="{SHAPE}" fill="url(#pbd)"/><path d="{SHAPE}" fill="url(#psh)"/>"#);
-    // the soft shine on the left (the lit edge on the right went: owner, "wygląda słabo")
-    b += r##"<ellipse cx="94" cy="100" rx="22" ry="14" fill="url(#pglo)" opacity=".6" transform="rotate(-28 94 100)"/><circle cx="86" cy="95" r="3.2" fill="#fff" opacity=".9"/>"##;
+    match body.and_then(|fit| body_picture(&fit.name).map(|p| (p, fit))) {
+        // the picture stands where Mochi stands, a little bigger than it, in its own shape: what
+        // is see-through in it stays so, a picture without see-through parts is its rectangle
+        // (owner, 2026-10-18: "alfa jest brana z obrazka - a nie że zawsze jest kształt mochi");
+        // its size grows from the ground up
+        Some(((uri, _), fit)) => {
+            let (w, h) = (152.0 * fit.size, 140.0 * fit.size);
+            b += &format!(r#"<image href="{uri}" x="{:.1}" y="{:.1}" width="{w:.1}" height="{h:.1}" preserveAspectRatio="xMidYMax meet"/>"#, 120.0 - w / 2.0 + fit.x, 196.0 - h + fit.y)
+        }
+        None => {
+            b += &format!(r#"<path d="{SHAPE}" fill="url(#pbd)"/><path d="{SHAPE}" fill="url(#psh)"/>"#);
+            // the soft shine on the left (the lit edge on the right went: owner, "wygląda słabo")
+            b += r##"<ellipse cx="94" cy="100" rx="22" ry="14" fill="url(#pglo)" opacity=".6" transform="rotate(-28 94 100)"/><circle cx="86" cy="95" r="3.2" fill="#fff" opacity=".9"/>"##;
+        }
+    }
     // eyes: shut asleep or blinking, happy arcs while petted, glossy otherwise (lids when sleepy)
     let lx = pet.look * 6.0;
     let blink = !asleep && (t % 4.2) > 4.05;
@@ -544,6 +626,105 @@ mod tests {
         pixmap.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
     }
 
+    /// Mochi and the same moments with body pictures of the user's own (owner, 2026-10-18: only
+    /// the body changes, the face and reactions stay):
+    /// `HUBDECK_OUT=<png> HUBDECK_PICTURES=<file>,<file> cargo test -p hubdeck pet_body_sheet -- --ignored`
+    /// (one row of Mochi, then one row a picture)
+    #[test]
+    #[ignore]
+    fn pet_body_sheet() {
+        super::super::images::init(&std::env::temp_dir().join(format!("hubdeck-pet-sheet-{}", std::process::id())));
+        let mut rows: Vec<Option<String>> = vec![None];
+        for file in std::env::var("HUBDECK_PICTURES").expect("HUBDECK_PICTURES").split(',') {
+            let ext = file.rsplit('.').next().unwrap_or("png").to_lowercase();
+            rows.push(Some(super::super::images::import_bytes(&std::fs::read(file).unwrap(), &ext).unwrap()));
+        }
+        let now = Instant::now();
+        let at = |m: Moment, age: f32| Pet { needs: Needs::default(), moment: Some((m, now - Duration::from_secs_f32(age))), look: 0.0, file: None };
+        let calm = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        // happy, a press (hearts), a turn (hop), a feed (cookie), hungry, sad, late (sleepy), asleep
+        let shots: Vec<(Pet, Mood)> = vec![
+            (calm.clone(), Mood::Happy),
+            (at(Moment::Hearts, 0.5), Mood::Happy),
+            (at(Moment::Hop(1), 0.2), Mood::Happy),
+            (at(Moment::Munch, 0.6), Mood::Happy),
+            (calm.clone(), Mood::Hungry),
+            (calm.clone(), Mood::Sad),
+            (calm.clone(), Mood::Sleepy),
+            (calm.clone(), Mood::Asleep),
+        ];
+        let mut out = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="2040" height="{}"><rect width="100%" height="100%" fill="#16141c"/>"##, 15 + rows.len() * 255);
+        for (row, body) in rows.iter().enumerate() {
+            for (col, (pet, mood)) in shots.iter().enumerate() {
+                let fit = body.as_ref().map(|name| Body { name: name.clone(), size: 1.0, x: 0.0, y: 0.0 });
+                let svg = dial_svg_with(pet, *mood, 0.3, now, 0, fit.as_ref());
+                let inner = svg.trim_start_matches(r#"<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">"#).trim_end_matches("</svg>");
+                // every dial's ids are its own: the clip path of one must not cut the next
+                let inner = inner.replace("pbody", &format!("pbody{row}x{col}"));
+                out += &format!(r#"<svg x="{}" y="{}" width="240" height="240">{inner}</svg>"#, 15 + col * 253, 15 + row * 255);
+            }
+        }
+        out += "</svg>";
+        let r = super::super::render::Renderer::default();
+        std::fs::write(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT"), r.png(&out).unwrap()).unwrap();
+    }
+
+    /// A body picture of the user's own: only the body changes (owner, 2026-10-18).
+    #[test]
+    fn a_body_picture_keeps_the_face() {
+        // the pictures folder of this test run (another test may have set it first)
+        super::super::images::init(&std::env::temp_dir().join(format!("hubdeck-pet-body-{}", std::process::id())));
+        let store = |img: image::RgbaImage| {
+            let mut png = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+            super::super::images::import_bytes(&png, "png").unwrap()
+        };
+        let red = store(image::RgbaImage::from_pixel(400, 400, image::Rgba([230, 20, 20, 255])));
+        // a cut-out: a red square on a see-through background
+        let cut = store(image::RgbaImage::from_fn(300, 300, |x, y| if (60..240).contains(&x) && (60..240).contains(&y) { image::Rgba([230, 20, 20, 255]) } else { image::Rgba([0, 0, 0, 0]) }));
+        let pet = Pet { needs: Needs::default(), moment: None, look: 0.0, file: None };
+        let r = super::super::render::Renderer::default();
+        let reds = |svg: &str| image::load_from_memory(&r.jpeg(svg).unwrap()).unwrap().to_rgb8().pixels().filter(|p| p[0] > 180 && p[1] < 80 && p[2] < 80).count();
+        let now = Instant::now();
+        let mochi = dial_svg(&pet, Mood::Happy, 0.3, now, 0);
+        for (name, cut_out) in [(&red, false), (&cut, true)] {
+            let svg = dial_svg_with(&pet, Mood::Happy, 0.3, now, 0, body_of(&serde_json::json!({ "body": name })).as_ref());
+            assert!(svg.contains("<image") && !svg.contains("url(#pbd)"), "the picture is the body");
+            assert!(!svg.contains("clip-path"), "its own shape, never Mochi's (cut-out: {cut_out})");
+            assert!(svg.contains("url(#pey)") && svg.contains("url(#pblu)"), "its eyes and blush stay");
+            assert!(reds(&svg) > 5000, "the picture shows: {}", reds(&svg));
+            // the face is drawn over the picture: the same eyes and mouth as Mochi's
+            let face = |s: &str| s[s.find("url(#pey)").unwrap()..].to_string();
+            assert_eq!(face(&svg)[..400], face(&mochi)[..400]);
+        }
+        // the moods and reactions stay with a picture
+        let red_body = body_of(&serde_json::json!({ "body": red })).unwrap();
+        let asleep = dial_svg_with(&pet, Mood::Asleep, 0.3, now, 0, Some(&red_body));
+        assert!(asleep.contains("#2f3a8f"), "the nightcap");
+        let fed = Pet { moment: Some((Moment::Munch, now)), ..pet.clone() };
+        assert!(dial_svg_with(&fed, Mood::Happy, 0.3, now, 0, Some(&red_body)).contains("pbite"), "the cookie");
+        // set on the key that brings Mochi to the dial (the Fun page's Mochi key): its body there
+        let key: super::super::profile::Binding = serde_json::from_value(serde_json::json!({"action": ACTION, "params": {"press": "dial", "body": red}})).unwrap();
+        let dial: super::super::profile::Binding = serde_json::from_value(serde_json::json!({"action": ACTION, "params": {}})).unwrap();
+        let controls = std::collections::BTreeMap::from([("dial".to_string(), dial), ("fun/keys.10".to_string(), key)]);
+        assert_eq!(body_on(&controls, None).map(|b| b.name), Some(red.clone()));
+        // two Mochi keys with their own pictures: the dial shows the one of the key that put it there
+        let blue = store(image::RgbaImage::from_pixel(50, 50, image::Rgba([20, 40, 230, 255])));
+        let mut controls = controls;
+        controls.insert("keys.10".into(), serde_json::from_value(serde_json::json!({"action": ACTION, "params": {"press": "dial", "body": blue}})).unwrap());
+        assert_eq!(body_on(&controls, Some("keys.10")).map(|b| b.name), Some(blue));
+        assert_eq!(body_on(&controls, Some("fun/keys.10")).map(|b| b.name), Some(red.clone()));
+        // a picture that is gone: Mochi's own body
+        assert!(dial_svg_with(&pet, Mood::Happy, 0.3, now, 0, body_of(&serde_json::json!({ "body": "gone.png" })).as_ref()).contains("url(#pbd)"));
+        // its size and place: half as big, moved right and down; values out of range are held in
+        let small = body_of(&serde_json::json!({ "body": red, "bodyFit": { "size": 50, "x": 20, "y": 10 } })).unwrap();
+        assert_eq!((small.size, small.x, small.y), (0.5, 20.0, 10.0));
+        assert!(dial_svg_with(&pet, Mood::Happy, 0.3, now, 0, Some(&small)).contains(r#"x="102.0" y="136.0" width="76.0" height="70.0""#));
+        assert!(reds(&dial_svg_with(&pet, Mood::Happy, 0.3, now, 0, Some(&small))) < reds(&dial_svg_with(&pet, Mood::Happy, 0.3, now, 0, Some(&red_body))));
+        assert_eq!(body_of(&serde_json::json!({ "body": red, "bodyFit": { "size": 9000 } })).unwrap().size, 2.0);
+        assert_eq!(body_of(&serde_json::json!({ "body": " " })), None);
+    }
+
     /// How long a dial frame of Mochi takes to draw and encode (release: `--release`).
     #[test]
     #[ignore]
@@ -570,6 +751,20 @@ mod tests {
             }
             println!("{label}: {:?} a frame", started.elapsed() / 30);
         }
+        // a body picture of the user's own: a photo-like one, 1200 px, made once to 160 px
+        super::super::images::init(&std::env::temp_dir().join(format!("hubdeck-pet-time-{}", std::process::id())));
+        let mut png = Vec::new();
+        image::RgbImage::from_fn(1200, 1200, |x, y| image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let body = super::super::images::import_bytes(&png, "png").unwrap();
+        let pet = Pet { needs: Needs::default(), moment: Some((Moment::Hearts, base)), look: 0.0, file: None };
+        let started = Instant::now();
+        for f in 0..30 {
+            let svg = dial_svg_with(&pet, Mood::Happy, f as f32 * 0.06, base + Duration::from_millis(f * 60), 0, body_of(&serde_json::json!({ "body": body })).as_ref());
+            r.jpeg(&svg).unwrap();
+        }
+        println!("hearts with a body picture: {:?} a frame", started.elapsed() / 30);
     }
 
     /// What a second of Mochi at rest costs to draw: before (12 frames, each drawn) and now (25,

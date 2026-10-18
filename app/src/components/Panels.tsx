@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { confirmed } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type CatalogPlugin, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -12,7 +13,7 @@ import { setTheme, useTheme, type Theme } from "../theme";
 import { osName, updates, useAppVersion, useUpdateAvailable, type UpdateInfo } from "../update";
 import { share, type GalleryEntry } from "../share";
 import { detachedKinds, keysOfKind, MODULE_KINDS, ownedKey, placeModules, type Placement } from "../layout";
-import { getLanguage, localizeError, localizeGame, localizePreset, t, useLanguage, type Key, type Lang } from "../i18n";
+import { BUILT_IN_LANGUAGES, getLanguage, languageTemplate, localizeError, localizeGame, localizePreset, t, useLanguage, type Key } from "../i18n";
 
 const moduleName = (kind: ModuleKind) => t(`module.${kind}`);
 
@@ -308,7 +309,7 @@ async function editProfile(id: string, change: (p: Profile) => Profile) {
 }
 
 function deleteProfile(p: ProfileSummary) {
-  if (window.confirm(t("profile.confirmDelete", { name: p.name }))) api.deleteProfile(p.id).catch((e) => window.alert(String(e)));
+  void confirmed(t("profile.confirmDelete", { name: p.name })).then((yes) => yes && api.deleteProfile(p.id).catch((e) => window.alert(String(e))));
 }
 
 /** True while HubDeck's own window has the focus. */
@@ -874,6 +875,7 @@ export function TopBar({
   view,
   onOpenProfile,
   onOpenSettings,
+  onOpenPlugins,
   onOpenGames,
   onOpenGallery,
   onOpenForApp,
@@ -892,6 +894,7 @@ export function TopBar({
   onOpenGallery: () => void;
   onOpenProfile: () => void;
   onOpenSettings: () => void;
+  onOpenPlugins: () => void;
   onOpenGames: () => void;
 }) {
   useLanguage();
@@ -920,6 +923,10 @@ export function TopBar({
         </button>
       )}
       <HelpMenu />
+      <button className="tool ghost" onClick={onOpenPlugins}>
+        <Icon name="plug" />
+        {t("topbar.plugins")}
+      </button>
       <button className="tool ghost" onClick={onOpenSettings}>
         <Icon name="settings" />
         {t("topbar.settings")}
@@ -1331,7 +1338,7 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
             className="tool danger"
             disabled={state.profiles.length <= 1}
             onClick={() => {
-              if (window.confirm(t("profile.confirmDelete", { name: profile.name }))) api.deleteProfile(profile.id).catch((e) => setMessage(String(e)));
+              void confirmed(t("profile.confirmDelete", { name: profile.name })).then((yes) => yes && api.deleteProfile(profile.id).catch((e) => setMessage(String(e))));
             }}
           >
             <Icon name="trash" />
@@ -1345,12 +1352,14 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
 }
 
 /** Settings of the whole app: language, look, screens, profiles folder, backups, connections, updates, help, about. */
-export type SettingsSection = "general" | "lights" | "screens" | "connections" | "plugins" | "backups" | "updates" | "help";
+export type SettingsSection = "general" | "lights" | "screens" | "text" | "connections" | "plugins" | "backups" | "updates" | "help";
 
 const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
   { id: "general", icon: "settings", label: "settings.general" },
   // lights and screens in one section (owner's pick 5a); "screens" still opens it
   { id: "lights", icon: "sun", label: "settings.lightsScreens" },
+  // the font of the deck's text, like Stream Deck's Style tab (owner's pick 2a, 2026-10-18)
+  { id: "text", icon: "type", label: "settings.text" },
   { id: "connections", icon: "link", label: "settings.connections" },
   { id: "plugins", icon: "plug", label: "topbar.plugins" },
   { id: "backups", icon: "archive", label: "settings.backups" },
@@ -1360,8 +1369,8 @@ const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
 
 /** Settings as a page of its own over the whole window (owner, 2026-10-13: a panel in the right
  *  column covered the key editor): sections on the left, one section's content on the right. */
-export function SettingsPanel({ live, view, section, onSection, onClose, onCalibrate, onTour, onBuild }: { live: LiveState; view: EngineView; section: SettingsSection; onSection: (s: SettingsSection) => void; onClose: () => void; onCalibrate: () => void; onTour?: () => void; onBuild?: () => void }) {
-  const { lang, setLanguage } = useLanguage();
+export function SettingsPanel({ live, view, section, onSection, onClose, onCalibrate, onTour, onBuild, onBrowsePlugins }: { live: LiveState; view: EngineView; section: SettingsSection; onSection: (s: SettingsSection) => void; onClose: () => void; onCalibrate: () => void; onTour?: () => void; onBuild?: () => void; onBrowsePlugins?: () => void }) {
+  useLanguage();
   return (
     <div className="settings-page">
       <header className="settings-head">
@@ -1383,13 +1392,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
         <div className="settings-content sectioned" key={section}>
           {section === "general" && (
             <>
-              <section className="sec">
-                <h3 className="sec-title">{t("topbar.language")}</h3>
-                <select id="language" aria-label={t("topbar.language")} className="input" value={lang} onChange={(e) => setLanguage(e.target.value as Lang)}>
-                  <option value="en">English</option>
-                  <option value="pl">Polski</option>
-                </select>
-              </section>
+              <LanguageSettings />
               <Appearance view={view} />
               <SwitchingSettings view={view} />
               <ProfilesFolder />
@@ -1411,8 +1414,9 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
               )}
             </>
           )}
+          {section === "text" && <DeckTextSettings />}
           {section === "connections" && <Connections />}
-          {section === "plugins" && <PluginsList />}
+          {section === "plugins" && <PluginsList onBrowse={onBrowsePlugins} />}
           {section === "backups" && <Backups />}
           {section === "updates" && <UpdatesSettings />}
           {section === "help" && (
@@ -1561,6 +1565,73 @@ function LightsSettings() {
   );
 }
 
+/** English, Polish, or a language file of the user's own (`languages/` in the data folder), and
+ * the way to make one: every English text in `template.json` (Discussions #3, 2026-10-18). */
+function LanguageSettings() {
+  const { lang, setLanguage } = useLanguage();
+  const [files, setFiles] = useState<{ code: string; name: string }[]>([]);
+  const [message, setMessage] = useState("");
+  const refresh = () => api.languages().then(setFiles, () => {});
+  useEffect(() => {
+    refresh();
+    // a file added while the window is open shows when it comes back to the front
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+  const pick = (code: string) => {
+    setMessage("");
+    if (code === "en" || code === "pl") return setLanguage(code);
+    const builtIn = BUILT_IN_LANGUAGES[code];
+    (builtIn ? builtIn.load() : api.languageFile(code)).then(
+      (file) => setLanguage(code, file),
+      (e) => setMessage(localizeError(String(e))),
+    );
+  };
+  const makeTemplate = async () => {
+    setMessage("");
+    try {
+      const [catalog, presets, games] = await Promise.all([api.catalog(), api.presets(), api.games().catch(() => [])]);
+      const path = await api.languageTemplate(languageTemplate(catalog.actions, presets, games));
+      setMessage(t("language.templateMade", { path }));
+    } catch (e) {
+      setMessage(localizeError(String(e)));
+    }
+  };
+  return (
+    <section className="sec">
+      <h3 className="sec-title">{t("topbar.language")}</h3>
+      <select id="language" aria-label={t("topbar.language")} className="input" value={lang} onChange={(e) => pick(e.target.value)}>
+        <option value="en">English</option>
+        <option value="pl">Polski</option>
+        {Object.entries(BUILT_IN_LANGUAGES).map(([code, l]) => (
+          <option key={code} value={code}>
+            {l.name}
+          </option>
+        ))}
+        {files.filter((f) => !BUILT_IN_LANGUAGES[f.code]).map((f) => (
+          <option key={f.code} value={f.code}>
+            {f.name}
+          </option>
+        ))}
+        {/* a file picked before and gone now: the window is in English, the list says so */}
+        {lang !== "en" && lang !== "pl" && !BUILT_IN_LANGUAGES[lang] && !files.some((f) => f.code === lang) && <option value={lang}>{lang}</option>}
+      </select>
+      <p className="help">{t("language.filesHelp")}</p>
+      <div className="row wrap">
+        <button className="tool align-start" onClick={makeTemplate}>
+          <Icon name="file-plus" />
+          {t("language.makeFile")}
+        </button>
+        <button className="tool align-start" onClick={() => api.languagesOpenFolder().catch((e) => setMessage(String(e)))}>
+          <Icon name="folder-open" />
+          {t("language.openFolder")}
+        </button>
+      </div>
+      {message && <p className="help">{message}</p>}
+    </section>
+  );
+}
+
 function Appearance({ view }: { view: EngineView }) {
   useLanguage();
   const theme = useTheme();
@@ -1704,8 +1775,8 @@ function GoBack() {
       <button
         className="tool align-start"
         disabled={state === "going"}
-        onClick={() => {
-          if (!window.confirm(t("updates.backConfirm", { version: previous.version }))) return;
+        onClick={async () => {
+          if (!(await confirmed(t("updates.backConfirm", { version: previous.version })))) return;
           setState("going");
           updates.rollback(previous.version).catch((e) => setState({ error: String(e) }));
         }}
@@ -2106,7 +2177,7 @@ export function PageBar({ view }: { view: EngineView }) {
           <button
             className="tool danger small"
             onClick={() => {
-              if (window.confirm(t("pages.confirmDelete", { name: currentPage.name }))) api.deletePage(profile.id, currentPage.id).catch((e) => console.error(e));
+              void confirmed(t("pages.confirmDelete", { name: currentPage.name })).then((yes) => yes && api.deletePage(profile.id, currentPage.id).catch((e) => console.error(e)));
             }}
           >
             {t("pages.delete")}
@@ -2127,7 +2198,7 @@ function ScreensSettings() {
   if (!s) return null;
   const save = (next: Screens) => {
     setS(next);
-    setPreviewSalt(next.appIcons ?? "");
+    setPreviewSalt(`${next.appIcons ?? ""}|${next.deckFont ?? ""}`);
     api.setScreens(next).catch(() => {});
   };
   return (
@@ -2193,6 +2264,54 @@ function ScreensSettings() {
           <option value="fillLabel">{t("screens.appIconsFillLabel")}</option>
         </select>
         <p className="help">{t("screens.appIconsHelp")}</p>
+      </div>
+    </section>
+  );
+}
+
+/** The font of the text on the keys and the dial, any font on this computer (Discussions #3, owner's
+ * pick 2a, 2026-10-18: a section of its own, as Stream Deck's Style tab), with a few labels in it. */
+function DeckTextSettings() {
+  useLanguage();
+  const [s, setS] = useState<Screens | null>(null);
+  const [fonts, setFonts] = useState<string[]>([]);
+  useEffect(() => {
+    api.screens().then(setS, () => {});
+    api.deckFonts().then(setFonts, () => {});
+  }, []);
+  if (!s) return null;
+  const save = (next: Screens) => {
+    setS(next);
+    setPreviewSalt(`${next.appIcons ?? ""}|${next.deckFont ?? ""}`);
+    api.setScreens(next).catch(() => {});
+  };
+  const family = s.deckFont ? `"${s.deckFont}", "IBM Plex Sans", sans-serif` : `"IBM Plex Sans", sans-serif`;
+  return (
+    <section className="sec">
+      <h3 className="sec-title">{t("settings.text")}</h3>
+      <div className="field">
+        <label htmlFor="deck-font" className="label">
+          {t("screens.font")}
+        </label>
+        <select id="deck-font" className="input" value={s.deckFont ?? ""} onChange={(e) => save({ ...s, deckFont: e.target.value })}>
+          <option value="">{t("screens.fontOwn")}</option>
+          {fonts
+            .filter((f) => f !== "IBM Plex Sans")
+            .map((f) => (
+              <option key={f} value={f} style={{ fontFamily: `"${f}"` }}>
+                {f}
+              </option>
+            ))}
+        </select>
+        <p className="help">{t("screens.fontHelp")}</p>
+      </div>
+      {/* how labels read in it, Japanese too */}
+      <div className="font-sample" aria-label={t("screens.fontSample")} style={{ fontFamily: family }}>
+        {["Mute", "Next track", "ミュート", "配信開始", "Żółw 42"].map((label) => (
+          <span key={label} className="font-key">
+            {label}
+          </span>
+        ))}
       </div>
     </section>
   );
@@ -2278,8 +2397,8 @@ function Backups() {
               </span>
               <button
                 className="tool ghost small"
-                onClick={() => {
-                  if (window.confirm(t("backups.confirm", { when: b.when })))
+                onClick={async () => {
+                  if (await confirmed(t("backups.confirm", { when: b.when })))
                     api.restoreBackup(b.id).then(
                       () => (setMessage(t("backups.restored")), load()),
                       (e) => setMessage(String(e)),
@@ -2860,7 +2979,7 @@ function WheelChoices() {
 
 /** Installed plugins and where to put new ones. */
 /** Installed plugins (Settings > Plugins). */
-function PluginsList() {
+function PluginsList({ onBrowse }: { onBrowse?: () => void }) {
   useLanguage();
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -2901,7 +3020,16 @@ function PluginsList() {
         {message && <p className="help">{message}</p>}
       </section>
       <SdFromStreamDeck installed={new Set(plugins.map((p) => p.id))} onInstalled={() => api.plugins().then(setPlugins, () => {})} />
-      <SdCatalog installed={new Set(plugins.map((p) => p.id))} onInstalled={() => api.plugins().then(setPlugins, () => {})} />
+      {onBrowse && (
+        <section className="sec">
+          <h3 className="sec-title">{t("plugins.catalog")}</h3>
+          <p className="help">{t("plugins.browseHelp")}</p>
+          <button className="tool align-start" onClick={onBrowse}>
+            <Icon name="search" />
+            {t("plugins.browse")}
+          </button>
+        </section>
+      )}
       <section className="sec">
         <h3 className="sec-title">
           {t("plugins.installed")} <span className="n">{plugins.length}</span>
@@ -2975,6 +3103,10 @@ function SdFromStreamDeck({ installed, onInstalled }: { installed: Set<string>; 
     api.sdStreamDeck().then(setList, () => {});
   }, []);
   if (list.length === 0) return null;
+  // Elgato's encrypted ones cannot run here: one line says how many, so none seems lost (owner's
+  // 5a, 2026-10-18: "pokażmy te które są dostępne")
+  const locked = (p: LocalPlugin) => !!p.problem && /encrypted/i.test(p.problem) && !installed.has(p.id);
+  const lockedCount = list.filter(locked).length;
   const use = (p: LocalPlugin) => {
     setState((s) => ({ ...s, [p.id]: "installing" }));
     api.sdImport(p.id).then(
@@ -2987,7 +3119,7 @@ function SdFromStreamDeck({ installed, onInstalled }: { installed: Set<string>; 
       <h3 className="sec-title">{t("plugins.fromSd")}</h3>
       <p className="help">{t("plugins.fromSdHelp")}</p>
       <ul className="cards">
-        {list.map((p) => {
+        {list.filter((p) => !locked(p)).map((p) => {
           const s = state[p.id];
           return (
             <li key={p.id} className="card catalog-item">
@@ -3017,6 +3149,7 @@ function SdFromStreamDeck({ installed, onInstalled }: { installed: Set<string>; 
           );
         })}
       </ul>
+      {lockedCount > 0 && <p className="help">{t("plugins.locked", { count: lockedCount })}</p>}
     </section>
   );
 }
@@ -3093,105 +3226,6 @@ export function PluginFileSheet({ path, onClose }: { path: string; onClose: () =
         </section>
       </aside>
     </Sheet>
-  );
-}
-
-/** How many catalog plugins show before the user searches. */
-const CATALOG_SHOWN = 30;
-
-/** The open-source plugin catalog (Settings > Plugins): fetched only when asked, search, Install. */
-function SdCatalog({ installed, onInstalled }: { installed: Set<string>; onInstalled: () => void }) {
-  useLanguage();
-  const [list, setList] = useState<CatalogPlugin[] | "loading" | "offline" | null>(null);
-  const [query, setQuery] = useState("");
-  const [state, setState] = useState<Record<string, "installing" | string>>({});
-  const load = () => {
-    setList("loading");
-    api.sdCatalog().then(setList, () => setList("offline"));
-  };
-  const install = (p: CatalogPlugin) => {
-    setState((s) => ({ ...s, [p.id]: "installing" }));
-    api.sdCatalogInstall(p.id).then(
-      () => (setState((s) => ({ ...s, [p.id]: "" })), onInstalled()),
-      (e) => setState((s) => ({ ...s, [p.id]: localizeError(String(e)) })),
-    );
-  };
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  // plugins only Elgato's app installs show when searched for, to say why they cannot come here
-  const found = Array.isArray(list) ? list.filter((p) => (words.length > 0 || !p.elgatoOnly) && words.every((w) => `${p.name} ${p.author} ${p.description}`.toLowerCase().includes(w))) : [];
-  return (
-    <section className="sec">
-      <h3 className="sec-title">{t("plugins.catalog")}</h3>
-      <p className="help">{t("plugins.catalogHelp")}</p>
-      {list === null ? (
-        <button className="tool align-start" onClick={load}>
-          <Icon name="search" />
-          {t("plugins.catalogOpen")}
-        </button>
-      ) : list === "loading" ? (
-        <p className="help">{t("plugins.catalogLoading")}</p>
-      ) : list === "offline" ? (
-        <div className="row wrap">
-          <p className="help grow">{t("plugins.catalogOffline")}</p>
-          <button className="tool small" onClick={load}>
-            <Icon name="refresh-cw" />
-            {t("gallery.retry")}
-          </button>
-        </div>
-      ) : (
-        <>
-          <input className="input" type="search" placeholder={t("plugins.catalogSearch")} aria-label={t("plugins.catalogSearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
-          {found.length === 0 ? (
-            <p className="help">{t("plugins.catalogNone")}</p>
-          ) : (
-            <ul className="cards">
-              {found.slice(0, CATALOG_SHOWN).map((p) => {
-                const s = state[p.id];
-                return (
-                  <li key={p.id} className="card catalog-item">
-                    <img className="catalog-icon" src={p.icon} alt="" loading="lazy" onError={(e) => (e.currentTarget.style.visibility = "hidden")} />
-                    <div className="grow">
-                      <div className="row">
-                        <strong className="grow">{p.name}</strong>
-                        {installed.has(p.id) ? (
-                          <span className="pill is-ok">{t("plugins.isInstalled")}</span>
-                        ) : p.elgatoOnly ? (
-                          <span className="pill">{t("plugins.elgatoOnly")}</span>
-                        ) : (
-                          <button className="tool small" disabled={s === "installing"} onClick={() => install(p)}>
-                            <Icon name="download" />
-                            {s === "installing" ? t("plugins.installing") : t("plugins.install")}
-                          </button>
-                        )}
-                      </div>
-                      <div className="help">{p.description}</div>
-                      {p.elgatoOnly && !installed.has(p.id) && <div className="help">{t("plugins.elgatoOnlyHelp")}</div>}
-                      <div className="meta">
-                        {p.author && <span>{t("plugins.byAuthor", { author: p.author })}</span>}
-                        {p.tried && <span className="is-ok">{t("plugins.tried", { systems: p.tried })}</span>}
-                        {p.aiAssisted && <span>{t("plugins.aiAssisted")}</span>}
-                        {p.repository && (
-                          <button className="link" onClick={() => api.openLink(p.repository).catch(() => {})}>
-                            {t("plugins.source")}
-                          </button>
-                        )}
-                        {p.elgato && (
-                          <button className="link" onClick={() => api.openLink(p.elgato!).catch(() => {})}>
-                            {t("plugins.elgatoPage")}
-                          </button>
-                        )}
-                      </div>
-                      {s && s !== "installing" && <div className="help catalog-err">{s}</div>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          {found.length > CATALOG_SHOWN && <p className="help">{t("plugins.catalogMore", { shown: CATALOG_SHOWN, count: found.length })}</p>}
-        </>
-      )}
-    </section>
   );
 }
 

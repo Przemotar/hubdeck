@@ -1,0 +1,234 @@
+{
+ "_comment": "Shared by the app (sdcatalog.rs) and scripts/plugins/catalog.mjs. wontRun: catalog plugins that install but cannot run outside Elgato's app, with why; both leave them out (owner, 2026-10-18: \"pokażmy te które są dostępne i tyle\"). tried: catalog plugins checked in HubDeck and on which systems (installed from the catalog, started, connected and drew a key; scripts/ui/plugin-check.mjs, 2026-10-16/17; Spotify on the owner's Mac deck, 2026-10-13). elgatoOpen: Elgato Marketplace plugins whose authors publish an open plugin file: Elgato's product id, the plugin's id, and its GitHub repository when the OpenAction catalog does not have it (matched by hand on 2026-10-17: author and plugin id checked).",
+ "tried": {
+  "com.ntanis.essentials-for-spotify": "Windows, macOS",
+  "me.amankhanna.oadiscord": "Windows",
+  "me.amankhanna.oasystem": "Windows",
+  "com.jk.weather": "Windows",
+  "de.perdoctus.streamdeck.homeassistant": "Windows",
+  "com.chrisregado.googlemeet": "Windows",
+  "fr.twitchat": "Windows",
+  "com.fredemmott.audiooutputswitch": "Windows",
+  "com.moeilijk.hwinfo": "Windows",
+  "com.elgato.philips-hue": "Windows",
+  "com.elgato.cpu": "Windows",
+  "de.tobimori.streamdeck.ifttt": "Windows",
+  "com.fredemmott.micmutetoggle": "Windows",
+  "org.tynsoe.streamdeck.wsproxy": "Windows",
+  "fun.shiro.ytmd": "Windows",
+  "com.jetbrains.ide": "Windows",
+  "cz.danol.discordmixer": "Windows",
+  "com.frostycoolslug.goxlr-utility": "Windows",
+  "org.xiphis.ohs": "Windows",
+  "com.github.mjbnz.sd-api-request": "Windows",
+  "com.marlburrow.uptime-kuma": "Windows",
+  "com.5e.hwinfo-reader": "Windows",
+  "com.geekyeggo.sounddeck": "Windows",
+  "dev.santiagomartin.devops": "Windows",
+  "tech.flighttracker.streamdeck": "Windows",
+  "com.start-automating.scriptdeck": "Windows",
+  "com.javanpoirier.audiomixer": "Windows",
+  "com.nthompson.gpu": "Windows",
+  "com.nicollasr.streamdeckvsc": "Windows",
+  "io.bitfocus.companion-plugin": "Windows",
+  "dev.cazzar.streamdeck.vtubestudio": "Windows",
+  "dev.theca11.multiobs": "Windows",
+  "com.rgpaul.vlc": "Windows",
+  "com.victorgrycuk.colorpicker": "Windows",
+  "com.gallowaylabs.tomato": "Windows",
+  "com.viddie.dice": "Windows",
+  "com.moeilijk.lhm": "Windows",
+  "eu.dirondin.streamdeck.ram": "Windows",
+  "com.nagopy.streamdeck.tasktimer": "Windows",
+  "com.dlprows.focusvolumecontrol": "Windows",
+  "com.baptiewright.nanoleaf": "Windows",
+  "com.zergo0.teamspeak3integration": "Windows",
+  "com.geekyeggo.windowsdisplaysettings": "Windows",
+  "fail.marc.onairclock": "Windows"
+ },
+ "wontRun": {
+  "com.exension.stocks": "writes its log into Elgato's own plugins folder and stops when that folder is not there (2026-10-18)"
+ },
+ "elgatoOpen": [
+  [
+   "cf41cd3d-ef80-4122-bef2-7f4fb82fcaac",
+   "com.fredemmott.audiooutputswitch",
+   null
+  ],
+  [
+   "705c5433-1e05-4d8a-844f-b5914b7f642f",
+   "com.fredemmott.micmutetoggle",
+   null
+  ],
+  [
+   "abaf7a76-225a-42db-b911-fc3f66f3878c",
+   "cz.danol.discordmixer",
+   null
+  ],
+  [
+   "131c7cee-6a63-4e89-840e-156b0d17c0bb",
+   "com.geekyeggo.sounddeck",
+   null
+  ],
+  [
+   "884c8c3e-8477-4ecb-99e0-f3101bbfa0aa",
+   "de.perdoctus.streamdeck.homeassistant",
+   null
+  ],
+  [
+   "6cf535ec-acc0-436a-a7da-5a7697c56d0b",
+   "com.javanpoirier.audiomixer",
+   null
+  ],
+  [
+   "27f49792-2de3-455f-8892-fd382716f548",
+   "com.elgato.philips-hue",
+   null
+  ],
+  [
+   "ecbbfd1e-6a47-43b3-8056-3aa69d35e8e1",
+   "com.geekyeggo.goveecontroller",
+   null
+  ],
+  [
+   "37c38d3a-a366-426b-a56d-d56c89e5960c",
+   "com.dahnandpartners.ytticker",
+   null
+  ],
+  [
+   "d7164662-bf3f-41aa-9e16-cfc29c2212d4",
+   "com.nthompson.gpu",
+   null
+  ],
+  [
+   "61254b24-a60c-4a87-acae-70c39eda8a19",
+   "com.nicollasr.streamdeckvsc",
+   null
+  ],
+  [
+   "4dc3acfb-f1ae-496d-8c17-26975316af2d",
+   "fun.shiro.ytmd",
+   null
+  ],
+  [
+   "a7db5477-c76c-49b1-bce1-b6039f2d41d2",
+   "io.bitfocus.companion-plugin",
+   null
+  ],
+  [
+   "0ba9f87f-d5ec-44ca-98ac-6b95e6e477d3",
+   "dev.cazzar.streamdeck.vtubestudio",
+   null
+  ],
+  [
+   "378b180d-1380-4a25-9528-19c482f5a7cf",
+   "com.ntanis.essentials-for-spotify",
+   null
+  ],
+  [
+   "913e25f8-92d2-4cd2-973f-76b9d1cdc90e",
+   "de.tobimori.streamdeck.ifttt",
+   null
+  ],
+  [
+   "6926228a-2efa-4fb9-849a-3f7d9ad86a9b",
+   "dev.theca11.multiobs",
+   null
+  ],
+  [
+   "57b209e9-b4a7-4ca4-a0a5-53c79fe6bea1",
+   "com.rgpaul.vlc",
+   null
+  ],
+  [
+   "9bfc5a15-c5b3-4865-9bec-1375cc65c25d",
+   "fail.marc.onairclock",
+   null
+  ],
+  [
+   "cb3993d5-9e95-40bd-bb1d-22b3b499f5a7",
+   "com.geekyeggo.windowsdisplaysettings",
+   null
+  ],
+  [
+   "00cb3238-508b-4e7d-a380-3b0c6b21417c",
+   "com.victorgrycuk.colorpicker",
+   null
+  ],
+  [
+   "c81ceed8-448d-4649-925e-d84b58296f1e",
+   "com.gallowaylabs.tomato",
+   null
+  ],
+  [
+   "48907651-231b-4981-917e-db58885a64f8",
+   "com.exension.stocks",
+   null
+  ],
+  [
+   "45474a5c-6884-41cb-a896-411da79e0804",
+   "com.viddie.dice",
+   null
+  ],
+  [
+   "af576388-8cbb-4d59-bdec-206dc3f4168e",
+   "com.moeilijk.lhm",
+   null
+  ],
+  [
+   "d1e420bd-5437-421d-a7e1-378877908f76",
+   "eu.dirondin.streamdeck.ram",
+   "dirondin/streamdeck-ram"
+  ],
+  [
+   "5316b393-1dbc-43a4-b9b4-ad3ba9f58ff3",
+   "com.nagopy.streamdeck.tasktimer",
+   null
+  ],
+  [
+   "916c9a3f-453e-47f5-a194-5719448cdd41",
+   "com.dlprows.focusvolumecontrol",
+   null
+  ],
+  [
+   "657b3d18-a53f-45ac-a787-12b7e1adbee7",
+   "com.baptiewright.nanoleaf",
+   null
+  ],
+  [
+   "6e64a83c-f4c8-4769-b3a7-311d308295f5",
+   "com.zergo0.teamspeak3integration",
+   null
+  ],
+  [
+   "820f1bb5-465d-408b-aabf-2d46a05a10d9",
+   "fr.twitchat",
+   null
+  ],
+  [
+   "77f73a30-0336-4f4e-80b6-42e22a1a127e",
+   "me.hckr.appswitcher",
+   null
+  ],
+  [
+   "737415fa-1957-489d-a62e-1becec068b6e",
+   "co.meldstudio.streamdeck",
+   "MeldStudio/streamdeck"
+  ],
+  [
+   "ea8cc86d-1a3b-45de-893d-592d174089c9",
+   "com.5e.hwinfo-reader",
+   null
+  ],
+  [
+   "1c4afa3d-157a-4d2f-91bc-eb71865dad1c",
+   "tech.flighttracker.streamdeck",
+   null
+  ],
+  [
+   "29d301d8-e245-497e-97e0-23fb09542bb1",
+   "com.davidgolunski.goveelightcontroller",
+   null
+  ]
+ ]
+}
