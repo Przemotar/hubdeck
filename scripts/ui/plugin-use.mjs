@@ -55,7 +55,12 @@ try {
   const groupText = ((await group.innerText().catch(() => "")) ?? "").replace(/\s+/g, " ");
   check("the library opens at its actions, marked New, with how to use them", /Audio Switcher/.test(groupText) && /New/.test(groupText) && /Drag an action onto a key/.test(groupText), groupText.slice(0, 200));
   const firstGroup = ((await page.locator(".chooser-group .nm").first().innerText()) ?? "").trim();
-  check("a new plugin comes first in the library", firstGroup === "Audio Switcher", firstGroup);
+  // plugins below the built-in groups, a new one too (owner's 1b, 2026-10-18), opened and scrolled to
+  check("a new plugin sits below the built-in groups, open and in view", firstGroup !== "Audio Switcher" && (await page.locator(".chooser-group-head", { hasText: "Audio Switcher" }).first().isVisible()) && (await page.locator(".chooser-group-head", { hasText: "Audio Switcher" }).first().evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })), `first group: ${firstGroup}`);
+  // its group has the plugin's own picture, as Stream Deck shows its CategoryIcon (owner, 2026-10-18:
+  // "czy to celowo że nie mają żadnych ikon?")
+  const groupImg = await page.locator(".chooser-group-head", { hasText: "Audio Switcher" }).first().locator(".library-icon img").getAttribute("src").catch(() => null);
+  check("its group in the library has the plugin's picture", !!groupImg?.startsWith("data:image/"), String(groupImg).slice(0, 40));
   await shot("use-it");
   // drag its first action onto a key, as the hint says
   const item = group.locator(".chooser-item").first();

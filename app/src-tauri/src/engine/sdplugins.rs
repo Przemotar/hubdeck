@@ -45,6 +45,9 @@ pub struct SdManifest {
     pub actions: Vec<SdAction>,
     /// The plugin-wide settings page, used by actions without their own.
     pub inspector: Option<String>,
+    /// Its group's picture in the library, as Stream Deck shows it over the plugin's actions
+    /// (`CategoryIcon`, else the plugin's `Icon`), as a data URI.
+    pub category_icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -59,6 +62,14 @@ pub struct SdAction {
     pub keypad: bool,
     pub encoder: bool,
     pub inspector: Option<String>,
+}
+
+/// The library's group pictures of Stream Deck plugins, by group (the plugin's name): the plugin's
+/// actions were under an empty tile (owner, 2026-10-18: "czy to celowo że nie mają żadnych ikon?").
+static GROUP_ICONS: RwLock<std::collections::BTreeMap<String, String>> = RwLock::new(std::collections::BTreeMap::new());
+
+pub fn group_icons() -> std::collections::BTreeMap<String, String> {
+    GROUP_ICONS.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// An HTML plugin runs in a hidden window; the app sets how (a Tauri window per plugin).
@@ -254,7 +265,8 @@ pub fn read(v: &Value, dir: &Path) -> Result<SdManifest, String> {
                 .collect()
         })
         .unwrap_or_default();
-    Ok(SdManifest { uuid, name: s("Name"), version: s("Version"), author: s("Author"), code_path, node, platforms, actions, inspector })
+    let category_icon = [s("CategoryIcon"), s("Icon")].iter().filter(|i| !i.is_empty()).find_map(|i| image_uri(dir, i));
+    Ok(SdManifest { uuid, name: s("Name"), version: s("Version"), author: s("Author"), code_path, node, platforms, actions, inspector, category_icon })
 }
 
 /// The plugin as HubDeck's own manifest: its actions join the library under the plugin's name.
@@ -277,6 +289,10 @@ pub fn to_manifest(sd: SdManifest) -> Manifest {
         let mut reg = ACTIONS.write().unwrap_or_else(|e| e.into_inner());
         reg.retain(|(p, _)| *p != sd.uuid);
         reg.extend(sd.actions.iter().map(|a| (sd.uuid.clone(), a.clone())));
+    }
+    if let Some(icon) = &sd.category_icon {
+        let group = if sd.name.is_empty() { sd.uuid.clone() } else { sd.name.clone() };
+        GROUP_ICONS.write().unwrap_or_else(|e| e.into_inner()).insert(group, icon.clone());
     }
     let mut m = Manifest {
         id: sd.uuid.clone(),

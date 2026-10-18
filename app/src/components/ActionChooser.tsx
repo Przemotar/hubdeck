@@ -115,7 +115,7 @@ export function ActionChooser({
     setQuery("");
     window.setTimeout(() => focusRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
   }, [focusGroup]);
-  // plugins installed in this session first, marked New
+  // plugins installed in this session marked New; where they are, at the bottom
   const [fresh, setFresh] = useState<string[]>(() => newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g));
   useEffect(() => onNewPlugins(() => setFresh(newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g))), [view.catalog]);
   useEffect(() => setFresh(newPluginIds().map((id) => pluginGroup(view.catalog?.actions ?? [], id)).filter((g): g is string => !!g)), [view.catalog]);
@@ -135,7 +135,11 @@ export function ActionChooser({
   };
   const firsts = (browse ? [] : FIRST_PICKS[gesture === "tap" ? kind : "press"] ?? []).map((id) => fitting.find((a) => a.id === id)).filter((a): a is ActionDef => !!a);
   const all = [...new Set(fitting.map((a) => a.group))];
-  const groups = [...all.filter((g) => fresh.includes(g)), ...all.filter((g) => !fresh.includes(g))];
+  // built-in groups first, plugins below them, a new one too (owner's 1b, 2026-10-18: "nie powinny
+  // się dodawać na samym dole?"); Use it opens it there and scrolls to it
+  const groups = all;
+  // a plugin's group: its own picture (Stream Deck's CategoryIcon), else its first action's
+  const groupPicture = (g: string, items: ActionDef[]) => view.catalog?.groupIcons?.[g] ?? (items[0]?.icon.startsWith("data:") ? items[0].icon : null);
   const nameOf = (b: Binding) => {
     const def = raw.get(b.action);
     return b.look.label || (def ? localizeAction(def).name : b.action);
@@ -229,7 +233,13 @@ export function ActionChooser({
               return (
                 <section key={g} className={`chooser-group${g === focusGroup ? " is-focus" : ""}`} ref={g === focusGroup ? focusRef : undefined}>
                   <button type="button" className="chooser-group-head" aria-expanded={isOpen} onClick={() => setOpen((o) => (isOpen ? o.filter((x) => x !== g) : [...o, g]))}>
-                    <span className="library-icon" aria-hidden="true" style={{ "--h": groupHue(g) } as React.CSSProperties} dangerouslySetInnerHTML={{ __html: view.icons.find((i) => i.name === items[0]?.icon)?.svg ?? "" }} />
+                    {groupPicture(g, items) ? (
+                      <span className="library-icon is-picture" aria-hidden="true">
+                        <img src={groupPicture(g, items)!} alt="" />
+                      </span>
+                    ) : (
+                      <span className="library-icon" aria-hidden="true" style={{ "--h": groupHue(g) } as React.CSSProperties} dangerouslySetInnerHTML={{ __html: view.icons.find((i) => i.name === items[0]?.icon)?.svg ?? "" }} />
+                    )}
                     <span className="nm">{g}</span>
                     {fresh.includes(g) && <span className="pill is-new">{t("chooser.new")}</span>}
                     <span className="n">{items.length}</span>

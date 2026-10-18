@@ -7,7 +7,8 @@
   repositories that publish a plugin file), with filters (source, this computer, dial and knobs,
   tried in HubDeck, category), search and sorting. Only plugins that can be installed are listed:
   every repository and download is checked daily. After Install, **Use it** opens the deck with
-  the plugin's actions first in the library.
+  the plugin's actions open in the library (plugins sit below the built-in groups). A plugin's group in the library shows the plugin's own
+  picture, as in Stream Deck.
 - Dragging an action onto a key works again on Windows (broken since 0.1.3).
 - Plugin settings pages fit the panel: no fields past its edge, no empty space under them.
 - Plugins written in .NET start: HubDeck now tells plugins the system's version, as Stream Deck

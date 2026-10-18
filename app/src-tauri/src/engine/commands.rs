@@ -895,6 +895,8 @@ pub fn page_delete(engine: State<'_, Engine>, profile: String, page: String) -> 
 pub struct Catalog {
     actions: Vec<ActionDef>,
     special_keys: Vec<&'static str>,
+    /// Pictures of plugin groups in the library, by group name.
+    group_icons: std::collections::BTreeMap<String, String>,
 }
 
 #[tauri::command]
@@ -904,7 +906,7 @@ pub fn actions_list() -> Catalog {
     for a in &mut actions {
         a.params.retain(|p| super::volume::POPUP_AVAILABLE || p.key != "popup");
     }
-    Catalog { actions, special_keys: hotkey::SPECIAL_KEYS.to_vec() }
+    Catalog { actions, special_keys: hotkey::SPECIAL_KEYS.to_vec(), group_icons: super::sdplugins::group_icons() }
 }
 
 #[derive(Serialize)]

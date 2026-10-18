@@ -542,6 +542,8 @@ export const pluginGroup = (actions: ActionDef[], pluginId: string) => actions.f
 export interface Catalog {
   actions: ActionDef[];
   specialKeys: string[];
+  /** Pictures of plugin groups in the library, by group name. */
+  groupIcons?: Record<string, string>;
 }
 
 export interface IconDef {
