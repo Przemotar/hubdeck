@@ -302,6 +302,35 @@ function webviewMb(appPid) {
   return Number(out || 0) / 1048576;
 }
 
+// The page's garbage collected through DevTools before a memory sample, and its JavaScript heap
+// then: WebView2's memory goes up and down by 40 MB with when it collects, so 150 s gave PASS and
+// FAIL for the same code (2026-10-18); after a collection what stays is what the page keeps.
+async function collectGarbage(cdpPort) {
+  try {
+    const pages = await (await fetch(`http://127.0.0.1:${cdpPort}/json`, { signal: AbortSignal.timeout(3000) })).json();
+    const target = pages.find((p) => p.type === "page" && /localhost:1460|tauri\.localhost/.test(p.url));
+    if (!target) return null;
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((ok, bad) => ((ws.onopen = ok), (ws.onerror = bad)));
+    let id = 0;
+    const send = (method) =>
+      new Promise((ok) => {
+        const me = ++id;
+        ws.addEventListener("message", function on(e) {
+          const m = JSON.parse(e.data);
+          if (m.id === me) (ws.removeEventListener("message", on), ok(m.result));
+        });
+        ws.send(JSON.stringify({ id: me, method }));
+      });
+    await send("HeapProfiler.collectGarbage");
+    const heap = await send("Runtime.getHeapUsage");
+    ws.close();
+    return heap ? heap.usedSize / 1048576 : null;
+  } catch {
+    return null;
+  }
+}
+
 async function windowStage() {
   if (!win) return report("window", true, "skipped: the test copy runs on Windows only");
   const seconds = Number(opt("window-seconds", "150"));
@@ -353,8 +382,10 @@ async function windowStage() {
       if (show !== "gifs") await call("POST", "test/input", { kind: "keys", index: 0, gesture: "press", value: 1 });
       await sleep(Math.min(10_000, Math.max(0, end - Date.now())));
       const at = seconds - (end - Date.now()) / 1000;
-      mem.push({ at, mb: webviewMb(appPid) });
-      console.log(`  ${at.toFixed(0)} s  WebView2 ${mem.at(-1).mb.toFixed(1)} MB`);
+      const heap = await collectGarbage(9450);
+      await sleep(500);
+      mem.push({ at, mb: webviewMb(appPid), heap });
+      console.log(`  ${at.toFixed(0)} s  WebView2 ${mem.at(-1).mb.toFixed(1)} MB${heap != null ? `, page heap ${heap.toFixed(1)} MB` : ""}`);
     }
     const memEnd = webviewMb(appPid);
     const lines = fs.readFileSync(logFile, "utf8").split(/\r?\n/).slice(from).filter((l) => l.includes("] window: ") || l.includes("[ERROR]"));
@@ -370,9 +401,20 @@ async function windowStage() {
     const slowShare = smooth.reduce((s, x) => s + x.slow, 0) / Math.max(1, smooth.reduce((s, x) => s + x.frames * 5, 0));
     const worst = Math.max(...smooth.map((x) => x.worst));
     const settled = mem.filter((m) => m.at >= 60);
-    const growth = settled.length >= 2 ? ((settled.at(-1).mb - settled[0].mb) / (settled.at(-1).at - settled[0].at)) * 60 : 0;
+    // the slope through every sample after the first minute, not the last minus the first: one
+    // sample high or low in the sawtooth moved that by 10 MB/min (2026-10-18)
+    const slope = (pts) => {
+      if (pts.length < 2) return 0;
+      const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+      const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+      const sxx = pts.reduce((a, p) => a + (p.x - mx) ** 2, 0);
+      return sxx ? (pts.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / sxx) * 60 : 0;
+    };
+    const growth = slope(settled.map((m) => ({ x: m.at, y: m.mb })));
+    const heaps = settled.filter((m) => m.heap != null);
+    const heapGrowth = slope(heaps.map((m) => ({ x: m.at, y: m.heap })));
     const ok = errors.length === 0 && frames >= WINDOW_LIMITS.framesPerSec && slowShare <= WINDOW_LIMITS.slowShare && growth <= WINDOW_LIMITS.webviewGrowthMbPerMin;
-    report("window", ok, `frames ${frames.toFixed(1)}/s (limit ${WINDOW_LIMITS.framesPerSec}), ${(slowShare * 100).toFixed(1)} % over 50 ms (limit ${WINDOW_LIMITS.slowShare * 100}), slowest ${worst} ms, deck pictures ${pictures.toFixed(1)}/s, WebView2 ${memStart.toFixed(1)} -> ${memEnd.toFixed(1)} MB, growth ${growth.toFixed(1)} MB/min after the first minute (limit ${WINDOW_LIMITS.webviewGrowthMbPerMin}${settled.length < 2 ? "; run --window-seconds 120 or more to measure it" : ""}), ${errors.length} window errors${errors.length ? ": " + errors[0].split("] window: ")[1]?.slice(0, 200) : ""}`);
+    report("window", ok, `frames ${frames.toFixed(1)}/s (limit ${WINDOW_LIMITS.framesPerSec}), ${(slowShare * 100).toFixed(1)} % over 50 ms (limit ${WINDOW_LIMITS.slowShare * 100}), slowest ${worst} ms, deck pictures ${pictures.toFixed(1)}/s, WebView2 ${memStart.toFixed(1)} -> ${memEnd.toFixed(1)} MB, growth ${growth.toFixed(1)} MB/min after the first minute (limit ${WINDOW_LIMITS.webviewGrowthMbPerMin}${settled.length < 2 ? "; run --window-seconds 120 or more to measure it" : ""})${heaps.length >= 2 ? `, page heap ${heaps[0].heap.toFixed(1)} -> ${heaps.at(-1).heap.toFixed(1)} MB (${heapGrowth.toFixed(2)} MB/min)` : ""}, ${errors.length} window errors${errors.length ? ": " + errors[0].split("] window: ")[1]?.slice(0, 200) : ""}`);
   } finally {
     ps("-Stop");
   }

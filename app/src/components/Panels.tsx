@@ -2711,46 +2711,114 @@ function AssistantConnection() {
   );
 }
 
+/** Where Spotify sends the browser back after the sign-in (spotify.rs `REDIRECT`). */
+const SPOTIFY_REDIRECT = "http://127.0.0.1:43123/callback";
+
+/**
+ * Spotify needs an app of the user's own (Spotify gives apps for everyone only to companies), so
+ * the setup is walked in four steps with the link and the address to copy (owner's 1a, 2026-10-19,
+ * as Essentials for Spotify guides it); once connected, who it is and whether they have Premium.
+ */
 function SpotifyConnection() {
   useLanguage();
   const [clientId, setClientId] = useState("");
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     api.spotifyStatus().then(([id, ok]) => (setClientId(id), setConnected(ok)), () => {});
   }, []);
+  const copyRedirect = () =>
+    navigator.clipboard.writeText(SPOTIFY_REDIRECT).then(
+      () => (setCopied(true), setTimeout(() => setCopied(false), 1600)),
+      (e) => setMessage(String(e)),
+    );
+  const connect = () => {
+    setBusy(true);
+    setMessage(t("connections.spotifyWaiting"));
+    api.spotifyConnect(clientId).then(
+      (a) => {
+        setConnected(true);
+        setBusy(false);
+        const who = a.name ? t("connections.spotifyAs", { name: a.name }) : t("connections.spotifyConnected");
+        setMessage(a.premium === false ? `${who} ${t("connections.spotifyNoPremium")}` : who);
+      },
+      (e) => (setMessage(String(e)), setBusy(false)),
+    );
+  };
+  const button = (
+    <button className="tool" disabled={busy || clientId.trim().length < 16} onClick={connect}>
+      <Icon name="link" />
+      {connected ? t("connections.spotifyReconnect") : t("connections.spotifyConnect")}
+    </button>
+  );
+  const steps = (
+    <div className="steps spotify-steps">
+      <div className="step">
+        <div className="step-head">
+          <span className="step-n">1</span>
+          <span className="grow">{t("connections.spotifyStep1")}</span>
+        </div>
+        <button className="tool ghost align-start" onClick={() => api.openLink("https://developer.spotify.com/dashboard")}>
+          <Icon name="globe" />
+          {t("connections.spotifyOpenDashboard")}
+        </button>
+      </div>
+      <div className="step">
+        <div className="step-head">
+          <span className="step-n">2</span>
+          <span className="grow">{t("connections.spotifyStep2")}</span>
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-head">
+          <span className="step-n">3</span>
+          <span className="grow">{t("connections.spotifyStep3")}</span>
+        </div>
+        <div className="row">
+          <code className="input mono grow spotify-uri">{SPOTIFY_REDIRECT}</code>
+          <button className="tool ghost" onClick={copyRedirect}>
+            <Icon name={copied ? "check" : "copy"} />
+            {copied ? t("connections.mcpCopied") : t("connections.spotifyCopy")}
+          </button>
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-head">
+          <span className="step-n">4</span>
+          <label htmlFor="spotify-id" className="grow">
+            {t("connections.spotifyStep4")}
+          </label>
+        </div>
+        <input id="spotify-id" className="input mono" placeholder={t("connections.spotifyIdPlaceholder")} value={clientId} onChange={(e) => setClientId(e.target.value)} />
+        <div className="row wrap">{button}</div>
+      </div>
+    </div>
+  );
   return (
     <Service icon="music" hue="#1ed760" name="Spotify" state={[connected, connected ? t("connections.stateConnected") : t("connections.stateOff")]}>
-      <div className="field">
-        <label htmlFor="spotify-id" className="label">
-          {t("connections.spotifyId")}
-        </label>
-        <input id="spotify-id" className="input mono" placeholder="32 letters and digits" value={clientId} onChange={(e) => setClientId(e.target.value)} />
-      </div>
-      <div className="row wrap">
-        <button
-          className="tool"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            setMessage(t("connections.spotifyWaiting"));
-            api.spotifyConnect(clientId).then(
-              () => (setConnected(true), setMessage(t("connections.spotifyConnected")), setBusy(false)),
-              (e) => (setMessage(String(e)), setBusy(false)),
-            );
-          }}
-        >
-          <Icon name="link" />
-          {connected ? t("connections.spotifyReconnect") : t("connections.spotifyConnect")}
-        </button>
-        {connected && (
-          <button className="tool ghost" onClick={() => api.spotifyDisconnect().then(() => (setConnected(false), setMessage(null)))}>
-            {t("connections.spotifyDisconnect")}
-          </button>
-        )}
-      </div>
-      <p className="help">{message ?? t("connections.spotifyHelp")}</p>
+      {connected ? (
+        <>
+          <div className="row wrap">
+            {button}
+            <button className="tool ghost" onClick={() => api.spotifyDisconnect().then(() => (setConnected(false), setMessage(null)))}>
+              {t("connections.spotifyDisconnect")}
+            </button>
+          </div>
+          {message && <p className="help">{message}</p>}
+          <details className="spotify-how">
+            <summary className="help">{t("connections.spotifyHowAgain")}</summary>
+            {steps}
+          </details>
+        </>
+      ) : (
+        <>
+          <p className="help">{t("connections.spotifyWhy")}</p>
+          {steps}
+          {message && <p className="help">{message}</p>}
+        </>
+      )}
     </Service>
   );
 }

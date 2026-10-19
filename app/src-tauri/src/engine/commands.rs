@@ -607,7 +607,7 @@ pub fn spotify_status(engine: State<'_, Engine>) -> (String, bool) {
 
 /// Sign in to Spotify in the browser with the user's own app (PKCE); waits up to three minutes.
 #[tauri::command]
-pub async fn spotify_connect(engine: State<'_, Engine>, client_id: String) -> Res<()> {
+pub async fn spotify_connect(engine: State<'_, Engine>, client_id: String) -> Res<super::spotify::Account> {
     {
         let mut s = engine.lock();
         s.store.settings.spotify_client_id = Some(client_id.trim().to_string());

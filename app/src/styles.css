@@ -5386,3 +5386,25 @@ button.lib-foot:focus-visible span {
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
+
+/* Spotify's four setup steps (Connections) */
+.spotify-steps .step-head > span,
+.spotify-steps .step-head > label {
+  font-size: 12.5px;
+  line-height: 1.45;
+  min-width: 0;
+}
+.spotify-steps .step-head {
+  align-items: flex-start;
+}
+.spotify-uri {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.spotify-how > summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}

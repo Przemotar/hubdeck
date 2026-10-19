@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.5
+
+- **Spotify Like and playlists work again** (#4). In March 2026 Spotify changed its Web API for
+  apps like the one you connect HubDeck with, and Like answered "Forbidden". HubDeck uses the new
+  endpoints, and after "Too Many Requests" it waits as long as Spotify asks. Nothing to set up
+  again: your connection stays.
+- **Connecting Spotify, step by step** (Settings > Connections > Spotify): why it needs an app of
+  your own and Spotify Premium, a button to open Spotify's developer dashboard, the address to
+  copy, then your Client ID. Once connected it says which account it is and warns if Spotify
+  reports no Premium.
+- **Stream Deck plugins work right after HubDeck starts** (#5). Plugins learn which of their keys
+  are on screen; HubDeck told them only when the profile changed, so with Auto-switch off their
+  keys (Discord mute and deafen, for example) did nothing after a restart until you edited a key.
+- **Any module in any connector.** The window knew 88 module-and-connector positions, the ones
+  Cooler Master's app knows. The other 42, many where a module hangs over the base's edge (keys
+  above the base, for example), are worked out from where the connectors sit: the window draws
+  the module where it is, and the pictures on the keys are turned the right way. In Edit layout a
+  module can hang over the edge too.
+- Mochi keeps its name and body when a key takes it off the dial and puts it back (Discussions #3).
+
 ## 0.1.4
 
 - A **Plugins** tab in the top bar: about 300 Stream Deck plugins that install with one click, from

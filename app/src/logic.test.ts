@@ -37,7 +37,10 @@ describe("module placement", () => {
   it("turns footprints and clamps positions", () => {
     expect(rotatedSize("keys", 90)).toEqual([3, 4]);
     expect(rotatedSize("keys", 180)).toEqual([4, 3]);
-    expect(clampToGrid(3, 5, 4, 3)).toEqual([0, 3]);
+    // a module may hang over the base's edge but keeps a cell on it
+    expect(clampToGrid(3, 5, 4, 3)).toEqual([3, 5]);
+    expect(clampToGrid(-9, 9, 4, 3)).toEqual([-3, 5]);
+    expect(clampToGrid(0, -2, 3, 4)).toEqual([0, -2]);
   });
 
   it("puts a module without a known slot somewhere free", () => {
@@ -46,6 +49,18 @@ describe("module placement", () => {
     const [a, b] = placed;
     const overlap = a.col < b.col + b.cols && b.col < a.col + a.cols && a.row < b.row + b.rows && b.row < a.row + a.rows;
     expect(overlap).toBe(false);
+  });
+
+  it("places a module in a connector the official app leaves out, hanging over the edge (#4)", () => {
+    // keys in 1-1-1 next to faders, knobs and the dial, as on Zendeman's deck: no guess on top of the faders
+    const placed = placeModules([mod("keys", "1-1-1"), mod("faders", "2-3"), mod("knobs", "1-3-4"), mod("dial", "1-4-1")], {});
+    const keys = placed.find((p) => p.module.kind === "keys")!;
+    expect([keys.col, keys.row, keys.rotation, keys.source]).toEqual([2, 0, 90, "table"]);
+    expect(keys.col + keys.cols).toBe(5);
+    // every module in every connector has a place
+    const kinds: ModuleInfo["kind"][] = ["keys", "faders", "knobs", "dial", "rollers"];
+    const slots = ["1-1-1", "1-1-2", "1-1-3", "1-1-4", "1-2-1", "1-2-2", "1-2-3", "1-2-4", "1-3-1", "1-3-2", "1-3-3", "1-3-4", "1-4-1", "1-4-2", "1-4-3", "2-1", "2-2", "2-3", "2-4", "3-1", "3-2", "3-3", "4-1", "4-2", "4-3", "4-4"];
+    for (const kind of kinds) for (const slot of slots) expect(placeModules([mod(kind, slot)], {})[0].source, `${kind}@${slot}`).toBe("table");
   });
 });
 

@@ -206,7 +206,7 @@ registration), a shared profiles gallery, more than one base.
 **Integrations**
 - OBS Studio and Streamlabs Desktop: scenes, record, stream, replay, sources, mixer, with the live
   state on the keys.
-- Spotify (like, playlists), Home Assistant (devices, scenes, lights, services), MIDI to any DAW.
+- Spotify (like, playlists; with Spotify Premium, through a free developer app of your own), Home Assistant (devices, scenes, lights, services), MIDI to any DAW.
 - Claude Code: a key per coding session that shows whether it works, needs your permission or
   waits for you. Only the state and the project folder name are sent; never your prompts.
 - Plugins in any language over a local WebSocket, and a local API for scripts; see

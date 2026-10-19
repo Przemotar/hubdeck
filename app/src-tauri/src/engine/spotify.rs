@@ -16,7 +16,8 @@ use super::{Msg, secrets};
 /// Register exactly this as the app's redirect URI on developer.spotify.com.
 pub const REDIRECT: &str = "http://127.0.0.1:43123/callback";
 // playlist-read-private: the window lists the user's playlists (a sign-in from before asks again)
-const SCOPES: &str = "user-library-read user-library-modify user-read-currently-playing user-read-playback-state playlist-modify-public playlist-modify-private playlist-read-private";
+const SCOPES: &str =
+    "user-read-private user-library-read user-library-modify user-read-currently-playing user-read-playback-state playlist-modify-public playlist-modify-private playlist-read-private";
 const API: &str = "https://api.spotify.com/v1";
 const POLL: Duration = Duration::from_secs(3);
 
@@ -27,6 +28,13 @@ pub enum Request {
     AddToPlaylist(String),
     /// The user's playlists for the window's list (`names`); quiet.
     ListPlaylists,
+}
+
+/// The Liked Songs path for one track: `/me/library` by URI (Spotify, February 2026: apps in
+/// Development Mode, as every HubDeck user's own is, got 403 Forbidden on the old `/me/tracks`;
+/// issue #4).
+fn library_path(suffix: &str, uri: &str) -> String {
+    format!("/me/library{suffix}?uris={}", urlencode(uri))
 }
 
 /// The playlists in a `/me/playlists` reply: the name shown, its `spotify:playlist:` id kept.
@@ -96,9 +104,23 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(8))).http_status_as_error(false).build().into()
 }
 
+/// Who signed in, for the window: their Spotify name and whether they have Premium (None: Spotify
+/// did not say). Apps like HubDeck's (Development Mode) stop working without Premium.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct Account {
+    pub name: String,
+    pub premium: Option<bool>,
+}
+
+/// The account in a `/me` reply (`product` needs the `user-read-private` scope).
+fn account_of(me: &Value) -> Account {
+    let name = me["display_name"].as_str().or_else(|| me["id"].as_str()).unwrap_or("").to_string();
+    Account { name, premium: me["product"].as_str().map(|p| p == "premium") }
+}
+
 /// Sign in: open the browser, wait for Spotify to send the browser back to the loopback address,
 /// trade the code for tokens. Blocks up to three minutes; run it on a blocking thread.
-pub fn connect(client_id: &str, open_url: impl Fn(&str)) -> Result<(), String> {
+pub fn connect(client_id: &str, open_url: impl Fn(&str)) -> Result<Account, String> {
     let client_id = client_id.trim();
     if client_id.len() < 16 {
         return Err("paste the Client ID of your app from developer.spotify.com".into());
@@ -145,16 +167,21 @@ pub fn connect(client_id: &str, open_url: impl Fn(&str)) -> Result<(), String> {
     let refresh = body["refresh_token"].as_str().ok_or_else(|| format!("no token from Spotify: {}", body["error_description"].as_str().unwrap_or("unknown error")))?;
     secrets::set("spotify", refresh)?;
     set_client_id(client_id.to_string());
-    Ok(())
+    // who it is and whether Premium: the window says so at once instead of a key failing later
+    let me = body["access_token"]
+        .as_str()
+        .and_then(|token| agent().get(&format!("{API}/me")).header("Authorization", &format!("Bearer {token}")).call().ok())
+        .and_then(|mut r| r.body_mut().read_json::<Value>().ok())
+        .unwrap_or_default();
+    Ok(account_of(&me))
 }
 
 fn urlencode(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
-/// The track playing now: its id and URI, the playlist it plays from (if one), its name.
+/// The track playing now: its URI, the playlist it plays from (if one), its name.
 struct Playing {
-    id: String,
     uri: String,
     playlist: Option<String>,
     name: String,
@@ -167,11 +194,13 @@ struct Worker {
     watching: bool,
     last_poll: Instant,
     liked: Option<bool>,
+    /// Spotify said "Too Many Requests": nothing is asked before this (its Retry-After).
+    wait_until: Option<Instant>,
 }
 
 impl Worker {
     fn new(engine: Sender<Msg>, client_id: String) -> Self {
-        Worker { engine, client_id, access: None, watching: false, last_poll: Instant::now() - POLL, liked: None }
+        Worker { engine, client_id, access: None, watching: false, last_poll: Instant::now() - POLL, liked: None, wait_until: None }
     }
 
     fn error(&self, message: String) {
@@ -204,6 +233,9 @@ impl Worker {
     }
 
     fn call(&mut self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+        if let Some(until) = self.wait_until.filter(|u| Instant::now() < *u) {
+            return Err(format!("Spotify asked to wait; try again in {} s", until.saturating_duration_since(Instant::now()).as_secs() + 1));
+        }
         let token = self.token()?;
         let url = format!("{API}{path}");
         let auth = format!("Bearer {token}");
@@ -219,6 +251,10 @@ impl Worker {
         }
         .map_err(|e| e.to_string())?;
         let status = resp.status().as_u16();
+        if status == 429 {
+            let secs = resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(30);
+            self.wait_until = Some(Instant::now() + Duration::from_secs(secs.clamp(1, 3600)));
+        }
         let text = resp.body_mut().read_to_string().unwrap_or_default();
         if status == 401 {
             self.access = None;
@@ -234,9 +270,9 @@ impl Worker {
     fn playing(&mut self) -> Result<Option<Playing>, String> {
         let v = self.call("GET", "/me/player/currently-playing", None)?;
         let item = &v["item"];
-        let (Some(id), Some(uri)) = (item["id"].as_str(), item["uri"].as_str()) else { return Ok(None) };
+        let Some(uri) = item["uri"].as_str().filter(|u| u.starts_with("spotify:track:")) else { return Ok(None) };
         let playlist = (v["context"]["type"] == "playlist").then(|| v["context"]["uri"].as_str().and_then(playlist_id)).flatten();
-        Ok(Some(Playing { id: id.to_string(), uri: uri.to_string(), playlist, name: item["name"].as_str().unwrap_or("").to_string() }))
+        Ok(Some(Playing { uri: uri.to_string(), playlist, name: item["name"].as_str().unwrap_or("").to_string() }))
     }
 
     fn feedback(&self, caption: String) {
@@ -249,26 +285,26 @@ impl Worker {
             super::names::set("spotify.playlist", playlist_names(&v));
             return Ok(());
         }
-        let Playing { id, uri, playlist, name } = self.playing()?.ok_or("nothing is playing on Spotify")?;
+        let Playing { uri, playlist, name, .. } = self.playing()?.ok_or("nothing is playing on Spotify")?;
         match r {
             Request::ToggleLike => {
-                let saved = self.call("GET", &format!("/me/tracks/contains?ids={id}"), None)?.get(0).and_then(Value::as_bool).unwrap_or(false);
+                let saved = self.call("GET", &library_path("/contains", &uri), None)?.get(0).and_then(Value::as_bool).unwrap_or(false);
                 let method = if saved { "DELETE" } else { "PUT" };
-                self.call(method, &format!("/me/tracks?ids={id}"), None)?;
+                self.call(method, &library_path("", &uri), None)?;
                 self.liked = Some(!saved);
                 let _ = self.engine.send(Msg::IntegrationState { key: "spotify:liked".into(), on: !saved });
                 self.feedback(if saved { format!("Unliked {name}") } else { format!("Liked {name}") });
             }
             Request::RemoveFromPlaylist => {
                 let playlist = playlist.ok_or("this track is not playing from a playlist")?;
-                self.call("DELETE", &format!("/playlists/{playlist}/tracks"), Some(json!({"tracks": [{"uri": uri}]})))?;
+                self.call("DELETE", &format!("/playlists/{playlist}/items"), Some(json!({"items": [{"uri": uri}]})))?;
                 self.feedback(format!("Removed {name}"));
                 // going to the next track needs Premium; without it the track just stays playing
                 let _ = self.call("POST", "/me/player/next", None);
             }
             Request::AddToPlaylist(target) => {
                 let target = playlist_id(&target).ok_or("set the playlist (its link or id)")?;
-                self.call("POST", &format!("/playlists/{target}/tracks"), Some(json!({"uris": [uri]})))?;
+                self.call("POST", &format!("/playlists/{target}/items"), Some(json!({"uris": [uri]})))?;
                 self.feedback(format!("Added {name}"));
             }
             // answered above, before anything has to play
@@ -278,8 +314,8 @@ impl Worker {
     }
 
     fn poll_liked(&mut self) {
-        let Ok(Some(Playing { id, .. })) = self.playing() else { return };
-        if let Ok(v) = self.call("GET", &format!("/me/tracks/contains?ids={id}"), None) {
+        let Ok(Some(Playing { uri, .. })) = self.playing() else { return };
+        if let Ok(v) = self.call("GET", &library_path("/contains", &uri), None) {
             let liked = v.get(0).and_then(Value::as_bool).unwrap_or(false);
             if self.liked != Some(liked) {
                 self.liked = Some(liked);
@@ -321,6 +357,20 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_account_says_whether_it_has_premium() {
+        assert_eq!(account_of(&json!({"display_name": "Ola", "product": "premium"})), Account { name: "Ola".into(), premium: Some(true) });
+        assert_eq!(account_of(&json!({"id": "ola123", "product": "free"})), Account { name: "ola123".into(), premium: Some(false) });
+        // an older sign-in without user-read-private: not known
+        assert_eq!(account_of(&json!({"display_name": "Ola"})).premium, None);
+    }
+
+    #[test]
+    fn liked_songs_go_through_the_library_by_uri() {
+        assert_eq!(library_path("/contains", "spotify:track:7a3LWj5xSFhFRYmztS8wgK"), "/me/library/contains?uris=spotify%3Atrack%3A7a3LWj5xSFhFRYmztS8wgK");
+        assert_eq!(library_path("", "spotify:track:7a3LWj5xSFhFRYmztS8wgK"), "/me/library?uris=spotify%3Atrack%3A7a3LWj5xSFhFRYmztS8wgK");
+    }
 
     #[test]
     fn playlists_from_the_reply_keep_their_ids() {

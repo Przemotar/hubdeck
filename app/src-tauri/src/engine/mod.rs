@@ -695,6 +695,9 @@ impl Engine {
             sound::init(media_tx.clone());
             streamlabs::start(media_tx.clone(), s.store.settings.streamlabs_url.clone().unwrap_or_else(|| streamlabs::DEFAULT_URL.into()), secrets::get("streamlabs"));
             plugins::start(data_dir, media_tx.clone());
+            // the start profile's plugin controls and OBS: until now only a profile switch told them
+            // (#5: with Auto-switch off, Discord keys did nothing after a restart)
+            let _ = media_tx.send(Msg::ProfilesChanged);
             spotify::start(media_tx.clone(), s.store.settings.spotify_client_id.clone().unwrap_or_default());
             let shared_for_api = engine.shared.clone();
             plugins::set_state_source(Box::new(move || serde_json::to_value(shared_for_api.lock().unwrap_or_else(|e| e.into_inner()).state()).unwrap_or_default()));
@@ -3090,6 +3093,7 @@ impl Worker {
             }
         }
         log::info!("profiles folder changed: profiles read again");
+        self.want_integrations();
         self.redraw_keys();
         self.update_leds();
         self.dial_dirty = true;
@@ -3658,6 +3662,8 @@ impl Worker {
         };
         let Some(mut p) = profile else { return };
         if p.controls.get("dial").is_some_and(|b| b.action == pet::ACTION) {
+            // its name and body set on the dial come back with it
+            self.pet.needs.mochi = pet::kept_bindings(&p.controls, &GESTURES);
             for g in GESTURES {
                 p.controls.remove(g);
             }
@@ -3675,8 +3681,11 @@ impl Worker {
             for g in GESTURES {
                 p.controls.remove(g);
             }
+            // Mochi as the user set it on the dial the last time, else the gallery's
+            let mochi = self.pet.needs.mochi.clone();
+            let kept = |g: &str| mochi.as_ref().and_then(|m| m.get(g)).and_then(|b| serde_json::from_value::<Binding>(b.clone()).ok());
             // the key that brought it: its body picture is Mochi's body on the dial
-            let mut binding = face.binding.clone();
+            let mut binding = kept("dial").unwrap_or_else(|| face.binding.clone());
             if let Some(params) = binding.params.as_object_mut() {
                 params.insert(pet::FROM_PARAM.into(), serde_json::json!(from));
             }
@@ -3686,6 +3695,7 @@ impl Worker {
             self.pet.needs.fullness = 1.0;
             self.pet.needs.asleep = false;
             for (g, b) in face.extra {
+                let b = kept(g).unwrap_or(b);
                 p.controls.insert(g.to_string(), b);
             }
         }

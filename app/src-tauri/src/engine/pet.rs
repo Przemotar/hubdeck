@@ -36,11 +36,16 @@ pub struct Needs {
     /// "dial:double": .., "dial:hold": ..}`), given back when it is taken off.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub dials: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Mochi's own dial bindings as the user set them (its name, body, fit; `{"dial": binding, ..}`),
+    /// kept while a key has taken it off, so it comes back as it was (Discussions #3: hidden and
+    /// shown again, its name and body went back to the defaults).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mochi: Option<serde_json::Value>,
 }
 
 impl Default for Needs {
     fn default() -> Self {
-        Self { fullness: 0.8, joy: 0.8, asleep: false, at: now_secs(), dials: Default::default() }
+        Self { fullness: 0.8, joy: 0.8, asleep: false, at: now_secs(), dials: Default::default(), mochi: None }
     }
 }
 
@@ -265,6 +270,23 @@ pub const FROM_PARAM: &str = "from";
 pub fn body_on(controls: &std::collections::BTreeMap<String, super::profile::Binding>, from: Option<&str>) -> Option<Body> {
     let mochi = |b: &&super::profile::Binding| b.action == ACTION;
     from.and_then(|f| controls.get(f)).filter(mochi).and_then(|b| body_of(&b.params)).or_else(|| controls.values().filter(mochi).find_map(|b| body_of(&b.params)))
+}
+
+/// Mochi's bindings among the dial's `gestures`, as kept in [`Needs::mochi`] when a key takes it
+/// off: everything the user set, without the key that brought it.
+pub fn kept_bindings(controls: &std::collections::BTreeMap<String, super::profile::Binding>, gestures: &[&str]) -> Option<serde_json::Value> {
+    let kept: serde_json::Map<String, serde_json::Value> = gestures
+        .iter()
+        .filter_map(|g| controls.get(*g).filter(|b| b.action == ACTION).map(|b| (g.to_string(), b)))
+        .map(|(g, b)| {
+            let mut b = b.clone();
+            if let Some(params) = b.params.as_object_mut() {
+                params.remove(FROM_PARAM);
+            }
+            (g, serde_json::json!(b))
+        })
+        .collect();
+    (!kept.is_empty()).then_some(serde_json::Value::Object(kept))
 }
 
 /// A body picture made once and kept, the last one used (the dial draws up to 25 frames a second).
@@ -796,6 +818,27 @@ mod tests {
         println!("now, 25 a second, first loop: {:?} of work a second", round(0..LOOP_FRAMES));
         println!("now, 25 a second, after it: {:?} of work a second", round(LOOP_FRAMES..3 * LOOP_FRAMES));
         println!("kept: {} frames, {} KB", kept.len(), kept.values().map(Vec::len).sum::<usize>() / 1024);
+    }
+
+    #[test]
+    fn taken_off_the_dial_it_keeps_its_name_and_body() {
+        // Discussions #3: hidden and shown again by a key, the name and body set on the dial reset
+        let b = |v: serde_json::Value| serde_json::from_value::<super::super::profile::Binding>(v).unwrap();
+        let controls = std::collections::BTreeMap::from([
+            ("dial".to_string(), b(serde_json::json!({"action": ACTION, "params": {"name": "Tama", "body": "cat.png", "bodyFit": {"size": 80}, "from": "keys.3"}}))),
+            ("dial:hold".to_string(), b(serde_json::json!({"action": ACTION, "params": {"name": "Tama", "press": "sleep"}}))),
+            ("dial:double".to_string(), b(serde_json::json!({"action": "core.media", "params": {}}))),
+            ("keys.3".to_string(), b(serde_json::json!({"action": ACTION, "params": {"press": "dial"}}))),
+        ]);
+        let kept = kept_bindings(&controls, &["dial", "dial:double", "dial:hold"]).unwrap();
+        assert_eq!(kept["dial"]["params"], serde_json::json!({"name": "Tama", "body": "cat.png", "bodyFit": {"size": 80}}), "without the key that brought it");
+        assert_eq!(kept["dial:hold"]["params"]["name"], "Tama");
+        assert!(kept.get("dial:double").is_none(), "only Mochi's own");
+        // what is kept goes through pet.json and back
+        let needs = Needs { mochi: Some(kept.clone()), ..Needs::default() };
+        let back: Needs = serde_json::from_str(&serde_json::to_string(&needs).unwrap()).unwrap();
+        assert_eq!(back.mochi, Some(kept));
+        assert!(kept_bindings(&std::collections::BTreeMap::new(), &["dial"]).is_none());
     }
 
     #[test]

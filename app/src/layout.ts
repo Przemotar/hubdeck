@@ -47,7 +47,9 @@ export function rotatedSize(kind: ModuleKind, rotation: Rotation): [number, numb
 }
 
 export function clampToGrid(col: number, row: number, cols: number, rows: number): [number, number] {
-  return [Math.max(0, Math.min(GRID_COLS - cols, col)), Math.max(0, Math.min(GRID_ROWS - rows, row))];
+  // a module in a connector near the edge hangs over it, but always keeps a cell on the base
+  // (owner, 2026-10-19: "mozna wpiac panele w dowolny styk"; keys in 1-1-1 on a user's deck, #4)
+  return [Math.max(1 - cols, Math.min(GRID_COLS - 1, col)), Math.max(1 - rows, Math.min(GRID_ROWS - 1, row))];
 }
 
 const ORDER: ModuleKind[] = ["keys", "faders", "dial", "knobs", "rollers"];

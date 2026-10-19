@@ -966,7 +966,20 @@ export function DeckView(props: DeckViewProps) {
   const sideways = Math.abs(baseTurn) === 90;
   const bw = (sideways ? GH : GW) + 2 * MARGIN;
   const bh = (sideways ? GW : GH) + 2 * MARGIN;
-  const vb = [CX - bw / 2 - PAD, CY - bh / 2 - PAD, bw + 2 * PAD, bh + 2 * PAD];
+  // modules hanging over the base's edge widen the drawing on that side (keys in 1-1-1, #4)
+  const over = placed.reduce(
+    (o, p) => {
+      const col = drag?.id === p.module.id && dragTo ? dragTo.col : p.col;
+      const row = drag?.id === p.module.id && dragTo ? dragTo.row : p.row;
+      return { l: Math.max(o.l, -col * U), t: Math.max(o.t, -row * U), r: Math.max(o.r, (col + p.cols) * U - GW), b: Math.max(o.b, (row + p.rows) * U - GH) };
+    },
+    { l: 0, t: 0, r: 0, b: 0 },
+  );
+  // the same overhang as seen on screen once the base is turned (clockwise: left goes to the top)
+  const turns = ((baseTurn + 360) % 360) / 90;
+  const sides = [over.t, over.r, over.b, over.l];
+  const [ot, or, ob, ol] = [0, 1, 2, 3].map((i) => sides[(i - turns + 4) % 4]);
+  const vb = [CX - bw / 2 - PAD - ol, CY - bh / 2 - PAD - ot, bw + 2 * PAD + ol + or, bh + 2 * PAD + ot + ob];
   const baseId = live.deck.modules.find((m) => m.kind === "base")?.id;
   const edgeLit = edgeLight(profile, baseId && leds ? leds[baseId] : undefined);
   // dark when the edge is off, the rainbow when undefined

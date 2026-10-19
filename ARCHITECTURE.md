@@ -58,8 +58,9 @@ hatch refuses those command bytes. Firmware updates are out of scope.
 
 ## Legal
 
-The protocol implementation is our own (clean-room from captured behaviour, the MIT-licensed
-`cooltek-sdk-probe` notes and interoperability analysis). The repo never contains Cooler Master binaries,
+The protocol implementation is our own code, written from the modules' captured behaviour, the
+MIT-licensed `cooltek-sdk-probe` notes and an analysis of the vendor's SDK for interoperability;
+none of the vendor's code is copied. The repo never contains Cooler Master binaries,
 firmware, SDK DLLs, images or fonts.
 
 ## Milestones
