@@ -175,7 +175,17 @@ fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last
             continue;
         }
         let mut module = match api.open_path(&path) {
-            Ok(device) => Module::new(kind, descriptor_serial, device),
+            Ok(device) => {
+                let mut m = Module::new(kind, descriptor_serial, device);
+                // Windows: a second handle for output reports, so pictures and LED colors never
+                // wait for the reader (`Module::writer`)
+                if cfg!(windows)
+                    && let Ok(writer) = api.open_path(&path)
+                {
+                    m.set_writer(writer);
+                }
+                m
+            }
             Err(e) => {
                 debug!("open {}: {e} (module still attaching?)", kind.name());
                 let failures = backoff.get(&path).map_or(0, |b| b.1);

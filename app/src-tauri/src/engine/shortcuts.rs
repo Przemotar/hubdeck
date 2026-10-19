@@ -105,8 +105,12 @@ fn find(combo: &str, apps: &[String]) -> Vec<&'static Shortcut> {
 
 /// Is `combo` in a checked pack for these apps (or the system)?
 pub fn is_checked(combo: &str, apps: &[String]) -> bool {
-    !find(combo, apps).is_empty()
+    MEDIA_KEYS.contains(&normalize(combo).as_str()) || !find(combo, apps).is_empty()
 }
+
+/// A media key alone does the same in every app (the system takes it): no app's pack needed
+/// (personas 2026-10-19: Volume keys on an office desk counted as unchecked shortcuts).
+const MEDIA_KEYS: [&str; 10] = ["playpause", "nexttrack", "medianext", "prevtrack", "mediaprev", "volumeup", "volumedown", "volumemute", "mute", "mediaplaypause"];
 
 /// Shortcuts that close, quit or delete something wherever they are pressed.
 const ALWAYS_DESTRUCTIVE: [&str; 7] = ["alt+f4", "ctrl+w", "ctrl+f4", "ctrl+q", "shift+delete", "ctrl+shift+w", "ctrl+alt+delete"];
@@ -120,6 +124,13 @@ pub fn is_destructive(combo: &str, apps: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_media_key_alone_is_checked_anywhere() {
+        let apps = ["EXCEL.EXE".to_string()];
+        assert!(is_checked("VolumeMute", &apps) && is_checked("volumeup", &[]) && is_checked("PlayPause", &apps));
+        assert!(!is_checked("ctrl+VolumeUp", &apps), "with a modifier it is an app's shortcut");
+    }
 
     #[test]
     fn the_packs_read_and_every_shortcut_parses() {

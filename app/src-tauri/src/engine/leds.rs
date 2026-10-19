@@ -12,7 +12,7 @@ use super::profile::{LightSettings, Look, Profile};
 const MIN_LEVEL: f32 = 0.06;
 
 /// Effect names as profiles store them (`look.ledEffect`, `edgeEffect`) and the UI offers them.
-pub const EFFECTS: [(&str, &str); 9] = [
+pub const EFFECTS: [(&str, &str); 10] = [
     ("static", "Static"),
     ("breathing", "Breathing"),
     ("strobe", "Strobe"),
@@ -22,6 +22,8 @@ pub const EFFECTS: [(&str, &str); 9] = [
     ("wave", "Wave"),
     ("water", "Shimmer"),
     ("rainbow", "Rainbow"),
+    // drawn by HubDeck: a flash at each beat of what plays, over a glow (`beat.rs`)
+    ("music", "To the music"),
 ];
 
 pub fn parse_hex(hex: &str) -> Option<Rgb> {
@@ -59,11 +61,22 @@ pub fn effect_mode(name: Option<&str>) -> LedMode {
 pub struct Led {
     pub rgb: Rgb,
     pub mode: LedMode,
+    /// It follows the music: HubDeck sets its brightness at each moment (`beat::glow`).
+    pub pulse: bool,
 }
 
 impl Led {
     pub fn solid(rgb: Rgb) -> Self {
-        Self { rgb, mode: LedMode::Static }
+        Self { rgb, mode: LedMode::Static, pulse: false }
+    }
+
+    pub fn new(rgb: Rgb, mode: LedMode) -> Self {
+        Self { rgb, mode, pulse: false }
+    }
+
+    /// A color that flashes with the music.
+    pub fn music(rgb: Rgb) -> Self {
+        Self { rgb, mode: LedMode::Static, pulse: true }
     }
 }
 
@@ -90,7 +103,7 @@ pub struct Override {
 
 impl Override {
     pub fn lights(&self, count: usize) -> Lights {
-        Lights { leds: vec![Led { rgb: self.rgb, mode: self.mode }; count], speed: Some(self.speed) }
+        Lights { leds: vec![Led::new(self.rgb, self.mode); count], speed: Some(self.speed) }
     }
 }
 
@@ -113,11 +126,16 @@ pub fn rainbow_rgb(unix_ms: u64) -> Rgb {
     [r, g, b].map(|v: f32| (v * 255.0).round() as u8)
 }
 
+/// HubDeck's rainbow moves on at most this often, however often the lights are set: while the
+/// edge follows the music they are set every 20 ms, and the knobs and faders got a new rainbow
+/// color each time (up to 50 a second; the faders drop off the bus at that, 2026-10-19).
+pub const RAINBOW_TICK_MS: u64 = 100;
+
 /// The module's own rainbow (None) and rainbow effects drawn by HubDeck instead: each such LED gets
-/// the rainbow color of the moment as a static color, dimmed by `brightness`. Returns the lights
-/// and which LEDs were replaced.
+/// the rainbow color of the moment (in `RAINBOW_TICK_MS` steps) as a static color, dimmed by
+/// `brightness`. Returns the lights and which LEDs were replaced.
 pub fn hub_rainbow(lights: Option<Lights>, count: usize, unix_ms: u64, brightness: u8) -> (Lights, Vec<bool>) {
-    let rgb = rainbow_rgb(unix_ms).map(|c| (c as u32 * brightness.min(100) as u32 / 100) as u8);
+    let rgb = rainbow_rgb(unix_ms - unix_ms % RAINBOW_TICK_MS).map(|c| (c as u32 * brightness.min(100) as u32 / 100) as u8);
     match lights {
         None => (Lights::solid(vec![rgb; count]), vec![true; count]),
         Some(mut l) => {
@@ -160,7 +178,7 @@ pub fn effect_name(mode: LedMode) -> &'static str {
 
 /// What the window shows for a module's lights: one entry per LED.
 pub fn view(lights: &Lights) -> Vec<LedView> {
-    lights.leds.iter().map(|l| LedView { color: format!("#{:02x}{:02x}{:02x}", l.rgb[0], l.rgb[1], l.rgb[2]), effect: effect_name(l.mode) }).collect()
+    lights.leds.iter().map(|l| LedView { color: format!("#{:02x}{:02x}{:02x}", l.rgb[0], l.rgb[1], l.rgb[2]), effect: if l.pulse { "music" } else { effect_name(l.mode) } }).collect()
 }
 
 /// One LED per control of a `kind` module (`knobs` 3, `faders` 5). None = no control has a color
@@ -184,7 +202,10 @@ pub fn module_leds(profile: Option<&Profile>, kind: &str, count: usize, levels: 
             }
             let rgb = look.led.as_deref().and_then(parse_hex).unwrap_or([255, 255, 255]);
             let rgb = if look.led_level && mode == LedMode::Static { scale(rgb, levels.get(&format!("{kind}.{i}")).copied().unwrap_or(1.0)) } else { rgb };
-            Led { rgb, mode }
+            match look.led_effect.as_deref() {
+                Some("music") => Led::music(look.led.as_deref().and_then(parse_hex).or(profile.map(profile_color)).unwrap_or([255, 255, 255])),
+                _ => Led::new(rgb, mode),
+            }
         })
         .collect();
     Some(Lights { leds, speed })
@@ -198,7 +219,9 @@ pub fn edge(profile: Option<&Profile>) -> Option<Lights> {
     if rgb.is_none() && effect.is_none() {
         return None;
     }
-    Some(Lights { leds: vec![Led { rgb: rgb.unwrap_or([255, 255, 255]), mode: effect_mode(effect) }], speed: p.edge_speed.map(|s| s.min(100)) })
+    // the music's flashes take the profile's color when the edge has none of its own
+    let led = if effect == Some("music") { Led::music(rgb.unwrap_or_else(|| profile_color(p))) } else { Led::new(rgb.unwrap_or([255, 255, 255]), effect_mode(effect)) };
+    Some(Lights { leds: vec![led], speed: p.edge_speed.map(|s| s.min(100)) })
 }
 
 /// What is going on now that the lights react to.
@@ -235,7 +258,7 @@ fn style_rgb(profile: Option<&Profile>, cfg: &LightSettings) -> Option<Rgb> {
     match cfg.style.as_str() {
         "off" => Some([0, 0, 0]),
         "color" => Some(parse_hex(&cfg.color).unwrap_or([255, 255, 255])),
-        "profile" => Some(profile.map(profile_color).unwrap_or([255, 255, 255])),
+        "profile" | "music" => Some(profile.map(profile_color).unwrap_or([255, 255, 255])),
         _ => None,
     }
 }
@@ -266,6 +289,7 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
             advanced.as_ref().map(|a| a.leds[i]).unwrap_or(Led::solid([0, 0, 0]))
         } else if let Some(rgb) = style {
             let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some());
+            // the style to the music is the edge's; knobs and faders join it by their own switch
             Led::solid(level.map(|l| scale(rgb, l)).unwrap_or(rgb))
         } else {
             // the rainbow: a control with a level keeps it in the LED's color (white = full), so
@@ -273,7 +297,7 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
             let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some_and(|b| b.look.led_level));
             let v = level.map_or(255, |l| (l.clamp(MIN_LEVEL, 1.0) * 255.0).round() as u8);
             any |= level.is_some();
-            out.leds.push(Led { rgb: [v, v, v], mode: LedMode::Rainbow });
+            out.leds.push(Led::new([v, v, v], LedMode::Rainbow));
             continue;
         };
         any = true;
@@ -289,7 +313,7 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
 /// The base edge: reactions first (a session needs you, on air, a timer ran out, the mic is muted
 /// and no knob shows it), then the profile's own edge color or effect, then the style.
 pub fn edge_lights(profile: Option<&Profile>, cfg: &LightSettings, live: &Live) -> Option<Lights> {
-    let react = |r: &super::profile::Reaction, mode: LedMode, speed: u8| Lights { leds: vec![Led { rgb: parse_hex(&r.color).unwrap_or([255, 255, 255]), mode }], speed: Some(speed) };
+    let react = |r: &super::profile::Reaction, mode: LedMode, speed: u8| Lights { leds: vec![Led::new(parse_hex(&r.color).unwrap_or([255, 255, 255]), mode)], speed: Some(speed) };
     let mic_shown_on_a_knob = profile.is_some_and(|p| p.controls.iter().any(|(id, b)| (id.starts_with("knobs.") || id.starts_with("faders.")) && is_mic(b)));
     let mut out = if cfg.react.agents.on && live.agent_waiting {
         react(&cfg.react.agents, LedMode::Breathing, 85)
@@ -304,6 +328,8 @@ pub fn edge_lights(profile: Option<&Profile>, cfg: &LightSettings, live: &Live) 
         react(&cfg.react.mic, LedMode::Static, 50)
     } else if let Some(own) = edge(profile) {
         own
+    } else if cfg.style == "music" {
+        Lights { leds: vec![Led::music(style_rgb(profile, cfg)?)], speed: None }
     } else {
         Lights::solid(vec![style_rgb(profile, cfg)?])
     };
@@ -330,10 +356,12 @@ mod tests {
 
     #[test]
     fn the_window_gets_hex_colors_and_effect_names() {
-        for (name, _) in EFFECTS {
-            assert_eq!(effect_name(effect_mode(Some(name))), name);
+        // every effect but the music's is the modules' own
+        for (name, _) in EFFECTS.iter().filter(|(n, _)| *n != "music") {
+            assert_eq!(effect_name(effect_mode(Some(name))), *name);
         }
-        let v = view(&Lights { leds: vec![Led { rgb: [255, 8, 0], mode: LedMode::Breathing }, Led::solid([0, 0, 0])], speed: None });
+        assert_eq!(view(&Lights { leds: vec![Led::music([1, 2, 3])], speed: None })[0].effect, "music");
+        let v = view(&Lights { leds: vec![Led::new([255, 8, 0], LedMode::Breathing), Led::solid([0, 0, 0])], speed: None });
         assert_eq!(v, vec![LedView { color: "#ff0800".into(), effect: "breathing" }, LedView { color: "#000000".into(), effect: "static" }]);
     }
 
@@ -347,15 +375,19 @@ mod tests {
         assert_eq!(l.leds, vec![Led::solid([255, 0, 0]); 3]);
         assert!(replaced.iter().all(|r| *r));
         // only rainbow LEDs are replaced; brightness dims them
-        let mixed = Lights { leds: vec![Led { rgb: [1, 2, 3], mode: LedMode::Rainbow }, Led::solid([9, 9, 9])], speed: None };
+        let mixed = Lights { leds: vec![Led::new([1, 2, 3], LedMode::Rainbow), Led::solid([9, 9, 9])], speed: None };
         let (l, replaced) = hub_rainbow(Some(mixed), 2, 0, 50);
         assert_eq!(l.leds[0], Led::solid([127, 0, 0]));
         assert_eq!(l.leds[1], Led::solid([9, 9, 9]));
         assert_eq!(replaced, vec![true, false]);
         // a volume at half: the rainbow at half too (its level rides in a grey color)
-        let half = Lights { leds: vec![Led { rgb: [128, 128, 128], mode: LedMode::Rainbow }], speed: None };
+        let half = Lights { leds: vec![Led::new([128, 128, 128], LedMode::Rainbow)], speed: None };
         let (l, _) = hub_rainbow(Some(half), 1, 0, 100);
         assert_eq!(l.leds[0], Led::solid([128, 0, 0]));
+        // set every 20 ms (music), the color still changes only every RAINBOW_TICK_MS
+        let at = |ms| hub_rainbow(None, 1, ms, 100).0;
+        assert_eq!(at(1_000), at(1_000 + RAINBOW_TICK_MS - 1));
+        assert_ne!(at(1_000), at(1_000 + RAINBOW_TICK_MS));
     }
 
     #[test]
@@ -386,7 +418,7 @@ mod tests {
         with_look(&mut p, "knobs.0", Look { led: Some("#ff0000".into()), led_effect: Some("breathing".into()), led_level: true, led_speed: Some(30), ..Look::default() });
         with_look(&mut p, "knobs.1", Look { led_effect: Some("rainbow".into()), led_speed: Some(250), ..Look::default() });
         let l = module_leds(Some(&p), "knobs", 3, &HashMap::from([("knobs.0".to_string(), 0.1)])).unwrap();
-        assert_eq!(l.leds[0], Led { rgb: [255, 0, 0], mode: LedMode::Breathing }, "no level scaling while breathing");
+        assert_eq!(l.leds[0], Led::new([255, 0, 0], LedMode::Breathing), "no level scaling while breathing");
         assert_eq!(l.leds[1].mode, LedMode::Rainbow, "an effect without a color lights up too");
         assert_eq!(l.leds[2], Led::solid([0, 0, 0]));
         assert_eq!(l.speed, Some(100), "the last speed, at most 100");
@@ -394,7 +426,7 @@ mod tests {
         q.edge_effect = Some("strobe".into());
         q.edge = Some("#00ff00".into());
         q.edge_speed = Some(70);
-        assert_eq!(edge(Some(&q)), Some(Lights { leds: vec![Led { rgb: [0, 255, 0], mode: LedMode::Strobe }], speed: Some(70) }));
+        assert_eq!(edge(Some(&q)), Some(Lights { leds: vec![Led::new([0, 255, 0], LedMode::Strobe)], speed: Some(70) }));
         assert_eq!(effect_mode(Some("blink")), LedMode::Spring);
         assert_eq!(effect_mode(Some("nonsense")), LedMode::Static);
     }

@@ -29,6 +29,10 @@ pub struct Module {
     pub port_path: Option<Vec<u8>>,
     /// Fair: the reader re-locks right after every 20 ms read, an unfair lock starves writers.
     device: FairMutex<HidDevice>,
+    /// A second handle for output reports only (Windows): writes never wait for the reader's
+    /// slice. Through the shared handle one 64-byte LED color took 34.8 ms on the owner's base
+    /// (2026-10-19), through a handle of its own 2.7 ms (`tests/output_timing.rs`).
+    writer: Option<FairMutex<HidDevice>>,
     /// Handed back to its firmware at exit: nothing more is sent (a picture after that, while the
     /// app was closing, may be what left a dial refusing commands on the next start, 2026-10-13).
     released: AtomicBool,
@@ -39,7 +43,12 @@ impl Module {
     pub(crate) fn new(kind: ModuleKind, serial: String, device: HidDevice) -> Self {
         let mut buf = [0u8; 4096];
         let output_len = device.get_report_descriptor(&mut buf).ok().and_then(|n| descriptor::output_report_len(&buf[..n], 0x02)).unwrap_or(64);
-        Self { id: ModuleId { kind, serial }, output_len, port_path: None, device: FairMutex::new(device), software_mode: AtomicBool::new(false), released: AtomicBool::new(false) }
+        Self { id: ModuleId { kind, serial }, output_len, port_path: None, device: FairMutex::new(device), writer: None, software_mode: AtomicBool::new(false), released: AtomicBool::new(false) }
+    }
+
+    /// Output reports go through this handle (the same device opened again).
+    pub(crate) fn set_writer(&mut self, device: HidDevice) {
+        self.writer = Some(FairMutex::new(device));
     }
 
     /// Whether the module currently accepts commands and queries (always true for the M0 family).
@@ -70,6 +79,21 @@ impl Module {
     pub fn send_all(&self, reports: &[Report]) -> Result<()> {
         if reports.iter().any(Report::is_forbidden) {
             return Err(Error::Forbidden);
+        }
+        // only output reports (a picture, an LED color): through the writer, never waiting for a read
+        if let Some(writer) = self.writer.as_ref().filter(|_| reports.iter().all(|r| matches!(r, Report::Output(_)))) {
+            let device = writer.lock();
+            if self.released.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            for report in reports {
+                if let Report::Output(bytes) = report {
+                    let mut buf = bytes.clone();
+                    buf.resize(self.output_len.max(bytes.len()), 0);
+                    device.write(&buf)?;
+                }
+            }
+            return Ok(());
         }
         let device = self.device.lock();
         if self.released.load(Ordering::SeqCst) {

@@ -403,7 +403,7 @@ pub fn tools() -> Vec<Value> {
         tool(
             "get_deck_lights",
             "Get deck lights",
-            "The deck-wide lighting: style (rainbow, color, profile, off), color, brightness 0-100 and reactions (mic muted, live recording or streaming, an agent needs the user, timer done; each {on, color}; levels = volume LEDs show their level).",
+            "The deck-wide lighting: style (rainbow, color, profile, music = flashes with the beat of what plays, off), color, brightness 0-100 and reactions (mic muted, live recording or streaming, an agent needs the user, timer done; each {on, color}; levels = volume LEDs show their level).",
             json!({}),
             &[],
             true,

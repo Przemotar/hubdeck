@@ -431,6 +431,7 @@ pub fn run() {
             update::update_settings_get,
             update::update_settings_set,
             engine::commands::spotify_status,
+            engine::commands::music_test,
             engine::commands::spotify_connect,
             engine::commands::spotify_disconnect,
             engine::commands::profile_pin,

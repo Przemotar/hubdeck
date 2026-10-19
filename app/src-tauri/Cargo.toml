@@ -22,6 +22,7 @@ cc = "1"
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
+rustfft = "6.2"
 serde.workspace = true
 serde_json.workspace = true
 mh-protocol.workspace = true

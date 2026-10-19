@@ -192,6 +192,22 @@ pub fn with_ring(svg: &str, color: &str) -> String {
     }
 }
 
+/// Lights to the music on the dial (owner, 2026-10-19: "A diale tez moglyby swiecic … tak samo
+/// jak podstawa"): a ring round its edge in `color`, as bright as the edge's flash (`level`
+/// 0..1, in tenths so a steady glow draws nothing new).
+pub fn with_music_ring(svg: &str, color: &str, level: f32) -> String {
+    let level = (level.clamp(0.0, 1.0) * 10.0).round() / 10.0;
+    if level <= 0.0 {
+        return svg.to_string();
+    }
+    let c = DIAL_PX as f32 / 2.0;
+    let ring = format!(r##"<circle cx="{c}" cy="{c}" r="{r}" fill="none" stroke="{color}" stroke-width="10" opacity="{level}"/>"##, r = c - 5.0);
+    match svg.rfind("</svg>") {
+        Some(end) => format!("{}{ring}</svg>", &svg[..end]),
+        None => svg.to_string(),
+    }
+}
+
 /// Settings > Screens: how app icons on Auto show (`icon`, `fill`, `fillLabel`).
 static APP_ICONS: std::sync::Mutex<&'static str> = std::sync::Mutex::new("fillLabel");
 

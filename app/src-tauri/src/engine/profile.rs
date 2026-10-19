@@ -373,12 +373,44 @@ pub struct LightSettings {
     /// The rainbow is drawn by HubDeck (one color for every LED, turning with the clock, so the
     /// window shows exactly what the deck does) instead of each module's own (owner, 2026-10-12).
     pub hub_rainbow: bool,
+    /// Lights to the music, all of them: how dark between beats and from how loud a part they
+    /// light up, 0..=100 each (`beat::PRESETS`).
+    pub music_dim: u8,
+    pub music_from: u8,
+    /// `predict` (flashes on the beat the tempo predicts) or `react` (only on what was heard, the
+    /// first way, kept to compare; owner, 2026-10-19).
+    pub music_mode: String,
+    /// How early a predicted beat flashes, 0..=300 ms (set with the metronome test).
+    pub music_lead: u16,
+    /// Snares and other hits flash whiter than the kick.
+    pub music_white: bool,
+    /// The dial shows a ring that flashes with the edge (off unless asked for).
+    pub music_dial: bool,
+    /// The knobs' and the faders' LEDs flash too, in their own colors, whenever the edge follows
+    /// the music (owner, 2026-10-19: "z defaultu niech bedzie tylko swiecenie podstawy ale zeby
+    /// mozna bylo dolaczyc jeszcze suwaki i knoby").
+    pub music_knobs: bool,
+    pub music_faders: bool,
 }
 
 impl Default for LightSettings {
     fn default() -> Self {
         // rainbow is what the modules do by themselves: nothing changes for existing setups
-        Self { style: "rainbow".into(), color: "#8b7cf6".into(), brightness: 100, react: Reactions::default(), hub_rainbow: true }
+        Self {
+            style: "rainbow".into(),
+            color: "#8b7cf6".into(),
+            brightness: 100,
+            react: Reactions::default(),
+            hub_rainbow: true,
+            music_dim: super::beat::PRESETS[1].1,
+            music_from: super::beat::PRESETS[1].2,
+            music_mode: "predict".into(),
+            music_lead: 20,
+            music_white: true,
+            music_dial: false,
+            music_knobs: false,
+            music_faders: false,
+        }
     }
 }
 

@@ -379,9 +379,12 @@ pub fn key_look(params: &Value, look: Look, values: &HashMap<String, String>, bl
         None => main,
     };
     let has_picture = look.image.as_deref().is_some_and(|i| !i.is_empty());
+    // a key's own icon stays and the state shows in its color (2026-10-19: five tag keys of the
+    // owner's music app all showed the waiting hand)
+    let own_icon = look.icon.as_deref().is_some_and(|i| !i.is_empty());
     Look {
         label: Some(label),
-        icon: if has_picture { look.icon.clone() } else { Some(icon.to_string()) },
+        icon: if has_picture || own_icon { look.icon.clone() } else { Some(icon.to_string()) },
         icon_color: Some(color.to_string()),
         bg: if pulse { Some(PULSE_BG.to_string()) } else { look.bg.clone() },
         ..look
@@ -432,6 +435,9 @@ mod tests {
         assert_eq!(key_look(&json!({"name": "launcher.2"}), Look::default(), &values, true).bg, None, "working stands still");
         assert_eq!(look.label.as_deref(), Some("Agent 1\nNeeds your OK"));
         assert_eq!((look.icon.as_deref(), look.icon_color.as_deref()), (Some("hand"), Some("#ff8a00")));
+        // a key with its own icon keeps it; the state shows in its color
+        let own = key_look(&json!({"name": "launcher.1"}), Look { icon: Some("bookmark".into()), ..Look::default() }, &values, false);
+        assert_eq!((own.icon.as_deref(), own.icon_color.as_deref()), (Some("bookmark"), Some("#ff8a00")));
         let (main, second, ..) = face(&json!({"name": "launcher.*"}), &Look::default(), &values);
         assert_eq!((main.as_str(), second.as_deref()), ("1", Some("waiting")), "the dial counts who waits");
         assert!(any_waiting(&values));

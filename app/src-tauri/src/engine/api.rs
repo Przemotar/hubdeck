@@ -115,6 +115,14 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
         ("POST", ["try", "end"]) => engine().and_then(|e| e.try_profile(None).map(|_| json!({"ok": true})).map_err(not_found)),
         ("GET", ["lights"]) => engine().map(|e| json!(e.lock().store.settings.lights)),
         ("POST", ["lights"]) => engine().and_then(|e| set_lights(&e, &body_json(body)?)),
+        // what the LEDs show (as set, with the effect's name) and what really went out last
+        ("GET", ["leds"]) => engine().map(|e| {
+            let s = e.lock();
+            json!({
+                "shown": s.leds,
+                "sent": s.leds_out.iter().map(|(id, (colors, sends))| (id.clone(), json!({"colors": colors, "sends": sends}))).collect::<serde_json::Map<_, _>>(),
+            })
+        }),
         ("POST", ["images"]) => body_json(body).and_then(|b| add_image(&b)),
         ("POST", ["app-picture"]) => body_json(body).and_then(|b| app_picture(&b)),
         ("POST", ["animations"]) => body_json(body).and_then(|b| add_animation(&b)),
@@ -662,8 +670,8 @@ fn set_lights(engine: &Engine, body: &Value) -> Answer {
     let mut v = json!(engine.lock().store.settings.lights);
     merge_json(&mut v, body);
     let mut lights: super::profile::LightSettings = serde_json::from_value(v).map_err(|e| bad(format!("not valid light settings: {e}")))?;
-    if !matches!(lights.style.as_str(), "rainbow" | "color" | "profile" | "off") {
-        return Err(bad("style is rainbow, color, profile or off"));
+    if !matches!(lights.style.as_str(), "rainbow" | "color" | "profile" | "music" | "off") {
+        return Err(bad("style is rainbow, color, profile, music or off"));
     }
     let r = &lights.react;
     for c in [&lights.color, &r.mic.color, &r.live.color, &r.agents.color, &r.timer.color] {

@@ -5408,3 +5408,11 @@ button.lib-foot:focus-visible span {
   cursor: pointer;
   margin-bottom: 8px;
 }
+
+/* Lights to the music: its fields spaced like the rest of the section */
+.music-tuning {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}

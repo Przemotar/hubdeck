@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.7
+
+- **Lights to the music.** The base's edge flashes with the beat of whatever plays (Spotify or any
+  player) and glows with how loud it is: pick "To the music" as the lights style, or as a
+  profile's edge effect. HubDeck works out the tempo and flashes on the beat it predicts, so the
+  light comes with the kick, not after it; snares and claps flash whiter. Settings > Lights >
+  Lights to the music has four presets, how dark it goes between beats, from how loud it lights
+  up, and How early, set with an 8-second metronome test. The knobs and the faders can flash too
+  (off by default). HubDeck listens to the computer's sound only while a light uses it; nothing
+  is recorded.
+- **LEDs and pictures go out faster.** Colors and pictures no longer wait for HubDeck to finish
+  reading the controls: an LED color takes about 8 ms instead of 35, a key picture 15 instead of
+  35, a dial picture 7 instead of 28.
+- **The faders no longer drop off** while the edge follows the music: the knobs' and faders'
+  rainbow changed color up to 50 times a second, more than their firmware takes.
+- The screensaver runs at an even 15 frames a second (it was 11-13).
+- An app-state key with its own icon keeps it and shows the state in its color.
+- For your own scripts and apps: `GET /api/leds` tells what each module's LEDs show now.
+
 ## 0.1.6
 
 - **CPU temperature and AMD or Intel GPUs with a current LibreHardwareMonitor.** Its version 0.9.5

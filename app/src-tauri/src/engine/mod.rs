@@ -10,6 +10,7 @@ pub mod assistant;
 pub mod audiodev;
 pub mod auto;
 pub mod backup;
+pub mod beat;
 mod brightness;
 pub mod builder;
 pub mod call;
@@ -108,7 +109,11 @@ pub const LEDS_EVENT: &str = "engine://leds";
 /// How long a pressed key shows its frame: long enough to see, short enough not to be in the way.
 const PRESS_FLASH: Duration = Duration::from_millis(160);
 /// How often HubDeck's rainbow moves on (10 steps a second: smooth on the LEDs, light on USB).
-const RAINBOW_STEP: Duration = Duration::from_millis(100);
+const RAINBOW_STEP: Duration = Duration::from_millis(leds::RAINBOW_TICK_MS);
+
+/// How often lights that follow the music are set; one still going out waits for the next step
+/// (the LED reports take a few ms each).
+const MUSIC_STEP: Duration = Duration::from_millis(20);
 /// How long the dial shows a value after it changed.
 const FEEDBACK_FOR: Duration = Duration::from_millis(1500);
 /// How often stateful keys check their state (mute can change outside the deck).
@@ -404,6 +409,10 @@ pub(crate) struct Shared {
     pub games_request: Option<bool>,
     /// What the LEDs of each module show now, for the window's drawing (None = its rainbow).
     pub leds: HashMap<String, Option<Vec<leds::LedView>>>,
+    /// What really went out to each module's LEDs last (#rrggbb at the moment's brightness, None =
+    /// its own rainbow) and how many times since the start: `GET /api/leds`, so a check can see a
+    /// light to the music change without looking at the deck.
+    pub leds_out: HashMap<String, (Option<Vec<String>>, u64)>,
     /// A question an assistant asks on the deck (MCP `ask_physical`): options on the keys.
     pub prompt: Option<Prompt>,
     /// A status an assistant shows on the dial (MCP `show_status`, `notify`).
@@ -584,6 +593,7 @@ impl Engine {
             playing: false,
             games_request: None,
             leds: HashMap::new(),
+            leds_out: HashMap::new(),
             prompt: None,
             status: None,
             levels: HashMap::new(),
@@ -617,6 +627,11 @@ impl Engine {
             gallery: 0,
             notify_until: None,
             rainbow_running: false,
+            music_running: false,
+            music_glow: None,
+            music_edge: false,
+            music_sent: HashMap::new(),
+            leds_shown: HashMap::new(),
             in_call: None,
             call_checked: Instant::now(),
             rainbow_last: Instant::now(),
@@ -1279,11 +1294,31 @@ impl Perf {
 struct LedSender {
     tx: crossbeam_channel::Sender<(String, Arc<mh_device::Module>, Vec<report::Report>)>,
     failed: Arc<Mutex<HashSet<String>>>,
+    /// Batches given and not sent yet, by module: lights to the music wait instead of queueing,
+    /// so the deck never shows a beat from the past (owner, 2026-10-19: "mam wrazenie ze jest duzy
+    /// delay"); by module, or the knobs always found the edge's batch waiting and never changed
+    /// (owner: "galki nie mrugaja").
+    pending: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl LedSender {
     fn send(&self, batch: (String, Arc<mh_device::Module>, Vec<report::Report>)) {
-        let _ = self.tx.send(batch);
+        let id = batch.0.clone();
+        *self.pending.lock().unwrap_or_else(|e| e.into_inner()).entry(id.clone()).or_default() += 1;
+        if self.tx.send(batch).is_err() {
+            done_with(&self.pending, &id);
+        }
+    }
+
+    /// A batch of this module is still going out.
+    fn busy(&self, id: &str) -> bool {
+        self.pending.lock().unwrap_or_else(|e| e.into_inner()).get(id).is_some_and(|n| *n > 0)
+    }
+}
+
+fn done_with(pending: &Mutex<HashMap<String, usize>>, id: &str) {
+    if let Some(n) = pending.lock().unwrap_or_else(|e| e.into_inner()).get_mut(id) {
+        *n = n.saturating_sub(1);
     }
 }
 
@@ -1293,18 +1328,31 @@ fn led_sender() -> &'static LedSender {
         let (tx, rx) = crossbeam_channel::unbounded::<(String, Arc<mh_device::Module>, Vec<report::Report>)>();
         let failed = Arc::new(Mutex::new(HashSet::new()));
         let failures = failed.clone();
+        let pending: Arc<Mutex<HashMap<String, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+        let left = pending.clone();
         let spawned = std::thread::Builder::new().name("leds".into()).spawn(move || {
+            // how fast the LEDs really go out, every 10 s while they change (the engine counts
+            // what it gives, not what the deck took)
+            let (mut since, mut sent, mut busy) = (Instant::now(), 0u32, Duration::ZERO);
             for (id, module, reports) in rx {
+                let started = Instant::now();
                 if let Err(e) = module.send_all(&reports) {
                     log::warn!("leds {id}: {e}");
-                    failures.lock().unwrap_or_else(|e| e.into_inner()).insert(id);
+                    failures.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
+                }
+                busy += started.elapsed();
+                sent += 1;
+                done_with(&left, &id);
+                if since.elapsed() >= Duration::from_secs(10) {
+                    log::info!("leds: {:.1}/s sent, {:.1} ms each", sent as f32 / since.elapsed().as_secs_f32(), busy.as_secs_f32() * 1000.0 / sent.max(1) as f32);
+                    (since, sent, busy) = (Instant::now(), 0, Duration::ZERO);
                 }
             }
         });
         if let Err(e) = spawned {
             log::warn!("LED thread: {e}");
         }
-        LedSender { tx, failed }
+        LedSender { tx, failed, pending }
     })
 }
 
@@ -1336,9 +1384,19 @@ fn leds_reports(kind: mh_protocol::ModuleKind, new: &leds::Lights, old: Option<&
     let mut out = Vec::new();
     let base = kind == mh_protocol::ModuleKind::Base;
     let target = |i: usize| if base { LedTarget::All } else { LedTarget::Index(i as u8) };
-    for (i, led) in new.leds.iter().enumerate() {
-        if old.and_then(|o| o.leds.get(i)).map(|l| l.rgb) != Some(led.rgb) {
-            out.extend(report::led_color(kind, target(i), led.rgb, false));
+    let changed = |i: usize, led: &leds::Led| old.and_then(|o| o.leds.get(i)).map(|l| l.rgb) != Some(led.rgb);
+    // every LED of the module in one color (lights to the music, a style): one report for all of
+    // them, not one each (2026-10-19: 5 faders and 3 knobs to the music took 19.5 % of a core)
+    let one_color = new.leds.first().filter(|first| new.leds.len() > 1 && new.leds.iter().all(|l| l.rgb == first.rgb));
+    if let (false, Some(first)) = (base, one_color) {
+        if new.leds.iter().enumerate().any(|(i, l)| changed(i, l)) {
+            out.extend(report::led_color(kind, LedTarget::All, first.rgb, false));
+        }
+    } else {
+        for (i, led) in new.leds.iter().enumerate() {
+            if changed(i, led) {
+                out.extend(report::led_color(kind, target(i), led.rgb, false));
+            }
         }
     }
     let modes_changed = old.is_none_or(|o| o.leds.iter().map(|l| l.mode).ne(new.leds.iter().map(|l| l.mode)));
@@ -1426,6 +1484,17 @@ struct Worker {
     /// HubDeck draws a rainbow now: the LEDs get the next color every `RAINBOW_STEP`.
     rainbow_running: bool,
     rainbow_last: Instant,
+    /// A light follows the music now (`beat.rs`): the LEDs are set every [`MUSIC_STEP`].
+    music_running: bool,
+    /// The edge's music color and brightness of the last step, for the dial's ring.
+    music_glow: Option<(String, f32)>,
+    /// The edge follows the music (knobs and faders join it by their switch).
+    music_edge: bool,
+    /// When each module last got a music brightness.
+    music_sent: HashMap<String, Instant>,
+    /// The LEDs of each module as set before the music's brightness (to tell a new color from a
+    /// new brightness).
+    leds_shown: HashMap<String, Option<leds::Lights>>,
     /// When each control was last turned, for acceleration.
     last_turn: HashMap<String, Instant>,
     /// Animated pictures on screen: name -> (frame shown, when the next one is due).
@@ -1561,6 +1630,10 @@ impl Worker {
             // a key frame that waits (the last one still going out, or too soon): wake when it may
             // go, not at the next tick; on the 40 ms grid a 36 ms send and the 50 ms gap meant a
             // frame every 80 ms, 12.5-14.5 a second (owner's pick, 2026-10-16: GIFs want 15)
+            // lights to the music: the next step on time, not at the next tick
+            let wait = if self.music_running { wait.min(MUSIC_STEP) } else { wait };
+            // the screensaver's next frame on time too: on the tick it ran at 11 a second (2026-10-19)
+            let wait = if self.saver_on { wait.min((self.saver_frame + Duration::from_millis(saver::FRAME_MS)).saturating_duration_since(now).max(Duration::from_millis(2))) } else { wait };
             let wait = if self.keys_waiting {
                 let gap = (self.keys_moved + KEYS_MOVING_EVERY).saturating_duration_since(now);
                 let poll = if picture_sender(Screen::Keys).busy() { Duration::from_millis(4) } else { gap };
@@ -1703,7 +1776,7 @@ impl Worker {
                 self.call_checked = now;
                 self.check_call();
             }
-            if self.rainbow_running && now.duration_since(self.rainbow_last) >= RAINBOW_STEP {
+            if (self.rainbow_running && now.duration_since(self.rainbow_last) >= RAINBOW_STEP) || (self.music_running && now.duration_since(self.rainbow_last) >= MUSIC_STEP) {
                 self.rainbow_last = now;
                 self.update_leds();
             }
@@ -3195,7 +3268,8 @@ impl Worker {
         // with reduced motion the screensaver changes once a minute
         let saver_every = if still { Duration::from_secs(60) } else { Duration::from_millis(saver::FRAME_MS) };
         if self.saver_on && now.duration_since(self.saver_frame) >= saver_every {
-            self.saver_frame = now;
+            // a steady beat: a frame that came late does not push the next ones back (13 a second)
+            self.saver_frame = if now.duration_since(self.saver_frame) < saver_every * 2 { self.saver_frame + saver_every } else { now };
             self.redraw_keys();
         }
         if now.duration_since(self.fleet_sweep) >= Duration::from_secs(60) && self.fleet.forget_stale(now) {
@@ -3442,7 +3516,13 @@ impl Worker {
         let game = self.arcade.as_ref().map(|a| a.screen(Instant::now()));
         let blanked = self.blanked;
         let mut shown = Vec::new();
+        let mut out = Vec::new();
         let mut rainbow_now = false;
+        let mut music_now = false;
+        // lights that follow the music flash only while something plays (the sound heard is the
+        // whole computer's, so a call alone does not make them flash)
+        let playing = self.now_playing.as_ref().is_some_and(|(_, _, playing)| *playing) || beat::testing(Instant::now());
+        let now_glow = Instant::now();
         for m in &snapshot.modules {
             let count = match m.kind {
                 "knobs" => 3,
@@ -3457,6 +3537,8 @@ impl Worker {
                 (kind, None) if self.lighting.contains_key(kind) => self.lighting.get(kind).map(|o| o.lights(count)),
                 ("knobs", None) => leds::lights(profile.as_ref(), "knobs", 3, &self.levels, &light_cfg, &live),
                 ("faders", None) => leds::lights(profile.as_ref(), "faders", 5, &self.levels, &light_cfg, &live),
+                // the metronome test: the edge follows it whatever it shows otherwise
+                ("base", _) if beat::testing(Instant::now()) => Some(leds::Lights { leds: vec![leds::Led::music(profile.as_ref().map(leds::profile_color).unwrap_or([255, 255, 255]))], speed: None }),
                 ("base", _) => leds::edge_lights(profile.as_ref(), &light_cfg, &live),
                 _ => continue,
             };
@@ -3499,9 +3581,74 @@ impl Worker {
                 } else {
                     (wanted, Vec::new())
                 };
+            // knobs and faders join the edge's music by their switch: every lit LED flashes in its
+            // own color (the edge's state is the last module's step: base comes first)
+            let joins = match m.kind {
+                "knobs" => light_cfg.music_knobs,
+                "faders" => light_cfg.music_faders,
+                _ => false,
+            };
+            let mut wanted = wanted;
+            if joins
+                && self.music_edge
+                && let Some(lights) = wanted.as_mut()
+            {
+                for led in lights.leds.iter_mut().filter(|l| l.rgb != [0, 0, 0] && l.mode == LedMode::Static) {
+                    led.pulse = true;
+                }
+            }
+            if m.kind == "base" {
+                self.music_edge = wanted.as_ref().is_some_and(|l| l.leds.iter().any(|led| led.pulse));
+            }
+            // lights that follow the music: their color at the brightness of this moment; the
+            // window is told the color as it is, with the effect's name
+            let music_view: Vec<bool> = wanted.as_ref().map(|l| l.leds.iter().map(|led| led.pulse).collect()).unwrap_or_default();
+            let as_set = wanted.clone();
+            if music_view.iter().any(|p| *p) && !blanked && game.is_none() {
+                music_now = true;
+                // one tuning for every light to the music (Settings > Lights)
+                let tuning = beat::Tuning {
+                    dim: light_cfg.music_dim.min(100) as f32 / 100.0,
+                    from: light_cfg.music_from.min(100) as f32 / 100.0,
+                    predict: light_cfg.music_mode != "react",
+                    lead_ms: light_cfg.music_lead.min(300) as u64,
+                    white_hits: light_cfg.music_white,
+                };
+                let glow = if playing { beat::glow(now_glow, &tuning) } else { None };
+                if m.kind == "base"
+                    && let Some(base) = wanted.as_ref().and_then(|l| l.leds.iter().find(|l| l.pulse))
+                {
+                    let ring = glow.map_or(0.35, |g| g.level);
+                    let color = format!("#{:02x}{:02x}{:02x}", base.rgb[0], base.rgb[1], base.rgb[2]);
+                    // only with the dial's ring on: a redraw that shows nothing new cost 16 dial
+                    // pictures a second (20 % of a core, 2026-10-19)
+                    if light_cfg.music_dial && self.music_glow.as_ref().is_none_or(|(c, l)| *c != color || ((l * 10.0).round() - (ring * 10.0).round()).abs() >= 1.0) {
+                        self.dial_dirty = true;
+                    }
+                    self.music_glow = Some((color, ring));
+                }
+                // in twelfths: the eye sees no steps, and a fading flash need not go out every step
+                let glow = glow.map(|g| beat::Glow { level: (g.level * 12.0).round() / 12.0, white: (g.white * 4.0).round() / 4.0 });
+                if let (Some(g), Some(lights)) = (glow, wanted.as_mut()) {
+                    for led in lights.leds.iter_mut().filter(|l| l.pulse) {
+                        led.rgb = led.rgb.map(|c| ((c as f32 + (255.0 - c as f32) * g.white) * g.level).round().min(255.0) as u8);
+                    }
+                }
+            }
             let before = self.leds_sent.get(&m.id).cloned();
             if before.as_ref() == Some(&wanted) {
                 continue;
+            }
+            // only the music's brightness changed and the last LEDs are still going out, or knobs
+            // and faders had one 40 ms ago (their firmware takes fewer: the faders dropped off the
+            // bus at 50 a second, 2026-10-19): this moment is skipped, a later step sends its own
+            let only_brightness = music_view.iter().any(|p| *p) && before.is_some() && self.leds_shown.get(&m.id) == Some(&as_set);
+            let too_soon = m.kind != "base" && self.music_sent.get(&m.id).is_some_and(|at| at.elapsed() < Duration::from_millis(40));
+            if only_brightness && (led_sender().busy(&m.id) || too_soon) {
+                continue;
+            }
+            if only_brightness {
+                self.music_sent.insert(m.id.clone(), Instant::now());
             }
             let Some(module) = self.deck.module(&m.id) else { continue };
             let kind = module.kind();
@@ -3513,22 +3660,35 @@ impl Worker {
             // sent on the LED thread, in order (the reports are the change from what went before)
             led_sender().send((m.id.clone(), module, reports));
             self.perf.leds += 1;
-            let view = wanted.as_ref().map(|l| {
+            let view = as_set.as_ref().map(|l| {
                 let mut v = leds::view(l);
                 for (led, r) in v.iter_mut().zip(&replaced) {
                     if *r {
                         *led = leds::LedView { color: String::new(), effect: "hubRainbow" };
                     }
                 }
+                for (led, music) in v.iter_mut().zip(&music_view) {
+                    if *music {
+                        led.effect = "music";
+                    }
+                }
                 v
             });
+            out.push((m.id.clone(), wanted.as_ref().map(|l| l.leds.iter().map(|led| format!("#{:02x}{:02x}{:02x}", led.rgb[0], led.rgb[1], led.rgb[2])).collect())));
             self.leds_sent.insert(m.id.clone(), wanted);
+            self.leds_shown.insert(m.id.clone(), as_set);
             shown.push((m.id.clone(), view));
         }
         self.rainbow_running = rainbow_now;
+        self.music_running = music_now;
+        beat::want(music_now);
         // the window hears only real changes (HubDeck's rainbow turning is not one: it follows the clock)
         let all = {
             let mut s = self.lock();
+            for (id, colors) in out {
+                let entry = s.leds_out.entry(id).or_insert((None, 0));
+                *entry = (colors, entry.1 + 1);
+            }
             let changed = shown.iter().any(|(id, view)| s.leds.get(id) != Some(view));
             s.leds.extend(shown);
             changed.then(|| s.leds.clone())
@@ -3907,6 +4067,12 @@ impl Worker {
             };
             // the tour points at the dial: a white ring around its edge
             let svg = if self.lit_highlight() == Some("dial") { render::with_ring(&svg, HIGHLIGHT) } else { svg };
+            // lights to the music: a ring that flashes with the edge
+            let ring = self.music_glow.clone().filter(|_| self.music_running && self.lock().store.settings.lights.music_dial);
+            let svg = match ring {
+                Some((color, level)) => render::with_music_ring(&svg, &color, level),
+                None => svg,
+            };
             // screens off: the dial shows black (its backlight is never set to 0, see apply_screens)
             let svg = if self.blanked { render::dial_body_svg(r##"<rect width="240" height="240" fill="#000"/>"##, 0) } else { svg };
             if self.sent.get(&m.id) == Some(&svg) {
@@ -3982,12 +4148,19 @@ mod tests {
     fn led_reports_send_colors_then_effects_then_speed() {
         use leds::{Led, Lights};
         use mh_protocol::ModuleKind;
-        let red = Led { rgb: [255, 0, 0], mode: LedMode::Breathing };
+        let red = Led::new([255, 0, 0], LedMode::Breathing);
         let lights = Lights { leds: vec![red; 3], speed: Some(40) };
         let bytes: Vec<Vec<u8>> = leds_reports(ModuleKind::Knobs, &lights, None).iter().map(|r| r.bytes().to_vec()).collect();
-        assert_eq!(bytes.len(), 5, "three colors, one effect for the module, the speed");
-        assert_eq!(bytes[3], vec![0x02, 0x2C, 2, 0xFF, LedMode::Breathing as u8, 0]);
-        assert_eq!(bytes[4], vec![0x02, 0x30, 40]);
+        assert_eq!(bytes.len(), 3, "one color for the three knobs, one effect for the module, the speed");
+        assert_eq!(bytes[0][..4], [0x02, 0x2D, 2, 0xFF]);
+        assert_eq!(bytes[1], vec![0x02, 0x2C, 2, 0xFF, LedMode::Breathing as u8, 0]);
+        assert_eq!(bytes[2], vec![0x02, 0x30, 40]);
+        // different colors: one each
+        let mut colors = lights.clone();
+        colors.leds[2].rgb = [0, 0, 255];
+        let each: Vec<Vec<u8>> = leds_reports(ModuleKind::Knobs, &colors, Some(&lights)).iter().map(|r| r.bytes().to_vec()).collect();
+        assert_eq!(each.len(), 1, "colors differ: only the changed knob's, by its own index");
+        assert_eq!(each[0][..4], [0x02, 0x2D, 2, 2]);
         // nothing changed: nothing sent; one knob's effect changed: only its mode
         assert!(leds_reports(ModuleKind::Knobs, &lights, Some(&lights)).is_empty());
         let mut mixed = lights.clone();

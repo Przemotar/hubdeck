@@ -599,6 +599,20 @@ pub fn streamlabs_set(engine: State<'_, Engine>, url: String, token: Option<Stri
     Ok(())
 }
 
+/// Lights to the music: an 8 s metronome on the speakers while the edge follows it, to set how
+/// early the predicted beats flash (Settings > Lights; owner's "2", 2026-10-19).
+#[tauri::command]
+pub fn music_test(engine: State<'_, Engine>) -> Res<()> {
+    let file = engine.data_dir().join("metronome.wav");
+    if !file.is_file() {
+        std::fs::write(&file, super::beat::metronome_wav(8)).map_err(io)?;
+    }
+    super::beat::want(true);
+    super::beat::start_test(8);
+    super::sound::send(super::sound::Cmd::Play { file: file.to_string_lossy().into_owned(), volume: 0.7, device: String::new(), mode: super::sound::Mode::Restart });
+    Ok(())
+}
+
 /// Spotify: (Client ID, signed in).
 #[tauri::command]
 pub fn spotify_status(engine: State<'_, Engine>) -> (String, bool) {

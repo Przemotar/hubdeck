@@ -15,6 +15,9 @@ import { share, type GalleryEntry } from "../share";
 import { detachedKinds, keysOfKind, MODULE_KINDS, ownedKey, placeModules, type Placement } from "../layout";
 import { BUILT_IN_LANGUAGES, getLanguage, languageTemplate, localizeError, localizeGame, localizePreset, t, useLanguage, type Key } from "../i18n";
 
+// macOS has no listening to the music yet (engine/beat.rs: Windows only)
+const IS_MAC = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+
 const moduleName = (kind: ModuleKind) => t(`module.${kind}`);
 
 /** "Key 2", "Dial", "Knob 1": the name of a control as the user sees it. */
@@ -999,6 +1002,132 @@ function HelpMenu() {
 }
 
 /** The hardware light effect and its speed (base edge, knob and fader LEDs). */
+/** Ready-made tunings of the lights to the music (beat.rs `PRESETS`): [id, darker between beats, from how loud]. */
+const MUSIC_PRESETS = [
+  ["soft", 20, 10],
+  ["beat", 60, 45],
+  ["punchy", 85, 60],
+  ["beats", 100, 100],
+] as const;
+
+/** Lights to the music: a preset, then the two sliders it sets, for every light that follows the music. */
+function MusicTuning({ l, setL, save }: { l: LightSettings; setL: (l: LightSettings) => void; save: (l: LightSettings) => void }) {
+  const dim = l.musicDim ?? 60;
+  const from = l.musicFrom ?? 45;
+  const preset = MUSIC_PRESETS.find(([, d, f]) => d === dim && f === from)?.[0] ?? "own";
+  const slider = (id: string, label: string, value: number, set: (v: number) => LightSettings) => (
+    <div className="field">
+      <div className="row between">
+        <label htmlFor={id} className="label">
+          {label}
+        </label>
+        <span className="mono value">{value}</span>
+      </div>
+      <input
+        id={id}
+        className="range"
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        style={{ "--fill": `${value}%` } as React.CSSProperties}
+        onChange={(e) => setL(set(Number(e.target.value)))}
+        onPointerUp={() => save(l)}
+        onKeyUp={() => save(l)}
+      />
+    </div>
+  );
+  return (
+    <div className="music-tuning">
+      <div className="field">
+        <label htmlFor="lights-music-preset" className="label">
+          {t("lights.musicTitle")}
+        </label>
+        <select
+          id="lights-music-preset"
+          className="input"
+          value={preset}
+          onChange={(e) => {
+            const p = MUSIC_PRESETS.find(([id]) => id === e.target.value);
+            if (p) save({ ...l, musicDim: p[1], musicFrom: p[2] });
+          }}
+        >
+          {MUSIC_PRESETS.map(([id]) => (
+            <option key={id} value={id}>
+              {t(`lights.musicPreset.${id}`)}
+            </option>
+          ))}
+          {preset === "own" && <option value="own">{t("lights.musicPreset.own")}</option>}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="lights-music-mode" className="label">
+          {t("lights.musicMode")}
+        </label>
+        <select id="lights-music-mode" className="input" value={l.musicMode ?? "predict"} onChange={(e) => save({ ...l, musicMode: e.target.value })}>
+          <option value="predict">{t("lights.musicMode.predict")}</option>
+          <option value="react">{t("lights.musicMode.react")}</option>
+        </select>
+      </div>
+      <div className="field">
+        <span className="label">{t("lights.musicWhich")}</span>
+        <label className="check">
+          <input type="checkbox" checked disabled />
+          {t("lights.musicEdge")}
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={l.musicKnobs ?? false} onChange={(e) => save({ ...l, musicKnobs: e.target.checked })} />
+          {t("lights.musicKnobs")}
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={l.musicFaders ?? false} onChange={(e) => save({ ...l, musicFaders: e.target.checked })} />
+          {t("lights.musicFaders")}
+        </label>
+      </div>
+      {slider("lights-music-dim", t("lights.musicDim"), dim, (v) => ({ ...l, musicDim: v }))}
+      {slider("lights-music-from", t("lights.musicFrom"), from, (v) => ({ ...l, musicFrom: v }))}
+      {(l.musicMode ?? "predict") === "predict" && (
+        <>
+          <div className="field">
+            <div className="row between">
+              <label htmlFor="lights-music-lead" className="label">
+                {t("lights.musicLead")}
+              </label>
+              <span className="mono value">{l.musicLead ?? 20} ms</span>
+            </div>
+            <input
+              id="lights-music-lead"
+              className="range"
+              type="range"
+              min={0}
+              max={200}
+              step={5}
+              value={l.musicLead ?? 20}
+              style={{ "--fill": `${((l.musicLead ?? 20) / 200) * 100}%` } as React.CSSProperties}
+              onChange={(e) => setL({ ...l, musicLead: Number(e.target.value) })}
+              onPointerUp={() => save(l)}
+              onKeyUp={() => save(l)}
+            />
+          </div>
+          <div className="row wrap">
+            <button className="tool ghost" onClick={() => api.musicTest().catch(() => {})}>
+              <Icon name="play" />
+              {t("lights.musicTest")}
+            </button>
+          </div>
+          <p className="help">{t("lights.musicTestHelp")}</p>
+          <label className="check">
+            <input type="checkbox" checked={l.musicWhite ?? true} onChange={(e) => save({ ...l, musicWhite: e.target.checked })} />
+            {t("lights.musicWhite")}
+          </label>
+        </>
+      )}
+      <p className="help">{t(IS_MAC ? "lights.musicHelpMac" : "lights.musicHelp")}</p>
+    </div>
+  );
+}
+
 export function EffectFields({ idPrefix, effect, speed, onChange }: { idPrefix: string; effect?: string; speed?: number; onChange: (effect?: string, speed?: number) => void }) {
   useLanguage();
   const current = effect ?? "static";
@@ -1017,7 +1146,8 @@ export function EffectFields({ idPrefix, effect, speed, onChange }: { idPrefix: 
           ))}
         </select>
       </div>
-      {current !== "static" && (
+      {current === "music" && <p className="help">{t("lights.musicWhere")}</p>}
+      {current !== "static" && current !== "music" && (
         <div className="field">
           <div className="row between">
             <label htmlFor={`${idPrefix}-speed`} className="label">
@@ -1508,6 +1638,7 @@ function LightsSettings() {
           <option value="rainbow">{t("lights.rainbow")}</option>
           <option value="color">{t("lights.oneColor")}</option>
           <option value="profile">{t("lights.profileColor")}</option>
+          <option value="music">{t("lights.music")}</option>
           <option value="off">{t("lights.off")}</option>
         </select>
         {l.style === "color" && (
@@ -1532,6 +1663,7 @@ function LightsSettings() {
         onPointerUp={() => save(l)}
         onKeyUp={() => save(l)}
       />
+      <MusicTuning l={l} setL={setL} save={save} />
       {l.style === "rainbow" && (
         <label className="check" title={t("lights.hubRainbowHelp")}>
           <input type="checkbox" checked={l.hubRainbow ?? true} onChange={(e) => save({ ...l, hubRainbow: e.target.checked })} />

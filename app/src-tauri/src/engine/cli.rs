@@ -88,7 +88,7 @@ pub fn command(api: &dyn Api, args: &[String]) -> Result<String, String> {
             Ok(if warnings.is_empty() { format!("key {n} changed") } else { format!("key {n} changed ({warnings})") })
         }
         Some("lights") => {
-            let style = arg(1).filter(|s| matches!(*s, "rainbow" | "color" | "profile" | "off")).ok_or("lights rainbow, color, profile or off")?;
+            let style = arg(1).filter(|s| matches!(*s, "rainbow" | "color" | "profile" | "music" | "off")).ok_or("lights rainbow, color, profile, music or off")?;
             let mut body = json!({ "style": style });
             if let Some(c) = arg(2) {
                 body["color"] = json!(c);

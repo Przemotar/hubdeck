@@ -91,6 +91,15 @@ window shows the same bytes the dial got).
 
 **Any module in any connector (2026-10-19).** Any module works in any of the 26 connectors (the owner); the official table leaves out the 42 combinations where a module hangs over the base's edge, e.g. keys in `1-1-1` (a user's deck in #4: keys, faders `2-3`, knobs `1-3-4`, dial `1-4-1` = 28 cells on a 24-cell base) or keys in `4-4` (the owner, 2026-10-19 12:21). A model fits the table: each connector is a point on the base with a direction, each module kind has its own connector point under it (in its unrotated footprint: dial (1, 0), keys (3, 1), faders (3, 0), knobs (1, 2) turned 180, rollers (2, 0) turned 270); it matches 58 of 62 known pairs (the misses: rollers in `1-2-1` and `1-2-4`, faders in `3-1` and `3-2`, maybe a second connector under those modules). Keys and faders share their rotation in all 7 connectors where both are known. `gen_slots.py` adds the derived positions marked `derived` (they may lie outside the 4×6 grid); the table keeps the official ones. Derived keys `1-1-1`: col 2, row 0, 90° (one cell over the edge); keys `4-4`: col 0, row -2, 90°. Checked on hardware by the owner (2026-10-19 12:59-13:00, the window matched his desk, nothing corrected in Edit layout): keys `1-1-1` and `1-2-4` (derived), rollers `1-1-4` (official, unchecked before); all marked `verified` in the table.
 
+**Output reports and a second handle (2026-10-19, Windows).** A 64-byte LED color to the base
+takes 2.7 ms through its own HID handle while the app's reader holds another; through the shared
+handle it waited for the reader's 20 ms slice (34.8 ms). `send_output_report` (the control pipe,
+SET_REPORT) is refused by the base and hangs 5 s. Since the 20:38 build knobs and faders
+get one color for all their LEDs with index `FF` (`02 2D <group> FF r g b 0`); not yet seen on the
+deck (the knobs flashed at 20:17-20:27 with one report per LED; index `FF` took effects on 2026-10-11).
+The faders module fell off USB twice while being worked with, once while its LEDs changed ~50
+times a second; whether a high LED rate can do it is not known.
+
 ## Blocked in the driver (`_FORBIDDEN` in `prototype/masterhub/driver.py`)
 
 Firmware update, serial number change, factory data write, recovery tests and factory reset. Firmware is updated only with the official app.

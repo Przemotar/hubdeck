@@ -128,6 +128,17 @@ export interface LightSettings {
   react: { mic: Reaction; live: Reaction; agents: Reaction; timer: Reaction; call: Reaction; levels: boolean };
   /** The rainbow is drawn by HubDeck (the window shows exactly what the deck does), not by each module. */
   hubRainbow?: boolean;
+  /** Lights to the music: how dark between beats and from how loud a part they light up, 0..100. */
+  musicDim?: number;
+  musicFrom?: number;
+  /** "predict" (the default) or "react" (the first way, to compare). */
+  musicMode?: string;
+  /** How early a predicted beat flashes, ms; snares flash whiter. */
+  musicLead?: number;
+  musicWhite?: boolean;
+  /** Knobs and faders flash with the edge too. */
+  musicKnobs?: boolean;
+  musicFaders?: boolean;
 }
 
 /** One step of a multi-action. */
@@ -162,7 +173,7 @@ export const BACKGROUNDS: [bg: string, fg: string][] = [
 ];
 
 /** Hardware LED effects; mirrors `leds::EFFECTS` in src-tauri/src/engine/leds.rs. */
-export const LED_EFFECTS = ["static", "breathing", "strobe", "blink", "cycling", "random", "wave", "water", "rainbow"] as const;
+export const LED_EFFECTS = ["static", "breathing", "strobe", "blink", "cycling", "random", "wave", "water", "rainbow", "music"] as const;
 
 export const STEP_CONDITIONS = ["", "micMuted", "micOn", "soundMuted", "soundOn", "obsRecording", "obsNotRecording", "obsStreaming", "obsNotStreaming"] as const;
 
@@ -821,6 +832,7 @@ export const api = {
   setWheel: (choices: string[]) => invoke<string[]>("wheel_set", { choices }),
   openPluginsFolder: () => invoke("plugins_open_folder"),
   spotifyStatus: () => invoke<[string, boolean]>("spotify_status"),
+  musicTest: () => invoke("music_test"),
   spotifyConnect: (clientId: string) => invoke<{ name: string; premium: boolean | null }>("spotify_connect", { clientId }),
   spotifyDisconnect: () => invoke("spotify_disconnect"),
   setHomeAssistant: (url: string, token: string | null) => invoke("homeassistant_set", { url, token }),
