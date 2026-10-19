@@ -16,6 +16,7 @@
 <meta name="google-site-verification" content="pvTlOtUub7kAQDAovjcLiuN480_cHZWFa88JTojXNoo">
 <link rel="canonical" href="https://przemotar.github.io/hubdeck/">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "HubDeck", "description": "Free, open-source alternative to the official Cooler Master MasterHUB software, for Windows and macOS.", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows 10, Windows 11, macOS 12 or later", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "downloadUrl": "https://github.com/Przemotar/hubdeck/releases/latest", "url": "https://przemotar.github.io/hubdeck/", "license": "https://opensource.org/licenses/MIT", "codeRepository": "https://github.com/Przemotar/hubdeck", "image": "https://przemotar.github.io/hubdeck/images/og.png"}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Is HubDeck free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. It is free and open source (MIT or Apache-2.0), with no account, no cloud and no telemetry. It is made by a MasterHUB owner and is not affiliated with Cooler Master."}}, {"@type": "Question", "name": "Is it an alternative to the official MasterHUB software?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. HubDeck drives the whole Cooler Master MasterHUB deck by itself: keys, dial, knobs, faders, rollers and the edge light, with profiles that follow the app in front, Stream Deck plugins and a tour that sets up your deck in minutes."}}, {"@type": "Question", "name": "Which MasterHUB modules does it support?", "acceptedAnswer": {"@type": "Answer", "text": "All of them, on Windows 10 and 11 and on macOS 12 or later: the base with its edge light, the 15 LCD keys, the dial with its round screen, the 3 knobs, the 5 faders and the 2 rollers. Attach and take off modules while it runs; it finds where each one sits. One base at a time for now."}}, {"@type": "Question", "name": "Do I need to uninstall the official app? Can I go back?", "acceptedAnswer": {"@type": "Answer", "text": "No uninstall is needed: quit the official app first, since two apps cannot drive the deck at once. To go back, quit HubDeck from the tray and start the official app; your modules are unchanged. Profiles exported from the official app (.mhz) can be imported (beta)."}}, {"@type": "Question", "name": "Can it damage or brick my modules?", "acceptedAnswer": {"@type": "Answer", "text": "No. HubDeck never writes firmware. Commands that could rewrite serial numbers, reset a module or flash firmware are not part of its code, and reports carrying them are refused."}}, {"@type": "Question", "name": "Can I use Stream Deck plugins on the MasterHUB?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The Plugins tab installs about 300 plugins made for Stream Deck with one click, and HubDeck can use the plugins your Stream Deck app already has. HubDeck drives the MasterHUB only, not Stream Deck hardware."}}, {"@type": "Question", "name": "Does it work on a Mac?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, on macOS 12 or later, Apple silicon and Intel. Download the .dmg and drag HubDeck to Applications."}}, {"@type": "Question", "name": "Is AI required?", "acceptedAnswer": {"@type": "Answer", "text": "No. The tour, the editor and everything else work without it. The optional deck assistant runs on your own Claude Code."}}]}</script>
 <link rel="icon" href="images/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -55,6 +56,11 @@
   .story > div { flex: 1 1 520px; min-width: 0; }
   .story h2 { font-size: 28px; margin-bottom: 12px; }
   .story p { margin: 0; font-size: 16px; line-height: 1.6; color: var(--muted); }
+  .faq { display: grid; gap: 10px; max-width: 860px; }
+  .faq details { border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+  .faq summary { cursor: pointer; padding: 16px 20px; font-size: 17px; font-weight: 600; list-style-position: inside; }
+  .faq summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 14px; }
+  .faq details p { margin: 0; padding: 0 20px 18px; font-size: 15px; line-height: 1.6; color: var(--muted); max-width: 70ch; }
   footer { border-top: 1px solid #1f1d29; padding: 28px 0 48px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; font-size: 14px; color: var(--dim); }
 </style>
 </head>
@@ -66,6 +72,7 @@
       <a href="#features">Features</a>
       <a href="#assistant">Assistant</a>
       <a href="#story">How it was built</a>
+      <a href="#faq">Questions</a>
       <a href="https://github.com/Przemotar/hubdeck">GitHub</a>
     </nav>
   </header>
@@ -112,6 +119,20 @@
         <p>The USB protocol of every module was worked out and checked on real hardware, then the app was built around it with Claude Code. The code, the protocol and the story are public: take it, change it, extend it, with or without AI.</p>
       </div>
       <a class="btn secondary" href="https://github.com/Przemotar/hubdeck/blob/main/docs/CASE-STUDY.md">Read the case study</a>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2>Questions</h2>
+    <div class="faq">
+      <details><summary>Is HubDeck free?</summary><p>Yes. It is free and open source (MIT or Apache-2.0), with no account, no cloud and no telemetry. It is made by a MasterHUB owner and is not affiliated with Cooler Master.</p></details>
+      <details><summary>Is it an alternative to the official MasterHUB software?</summary><p>Yes. HubDeck drives the whole Cooler Master MasterHUB deck by itself: keys, dial, knobs, faders, rollers and the edge light, with profiles that follow the app in front, Stream Deck plugins and a tour that sets up your deck in minutes.</p></details>
+      <details><summary>Which MasterHUB modules does it support?</summary><p>All of them, on Windows 10 and 11 and on macOS 12 or later: the base with its edge light, the 15 LCD keys, the dial with its round screen, the 3 knobs, the 5 faders and the 2 rollers. Attach and take off modules while it runs; it finds where each one sits. One base at a time for now.</p></details>
+      <details><summary>Do I need to uninstall the official app? Can I go back?</summary><p>No uninstall is needed: quit the official app first, since two apps cannot drive the deck at once. To go back, quit HubDeck from the tray and start the official app; your modules are unchanged. Profiles exported from the official app (.mhz) can be imported (beta).</p></details>
+      <details><summary>Can it damage or brick my modules?</summary><p>No. HubDeck never writes firmware. Commands that could rewrite serial numbers, reset a module or flash firmware are not part of its code, and reports carrying them are refused.</p></details>
+      <details><summary>Can I use Stream Deck plugins on the MasterHUB?</summary><p>Yes. The Plugins tab installs about 300 plugins made for Stream Deck with one click, and HubDeck can use the plugins your Stream Deck app already has. HubDeck drives the MasterHUB only, not Stream Deck hardware.</p></details>
+      <details><summary>Does it work on a Mac?</summary><p>Yes, on macOS 12 or later, Apple silicon and Intel. Download the .dmg and drag HubDeck to Applications.</p></details>
+      <details><summary>Is AI required?</summary><p>No. The tour, the editor and everything else work without it. The optional deck assistant runs on your own Claude Code.</p></details>
     </div>
   </section>
 

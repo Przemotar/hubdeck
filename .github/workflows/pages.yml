@@ -37,6 +37,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/plugins/catalog.mjs site/plugins.json
+      # the sitemap tells search engines when the page last changed: the date of this commit
+      - name: Sitemap date
+        run: sed -i "s|<lastmod>.*</lastmod>|<lastmod>$(git log -1 --format=%cs)</lastmod>|" site/sitemap.xml
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

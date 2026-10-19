@@ -79,7 +79,10 @@ pub fn want(yes: bool) {
         #[cfg(windows)]
         let spawned = std::thread::Builder::new().name("beat".into()).spawn(win::listen);
         #[cfg(not(windows))]
-        let spawned: std::io::Result<()> = Ok(RUNNING.store(false, Ordering::Release));
+        let spawned: std::io::Result<()> = {
+            RUNNING.store(false, Ordering::Release);
+            Ok(())
+        };
         if spawned.is_err() {
             RUNNING.store(false, Ordering::Release);
         }
