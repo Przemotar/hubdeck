@@ -337,6 +337,14 @@ pub fn tools() -> Vec<Value> {
             &[],
             true,
         ),
+        tool(
+            "list_playlists",
+            "List Spotify playlists",
+            "The user's Spotify playlists: name and playlist (use it as params.playlist of spotify.add, and the name as the key's label). connected false: Spotify is not connected in HubDeck; then say so instead of leaving playlist keys empty.",
+            json!({}),
+            &[],
+            true,
+        ),
         tool("list_profiles", "List profiles", "The user's profiles (id, name, linked apps), the active one and the home one.", json!({}), &[], true),
         tool("get_profile", "Get profile", "One profile with all its controls, pages and lights.", json!({"id": {"type": "string"}}), &["id"], true),
         tool(
@@ -519,6 +527,7 @@ pub fn call_tool(api: &dyn Api, name: &str, args: &Value) -> Result<Vec<Value>, 
             Ok(text(&json!({"installed": filter(&apps["installed"], search), "recent": filter(&apps["recent"], search)})))
         }
         "list_games" => Ok(text(&filter(&api.call("GET", "/api/games", None)?, search))),
+        "list_playlists" => Ok(text(&api.call("GET", "/api/spotify/playlists", None)?)),
         "list_profiles" => Ok(text(&api.call("GET", "/api/profiles", None)?)),
         "get_profile" => Ok(text(&api.call("GET", &format!("/api/profiles/{}", seg(arg(args, "id")?)?), None)?)),
         "create_profile" => Ok(text(&api.call("POST", "/api/profiles", Some(args))?)),

@@ -63,9 +63,20 @@ fn with<T>(f: impl FnOnce(&mut State) -> T) -> T {
     f(state)
 }
 
+/// The program an exe is: a copy an app's own updater left running under a backup name
+/// (`my-tool.bak-20261012-112411.exe`) counts as the app (owner's data, 2026-10-19: one
+/// tool was four of his "apps used most").
+fn program(exe: &str) -> String {
+    let lower = exe.to_lowercase();
+    match lower.split_once(".bak") {
+        Some((stem, rest)) if !stem.is_empty() && rest.ends_with(".exe") => format!("{stem}.exe"),
+        _ => lower,
+    }
+}
+
 /// Add a stretch of `elapsed` in front to `exe` on `day`.
 fn add(apps: &mut BTreeMap<String, Usage>, exe: &str, elapsed: Duration, day: &str) {
-    let u = apps.entry(exe.to_lowercase()).or_default();
+    let u = apps.entry(program(exe)).or_default();
     u.seconds += elapsed.min(MAX_STRETCH).as_secs();
     if u.last_day != day {
         u.days += 1;
@@ -116,7 +127,16 @@ pub fn since() -> String {
 
 /// The apps used most, most first: (exe, hours, days).
 pub fn top(n: usize) -> Vec<(String, f32, u32)> {
-    let mut all: Vec<(String, f32, u32)> = with(|s| s.file.apps.iter().filter(|(exe, _)| !super::idle::is_lock_screen(exe)).map(|(exe, u)| (exe.clone(), u.seconds as f32 / 3600.0, u.days)).collect());
+    // what was counted under a backup name before goes to its program too
+    let mut merged: BTreeMap<String, (u64, u32)> = BTreeMap::new();
+    with(|s| {
+        for (exe, u) in s.file.apps.iter().filter(|(exe, _)| !super::idle::is_lock_screen(exe)) {
+            let m = merged.entry(program(exe)).or_default();
+            m.0 += u.seconds;
+            m.1 = m.1.max(u.days);
+        }
+    });
+    let mut all: Vec<(String, f32, u32)> = merged.into_iter().map(|(exe, (seconds, days))| (exe, seconds as f32 / 3600.0, days)).collect();
     all.sort_by(|a, b| b.1.total_cmp(&a.1));
     all.truncate(n);
     all
@@ -125,6 +145,19 @@ pub fn top(n: usize) -> Vec<(String, f32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_backup_copy_counts_as_its_program() {
+        assert_eq!(program("my-tool.bak-20261012-112411.exe"), "my-tool.exe");
+        assert_eq!(program("My-Tool.exe"), "my-tool.exe");
+        assert_eq!(program("backup.exe"), "backup.exe");
+        assert_eq!(program(".bak.exe"), ".bak.exe");
+        let mut apps = BTreeMap::new();
+        add(&mut apps, "my-tool.exe", Duration::from_secs(60), "2026-10-19");
+        add(&mut apps, "my-tool.bak-20261019-101657.exe", Duration::from_secs(60), "2026-10-19");
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps["my-tool.exe"].seconds, 120);
+    }
 
     #[test]
     fn the_first_file_format_is_read_with_its_date() {

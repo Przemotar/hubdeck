@@ -68,6 +68,25 @@ pub fn request(r: Request) {
     send(Cmd::Request(r));
 }
 
+/// The user's playlists, asked of Spotify now (up to `wait`); None when Spotify is not connected.
+/// For the deck assistant: playlist keys with the user's real playlists instead of "Playlist 1"
+/// and a request for links (owner, 2026-10-19).
+pub fn playlists(wait: Duration) -> Option<Vec<super::names::Name>> {
+    secrets::get("spotify")?;
+    super::names::forget("spotify.playlist");
+    request(Request::ListPlaylists);
+    let until = Instant::now() + wait;
+    loop {
+        if let Some(list) = super::names::get("spotify.playlist") {
+            return Some(list);
+        }
+        if Instant::now() >= until {
+            return Some(Vec::new());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 pub fn watch(on: bool) {
     send(Cmd::Watch(on));
 }

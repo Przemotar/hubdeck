@@ -32,7 +32,9 @@ pub struct Env<'a> {
 /// A target that is a path (not a URL, not a bare program name found through PATH).
 fn is_path(s: &str) -> bool {
     let s = s.trim().trim_matches('"');
-    !s.contains("://") && (s.contains('\\') || s.contains('/'))
+    // shell:AppsFolder\<app id> opens a Microsoft Store app: a link, not a file (2026-10-19: every
+    // Spotify key was "Not found on this PC")
+    !s.contains("://") && !s.to_lowercase().starts_with("shell:") && (s.contains('\\') || s.contains('/'))
 }
 
 /// Does the profile use audio devices or MIDI ports (so they are worth listing)?
@@ -176,6 +178,8 @@ mod tests {
         p.controls.insert("keys.10".into(), bind("core.launch", json!({"target": "Habit Tracker v2"})));
         p.controls.insert("keys.11".into(), bind("core.game", json!({"game": "steam://rungameid/1"})));
         p.controls.insert("keys.12".into(), bind("core.game", json!({"game": "Path of Exile 2"})));
+        // a Microsoft Store app opens through its shell: link
+        p.controls.insert("keys.13".into(), bind("core.launch", json!({"target": r"shell:AppsFolder\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"})));
         let all = issues(&p, &env);
         let found: Vec<&str> = all.iter().map(|i| i.control.as_str()).collect();
         assert_eq!(found, ["keys.0", "keys.10", "keys.12", "keys.3", "keys.4", "keys.6", "keys.8"], "URLs, names that open, existing ports, scenes and inputs are fine");

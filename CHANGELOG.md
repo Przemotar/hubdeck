@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.6
+
+- **CPU temperature and AMD or Intel GPUs with a current LibreHardwareMonitor.** Its version 0.9.5
+  stopped publishing readings the way HubDeck read them, so these keys showed "-". HubDeck now
+  reads LibreHardwareMonitor's own web server: turn on Options > Remote Web Server > Run in it.
+  Older versions keep working as before.
+- **Microsoft Store apps keep their icon** on a key after they update (Spotify lost its logo when
+  it went from 1.304 to 1.305), and their keys no longer say "Not found on this PC".
+- **The deck assistant uses your Spotify playlists**: playlist keys get your real playlists instead
+  of empty "Playlist 1" keys and a request for links. It keeps an app's shortcuts in that app's
+  own profile (a shortcut goes to the app in front), and keys it fixes later get the app's icon too.
+- An app's own updater that leaves a copy running under a backup name (`app.bak-….exe`) counts as
+  the same app in "apps used most".
+
 ## 0.1.5
 
 - **Spotify Like and playlists work again** (#4). In March 2026 Spotify changed its Web API for

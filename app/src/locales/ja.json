@@ -1660,7 +1660,7 @@
 "params": {
 "metric": {
 "label": "表示",
-"help": "CPU の温度と AMD・Intel の GPU は LibreHardwareMonitor から取得します。起動しておけば（Options > Run on Windows startup）表示され、なければキーにダッシュが出ます。NVIDIA の GPU はなしでも動きます。",
+"help": "CPU の温度と AMD・Intel の GPU は LibreHardwareMonitor から取得します。Options > Remote Web Server > Run をオンにして起動しておけば（Run on Windows startup も）表示され、なければキーにダッシュが出ます。NVIDIA の GPU はなしでも動きます。",
 "options": {
 "cpu": "CPU 負荷",
 "cpuTemp": "CPU 温度",

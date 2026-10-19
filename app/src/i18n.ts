@@ -2905,7 +2905,7 @@ const ACTIONS_PL: Record<string, ActionText> = {
       press: { label: "Naciśnięcie", options: { open: "Otwiera Menedżera zadań / Monitor aktywności", next: "Pokazuje następną wartość" } },
       metric: {
         label: "Pokaż",
-        help: "Temperatura CPU oraz karty AMD i Intel pochodzą z LibreHardwareMonitor: uruchom go (Options > Run on Windows startup), a się pokażą; bez niego klawisz pokazuje kreskę. Karty NVIDIA działają bez niego.",
+        help: "Temperatura CPU oraz karty AMD i Intel pochodzą z LibreHardwareMonitor: uruchom go z włączonym Options > Remote Web Server > Run (i Run on Windows startup), a się pokażą; bez niego klawisz pokazuje kreskę. Karty NVIDIA działają bez niego.",
         options: { cpu: "Obciążenie CPU", cpuTemp: "Temperatura CPU", ram: "Zajęta pamięć", gpu: "Obciążenie GPU", gpuTemp: "Temperatura GPU", vram: "Zajęta pamięć GPU" },
       },
     },

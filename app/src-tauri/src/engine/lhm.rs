@@ -1,5 +1,7 @@
-//! Sensors from LibreHardwareMonitor, when the user runs it: it publishes its readings in WMI
-//! (`root\LibreHardwareMonitor`, class `Sensor`). That gives the CPU temperature and AMD / Intel GPU
+//! Sensors from LibreHardwareMonitor, when the user runs it: its web server's `data.json`
+//! (Options > Remote Web Server > Run, port 8085), or, up to its 0.9.4, WMI
+//! (`root\LibreHardwareMonitor`, class `Sensor`; 0.9.5 dropped WMI with .NET 10, its issue #2143;
+//! a user with an AMD CPU and GPU saw only "-" on 2026-10-19). That gives the CPU temperature and AMD / Intel GPU
 //! load and temperature without HubDeck shipping a kernel driver (LibreHardwareMonitor brings its
 //! own, installed by the user's choice). Read only while a control shows one of these values.
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -49,6 +51,39 @@ pub fn pick(sensors: &[Sensor]) -> Reading {
         gpu_load: best(&of(false, "Load"), &["gpu core", "d3d 3d", "core"]),
         gpu_temp: best(&of(false, "Temperature"), &["gpu core", "core", "edge"]),
     }
+}
+
+/// LibreHardwareMonitor's web server on this computer (its default port).
+pub const WEB: &str = "http://127.0.0.1:8085/data.json";
+
+/// The temperature and load sensors in a `data.json` tree: nodes with `SensorId`, `Type` and the
+/// number `RawValue` (else the shown `Value`, "61,0 °C", read up to its unit).
+pub fn from_json(v: &serde_json::Value) -> Vec<Sensor> {
+    fn walk(n: &serde_json::Value, out: &mut Vec<Sensor>) {
+        let (id, kind) = (n["SensorId"].as_str(), n["Type"].as_str());
+        if let (Some(id), Some(kind)) = (id, kind)
+            && (kind == "Temperature" || kind == "Load")
+        {
+            let shown = || n["Value"].as_str().and_then(|s| s.split_whitespace().next()).and_then(|s| s.replace(',', ".").parse::<f32>().ok());
+            if let Some(value) = n["RawValue"].as_f64().map(|v| v as f32).or_else(shown) {
+                out.push(Sensor { id: id.to_string(), name: n["Text"].as_str().unwrap_or("").to_string(), kind: kind.to_string(), value });
+            }
+        }
+        for c in n["Children"].as_array().into_iter().flatten() {
+            walk(c, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(v, &mut out);
+    out
+}
+
+/// The sensors from the web server now; Err when it does not answer (not running, or its web
+/// server is off).
+pub fn from_web() -> Result<Vec<Sensor>, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_millis(600))).build().into();
+    let v: serde_json::Value = agent.get(WEB).call().map_err(|e| e.to_string())?.body_mut().read_json().map_err(|e| e.to_string())?;
+    Ok(from_json(&v))
 }
 
 #[cfg(windows)]
@@ -156,6 +191,28 @@ mod tests {
             }
             None => println!("LibreHardwareMonitor is not running"),
         }
+    }
+
+    #[test]
+    fn reads_the_web_servers_tree() {
+        // the shape of LibreHardwareMonitor 0.9.6's data.json (HttpServer.cs GenerateJsonForNode)
+        let v = serde_json::json!({"id": 0, "Text": "Sensor", "Children": [{"id": 1, "Text": "PC", "Children": [
+            {"id": 2, "Text": "AMD Ryzen 7 7800X3D", "HardwareId": "/amdcpu/0", "Children": [
+                {"id": 3, "Text": "Temperatures", "Children": [
+                    {"id": 4, "Text": "Core (Tctl/Tdie)", "SensorId": "/amdcpu/0/temperature/2", "Type": "Temperature", "Value": "71,3 °C", "RawValue": 71.25, "Children": []},
+                    {"id": 5, "Text": "CCD1 (Tdie)", "SensorId": "/amdcpu/0/temperature/3", "Type": "Temperature", "Value": "66,0 °C", "Children": []}
+                ]},
+                {"id": 6, "Text": "Clocks", "Children": [{"id": 7, "Text": "Core #1", "SensorId": "/amdcpu/0/clock/1", "Type": "Clock", "RawValue": 4800.0, "Children": []}]}
+            ]},
+            {"id": 8, "Text": "AMD Radeon RX 7800 XT", "HardwareId": "/gpu-amd/0", "Children": [
+                {"id": 9, "Text": "GPU Core", "SensorId": "/gpu-amd/0/load/0", "Type": "Load", "Value": "35,0 %", "RawValue": 35.0, "Children": []},
+                {"id": 10, "Text": "GPU Core", "SensorId": "/gpu-amd/0/temperature/0", "Type": "Temperature", "RawValue": null, "Value": "52,0 °C", "Children": []}
+            ]}
+        ]}]});
+        let sensors = from_json(&v);
+        assert_eq!(sensors.len(), 4, "temperatures and loads only");
+        assert_eq!(sensors[1].value, 66.0, "the shown value, decimal comma, without RawValue");
+        assert_eq!(pick(&sensors), Reading { cpu_temp: Some(71.25), gpu_load: Some(35.0), gpu_temp: Some(52.0) });
     }
 
     fn s(id: &str, name: &str, kind: &str, value: f32) -> Sensor {

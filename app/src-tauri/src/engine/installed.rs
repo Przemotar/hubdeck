@@ -182,6 +182,13 @@ fn picture_uncached(item: &Item) -> Result<String, String> {
     if !item.logo.is_empty() && Path::new(&item.logo).is_file() {
         return super::images::import(Path::new(&item.logo));
     }
+    // a Store app's logo sits in its version's folder, gone after it updates (Spotify 1.304 ->
+    // 1.305, 2026-10-19: its key had a plain window icon); the program seen in front has the icon
+    if item.exe.is_empty()
+        && let Some(path) = super::apps::seen_named(&item.name)
+    {
+        return super::appicon::png(&path).and_then(|png| super::images::import_bytes(&png, "png"));
+    }
     if item.exe.is_empty() {
         return Err("no picture for this one".into());
     }

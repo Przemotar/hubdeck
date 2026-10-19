@@ -155,8 +155,14 @@ pub fn watch(tx: Sender<Msg>) {
     let mut cpu = CpuLoad::new();
     let nvml = nvml_wrapper::Nvml::init().map_err(|e| log::info!("no NVIDIA GPU readings ({e})")).ok();
     let mut first = true;
+    /// Where LibreHardwareMonitor's readings come from.
     #[cfg(windows)]
-    let mut lhm: Option<super::lhm::Lhm> = None;
+    enum Source {
+        Web,
+        Wmi(super::lhm::Lhm),
+    }
+    #[cfg(windows)]
+    let mut lhm: Option<Source> = None;
     let mut lhm_tried: Option<Instant> = None;
     loop {
         let cpu_load = cpu.sample(&mut sys);
@@ -178,12 +184,27 @@ pub fn watch(tx: Sender<Msg>) {
         if WANT_LHM.load(Ordering::Relaxed) {
             #[cfg(windows)]
             {
+                // its web server first (0.9.5 and later have no WMI), then WMI (up to 0.9.4)
                 if lhm.is_none() && lhm_tried.is_none_or(|t| t.elapsed() >= LHM_RETRY) {
                     lhm_tried = Some(Instant::now());
-                    lhm = super::lhm::Lhm::connect();
-                    log::info!("LibreHardwareMonitor {}", if lhm.is_some() { "found" } else { "not running" });
+                    lhm = match super::lhm::from_web() {
+                        Ok(s) if !s.is_empty() => Some(Source::Web),
+                        // its old WMI namespace may stay registered and empty after an update
+                        _ => super::lhm::Lhm::connect().filter(|l| l.sensors().is_ok_and(|s| !s.is_empty())).map(Source::Wmi),
+                    };
+                    log::info!(
+                        "LibreHardwareMonitor {}",
+                        match &lhm {
+                            Some(Source::Web) => "found (web server)".to_string(),
+                            Some(Source::Wmi(_)) => "found (WMI)".to_string(),
+                            None => format!("not running, or its web server is off ({})", super::lhm::WEB),
+                        }
+                    );
                 }
-                let reading = lhm.as_ref().map(|l| l.sensors());
+                let reading = lhm.as_ref().map(|l| match l {
+                    Source::Web => super::lhm::from_web(),
+                    Source::Wmi(w) => w.sensors(),
+                });
                 match reading {
                     Some(Ok(sensors)) => {
                         let r = super::lhm::pick(&sensors);

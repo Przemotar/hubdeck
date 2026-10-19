@@ -301,7 +301,11 @@ fn body_picture(name: &str) -> Option<(String, bool)> {
     }
     // about the body's size: a bigger picture costs every frame and shows nothing more
     let picture = super::images::fitted(name, 160);
-    *kept = Some((name.to_string(), picture.clone()));
+    // a picture that could not be read (gone, or still being written) is tried again next frame,
+    // not kept as missing (two tests writing the same picture failed one of them, 2026-10-19)
+    if picture.is_some() {
+        *kept = Some((name.to_string(), picture.clone()));
+    }
     picture
 }
 

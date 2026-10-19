@@ -91,6 +91,10 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
         ("GET", ["modules"]) => Ok(modules(app)),
         ("GET", ["apps"]) => Ok(apps()),
         ("GET", ["games"]) => Ok(games()),
+        ("GET", ["spotify", "playlists"]) => Ok(match super::spotify::playlists(std::time::Duration::from_secs(6)) {
+            Some(list) => json!({"connected": true, "playlists": list.iter().map(|n| json!({"name": n.label, "playlist": n.value})).collect::<Vec<_>>()}),
+            None => json!({"connected": false, "playlists": []}),
+        }),
         ("GET", ["profiles"]) => engine().map(|e| profiles(&e)),
         ("GET", ["profiles", id]) => engine().and_then(|e| e.lock().store.profiles.get(*id).map(|p| json!(p)).ok_or_else(|| not_found(format!("no profile {id}")))),
         ("POST", ["profiles"]) => engine().and_then(|e| create_profile(&e, &body_json(body)?)),
@@ -510,6 +514,9 @@ fn set_control(engine: &Engine, id: &str, body: &Value) -> Answer {
             p.controls.insert(control.to_string(), binding);
             if p.assistant {
                 give_bare_keys_an_icon(&mut p);
+                // a key the assistant fixes afterwards gets the app's real icon too, as the sketch's
+                // keys do (2026-10-19: its Spotify key, set again, kept a plain window icon)
+                super::assistant::with_real_apps(&mut p);
             }
             engine.lock().store.save_profile(p).map_err(|e| (500, e.to_string()))?;
             engine.changed();
@@ -737,13 +744,20 @@ pub fn picture_of(name: &str) -> Result<String, (u16, String)> {
     let lower = name.to_lowercase();
     let same = |s: &str| !s.is_empty() && (s.to_lowercase() == lower || s.rsplit(['\\', '/']).next().is_some_and(|f| f.to_lowercase() == lower));
     let found = super::installed::list(false);
-    if let Some(item) = found.games.iter().chain(found.apps.iter()).find(|i| same(&i.name) || same(&i.exe)) {
-        return super::installed::picture(item).map_err(|e| (500, e));
+    let installed = found.games.iter().chain(found.apps.iter()).find(|i| same(&i.name) || same(&i.exe));
+    let from_installed = installed.map(super::installed::picture);
+    if let Some(Ok(picture)) = from_installed {
+        return Ok(picture);
     }
-    let seen = super::apps::list()
-        .into_iter()
-        .find(|a| same(&a.exe) || a.name.as_deref().is_some_and(same))
-        .ok_or_else(|| not_found(format!("{name}: not an app or game HubDeck knows; see list_apps and list_games")))?;
+    // a Microsoft Store app has no program file to take the icon from (Spotify: a plain window
+    // icon on its key); the program it runs as, seen in front, has one
+    let exe = installed.map(|i| i.exe.as_str()).filter(|e| !e.is_empty()).map(str::to_lowercase).unwrap_or_else(|| format!("{lower}.exe"));
+    let seen = super::apps::list().into_iter().find(|a| same(&a.exe) || a.name.as_deref().is_some_and(same) || a.exe.to_lowercase() == exe);
+    let seen = match (seen, from_installed) {
+        (Some(s), _) => s,
+        (None, Some(Err(e))) => return Err((500, e)),
+        (None, _) => return Err(not_found(format!("{name}: not an app or game HubDeck knows; see list_apps and list_games"))),
+    };
     let png = super::appicon::png(&seen.path).map_err(|e| (500, e))?;
     super::images::import_bytes(&png, "png").map_err(|e| (500, e))
 }

@@ -264,7 +264,7 @@ pub fn catalog() -> Vec<ActionDef> {
                 p("press", "A press", ParamKind::Select { options: options(&[("open", "Opens Task Manager / Activity Monitor"), ("next", "Shows the next value")]) }, json!("open")),
                 ParamDef {
                     help: Some(
-                        "CPU temperature, and AMD or Intel GPUs, come from LibreHardwareMonitor: run it (Options > Run on Windows startup) and they show; without it the key shows a dash. NVIDIA GPUs work without it.",
+                        "CPU temperature, and AMD or Intel GPUs, come from LibreHardwareMonitor: run it with Options > Remote Web Server > Run turned on (and Run on Windows startup) and they show; without it the key shows a dash. NVIDIA GPUs work without it.",
                     ),
                     ..p(
                         "metric",
