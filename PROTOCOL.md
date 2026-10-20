@@ -98,7 +98,13 @@ SET_REPORT) is refused by the base and hangs 5 s. Since the 20:38 build knobs an
 get one color for all their LEDs with index `FF` (`02 2D <group> FF r g b 0`); not yet seen on the
 deck (the knobs flashed at 20:17-20:27 with one report per LED; index `FF` took effects on 2026-10-11).
 The faders module fell off USB twice while being worked with, once while its LEDs changed ~50
-times a second; whether a high LED rate can do it is not known.
+times a second; whether a high LED rate can do it is not known. The second drop (20:09, its music
+switch off) also came while HubDeck sent it a new rainbow color every 20 ms (the music's step), so
+both drops had a high LED rate. At 10 colors a second (2026-10-19, 21:06 to 22:58, music playing
+part of it) it stayed connected. Index `FF` with one color for the whole module is what goes out
+for HubDeck's rainbow on knobs and faders now (`GET /api/leds`: 10 colors a second); the owner,
+looking at the deck that evening: "Te podsiweltnei dobrze dziala" (not a per-module check). Likely,
+not proven: the faders' firmware takes about 25 LED reports a second, not 50; HubDeck stays under 30.
 
 ## Blocked in the driver (`_FORBIDDEN` in `prototype/masterhub/driver.py`)
 

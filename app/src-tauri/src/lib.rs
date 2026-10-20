@@ -356,6 +356,7 @@ pub fn run() {
             engine::commands::profile_activate,
             engine::commands::settings_set,
             engine::commands::binding_set,
+            engine::commands::bindings_set,
             engine::commands::actions_list,
             engine::commands::leds_get,
             engine::commands::claude_status,

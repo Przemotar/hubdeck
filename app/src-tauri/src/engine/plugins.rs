@@ -238,6 +238,8 @@ struct Host {
     dir: PathBuf,
     /// Controls currently shown with a plugin action: context -> (plugin, action, settings).
     visible: Mutex<HashMap<String, (String, String, Value)>>,
+    /// The title last sent to each Stream Deck control (its label), so a change is sent once.
+    titles: Mutex<HashMap<String, String>>,
     /// Plugins the user stopped on the Plugins page: the watchdog leaves them stopped.
     held: Mutex<std::collections::HashSet<String>>,
 }
@@ -370,6 +372,7 @@ pub fn start(data_dir: &Path, engine: Sender<Msg>) {
         port,
         dir: data_dir.join("plugins"),
         visible: Mutex::new(HashMap::new()),
+        titles: Mutex::new(HashMap::new()),
         held: Mutex::new(std::collections::HashSet::new()),
     };
     if HOST.set(host).is_err() {
@@ -740,6 +743,13 @@ fn connection(stream: TcpStream, engine: Sender<Msg>) -> Result<(), String> {
             if let Some(m) = m {
                 let _ = ws.send(Message::text(m.to_string()));
             }
+            // and their titles, which it has not heard yet
+            if sd_dir.is_some()
+                && let Some(title) = host.titles.lock().unwrap_or_else(|e| e.into_inner()).get(context)
+                && let Some(m) = super::sdplugins::outgoing(&json!({"event": "titleParametersDidChange", "action": action, "context": context, "settings": settings, "title": title}))
+            {
+                let _ = ws.send(Message::text(m.to_string()));
+            }
         }
     }
     ws.get_mut().set_read_timeout(Some(Duration::from_millis(30))).map_err(|e| e.to_string())?;
@@ -937,6 +947,19 @@ pub fn set_visible(now: HashMap<String, (String, String, Value)>) -> Vec<String>
     }
     *visible = now;
     gone
+}
+
+/// The labels of the Stream Deck controls on screen (`context -> (plugin, action, settings,
+/// label)`): each new or changed one goes to its plugin as Stream Deck's title.
+pub fn set_titles(now: HashMap<String, (String, String, Value, String)>) {
+    let Some(host) = HOST.get() else { return };
+    let mut sent = host.titles.lock().unwrap_or_else(|e| e.into_inner());
+    for (context, (plugin, action, settings, title)) in &now {
+        if sent.get(context) != Some(title) {
+            send_to(plugin, json!({"event": "titleParametersDidChange", "action": action, "context": context, "settings": settings, "title": title}));
+        }
+    }
+    *sent = now.into_iter().map(|(c, (_, _, _, t))| (c, t)).collect();
 }
 
 #[cfg(test)]

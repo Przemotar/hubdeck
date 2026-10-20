@@ -651,6 +651,9 @@ export const COMMON_SHORTCUTS: [string, string, string | null, string][] = [
 export function newBinding(action: ActionDef): Binding {
   const params: Record<string, unknown> = {};
   for (const p of action.params) params[p.key] = p.default;
+  // a plugin's action (`<plugin>/<action>`) starts with no label, as in Stream Deck: it draws its
+  // own picture, and a Stream Deck plugin gets the label as its title (owner's 1a, 2026-10-20)
+  if (action.id.includes("/")) return { action: action.id, params, look: { icon: action.icon } };
   return { action: action.id, params, look: { label: actionName(action).split(" ")[0], icon: action.icon } };
 }
 
@@ -705,6 +708,8 @@ export const api = {
   autoSet: (on: boolean) => invoke("auto_set", { on }),
   settings: (s: { autoSwitch?: boolean; fallback?: string }) => invoke("settings_set", { autoSwitch: s.autoSwitch ?? null, fallback: s.fallback ?? null }),
   setBinding: (profile: string, control: string, binding: Binding | null) => invoke("binding_set", { profile, control, binding }),
+  /** Several controls at once, changed on the engine's copy of the profile (null clears one). */
+  setBindings: (profile: string, bindings: Record<string, Binding | null>) => invoke("bindings_set", { profile, bindings }),
   catalog: () => invoke<Catalog>("actions_list"),
   icons: () => invoke<IconDef[]>("icons_list"),
   preview: (screen: "key" | "dial", look: Look) => invoke<string>("preview_svg", { screen, look }),

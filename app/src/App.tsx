@@ -87,7 +87,7 @@ export default function App() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2500);
   }, []);
-  const { dropAction } = useEditing(view, selected, notify);
+  const { dropAction, moveKey, openControl } = useEditing(view, selected, notify);
   // a control picked in the window is to be edited: whatever covers the inspector goes away
   const showInspector = () => {
     setProfileOpen(false);
@@ -319,6 +319,11 @@ export default function App() {
               showInspector();
               dropAction(c, action);
             }}
+            onMoveKey={(from, to) => {
+              moveKey(from, to);
+              setSelected(to);
+            }}
+            onOpenControl={openControl}
           />
           {arranging && <BaseTurnPicker live={live} />}
           {arranging && <ShareArrangement live={live} saved={saved} />}

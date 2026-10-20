@@ -43,8 +43,15 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
     api.setBinding(view.profile.id, controlId(c.kind, c.index, page), newBinding(def)).catch((e) => notify(String(e)));
   };
 
+  // the key handler reads what is selected and shown at the moment of the key press: a handler
+  // made at an earlier render copied the key selected before, or pasted over a change the window
+  // had not heard of yet (8bitcanvascode, Discussions #3, 2026-10-19)
+  const now = useRef({ view, selected, page, notify });
+  now.current = { view, selected, page, notify };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const { view, selected, page, notify } = now.current;
       if (inField(e) || !view.profile) return;
       const profile = view.profile;
       const mod = e.ctrlKey || e.metaKey;
@@ -68,7 +75,7 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
         notify(t("edit.copied"));
       } else if (mod && key === "v" && clipboard.current) {
         e.preventDefault();
-        const controls = { ...profile.controls };
+        const changes: Record<string, Binding | null> = {};
         let skipped = 0;
         for (const g of GESTURES) {
           const b = clipboard.current.bindings[g];
@@ -78,20 +85,56 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
             if (b) skipped++;
             continue;
           }
-          controls[ids[g]] = structuredClone(b);
+          changes[ids[g]] = structuredClone(b);
         }
-        api.saveProfile({ ...profile, controls }).then(() => notify(skipped ? t("edit.pastedPartly") : t("edit.pasted")), (err) => notify(String(err)));
+        api.setBindings(profile.id, changes).then(() => notify(skipped ? t("edit.pastedPartly") : t("edit.pasted")), (err) => notify(String(err)));
       } else if ((key === "delete" || key === "backspace") && !mod) {
         if (!GESTURES.some((g) => profile.controls[ids[g]])) return;
         e.preventDefault();
-        const controls = { ...profile.controls };
-        for (const g of GESTURES) delete controls[ids[g]];
-        api.saveProfile({ ...profile, controls }).then(() => notify(t("edit.cleared")), (err) => notify(String(err)));
+        const changes: Record<string, Binding | null> = Object.fromEntries(GESTURES.map((g) => [ids[g], null]));
+        api.setBindings(profile.id, changes).then(() => notify(t("edit.cleared")), (err) => notify(String(err)));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view.profile, view.catalog, selected, page, notify]);
+  }, []);
 
-  return { dropAction };
+  /** A key dragged onto another: its press, hold and double press go there, and that key's come
+   * back in its place (a swap; a move when the other was empty). */
+  const moveKey = (from: ControlRef, to: ControlRef) => {
+    const { view, page, notify } = now.current;
+    const profile = view.profile;
+    if (!profile || from.kind !== to.kind) return;
+    const changes: Record<string, Binding | null> = {};
+    let swapped = false;
+    for (const g of GESTURES) {
+      const [a, b] = [controlId(from.kind, from.index, page, g), controlId(to.kind, to.index, page, g)];
+      const [ba, bb] = [profile.controls[a], profile.controls[b]];
+      if (!ba && !bb) continue;
+      if (bb) swapped = true;
+      changes[b] = ba ?? null;
+      changes[a] = bb ?? null;
+    }
+    if (Object.keys(changes).length === 0) return;
+    api.setBindings(profile.id, changes).then(() => notify(t(swapped ? "edit.swapped" : "edit.moved")), (err) => notify(String(err)));
+  };
+
+  /** A double click on a page key shows its page, here and on the deck. */
+  const openControl = (c: ControlRef) => {
+    const { view, page } = now.current;
+    const profile = view.profile;
+    const b = profile?.controls[controlId(c.kind, c.index, page)];
+    if (!profile || !b) return;
+    const all = [null, ...(profile.pages ?? []).map((p) => p.id)];
+    const at = Math.max(0, all.indexOf(page));
+    const to =
+      b.action === "core.page" ? (typeof b.params?.page === "string" && b.params.page ? b.params.page : null)
+      : b.action === "core.nextPage" ? all[(at + 1) % all.length]
+      : b.action === "core.previousPage" ? all[(at + all.length - 1) % all.length]
+      : undefined;
+    if (to === undefined || to === page) return;
+    api.setPage(to).catch((err) => now.current.notify(String(err)));
+  };
+
+  return { dropAction, moveKey, openControl };
 }

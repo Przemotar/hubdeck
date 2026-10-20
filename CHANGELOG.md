@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.8
+
+- **Move keys by dragging them** in the window: drop a key on an empty
+  key to move it there, on another key to swap them. Press, hold and double press go together, and
+  Ctrl+Z puts it back.
+- **Double-click a page key** in the window to open its page there and on the deck (Next page and
+  Previous page keys too).
+- **Copy and paste of keys is reliable.** Pasting on several keys quickly could lose all but the
+  last paste, and the copy could take a key selected before.
+- **Live values on a page opened from the deck** load at once; before they could stay at "…"
+  until the window opened that page.
+- **Stream Deck plugins that draw their own pictures show them.** The HWiNFO plugin's keys kept the
+  plugin's logo with a sensor picked: HubDeck refused its pictures over a space in their data.
+- **Plugin keys start without a label**, as in Stream Deck, and a plugin that draws its own title
+  gets the key's label as that title: type "CPU" and the HWiNFO plugin shows "CPU" instead of a
+  long sensor name. The label HubDeck used to put on plugin keys by itself no longer covers them.
+- The Plugins tab says what to turn on in HWiNFO before its plugins show any sensors.
+- When LibreHardwareMonitor gives no readings, the log says why (no answer, or which sensors it
+  had), so a diagnostics file shows where it stops.
+
 ## 0.1.7
 
 - **Lights to the music.** The base's edge flashes with the beat of whatever plays (Spotify or any

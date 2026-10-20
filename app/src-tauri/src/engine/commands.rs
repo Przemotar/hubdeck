@@ -273,6 +273,29 @@ pub fn binding_set(engine: State<'_, Engine>, profile: String, control: String, 
     Ok(())
 }
 
+/// Set or clear several controls of a profile in one go (a paste or a delete of a key's press,
+/// hold and double press): changed on the engine's copy, so a change made just before, which the
+/// window may not have heard of yet, is kept (8bitcanvascode, Discussions #3, 2026-10-19).
+#[tauri::command]
+pub fn bindings_set(engine: State<'_, Engine>, profile: String, bindings: std::collections::BTreeMap<String, Option<Binding>>) -> Res<()> {
+    for b in bindings.values().flatten() {
+        actions::find(&b.action).ok_or_else(|| format!("unknown action {}", b.action))?;
+    }
+    {
+        let mut s = engine.lock();
+        let mut p = s.store.profiles.get(&profile).cloned().ok_or_else(|| format!("no profile {profile}"))?;
+        for (control, binding) in bindings {
+            match binding {
+                Some(b) => p.controls.insert(control, b),
+                None => p.controls.remove(&control),
+            };
+        }
+        s.store.save_profile(p).map_err(io)?;
+    }
+    engine.changed();
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct PresetSummary {
     id: &'static str,

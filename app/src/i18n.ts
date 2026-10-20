@@ -60,7 +60,7 @@ const en = {
   // main window
   "app.hintArranging":
     "Match the drawing to your deck: numbers on the keys, the arrow on the dial and the knob and fader colors must line up. Turn each roller and check that the same one moves here. Drag or rotate a module until it matches.",
-  "app.hint": "Press, turn or slide anything on the deck to select it. Ctrl+C / Ctrl+V copy a control, Delete clears it, Ctrl+Z undoes.",
+  "app.hint": "Press, turn or slide anything on the deck to select it. Drag a key to move it, double-click a page key to open its page. Ctrl+C / Ctrl+V copy a control, Delete clears it, Ctrl+Z undoes.",
 
   // editing (toasts)
   "edit.notOn": "{action} does not work on {control}",
@@ -71,6 +71,8 @@ const en = {
   "edit.pasted": "Pasted",
   "edit.pastedPartly": "Pasted (some parts do not fit this control)",
   "edit.cleared": "Cleared (Ctrl+Z brings it back)",
+  "edit.moved": "Moved (Ctrl+Z puts it back)",
+  "edit.swapped": "Swapped (Ctrl+Z puts them back)",
 
   // action library
   "library.title": "Actions",
@@ -1089,6 +1091,8 @@ const en = {
   "pluginsTab.dialTag": "Dial",
   "pluginsTab.updated": "updated {date}",
   "pluginsTab.use": "Use it",
+  "pluginsTab.setup.hwinfoShm": "Before it shows sensors: in HWiNFO's Settings tick Shared Memory Support, then quit and start HWiNFO again (the free HWiNFO turns it off after 12 hours).",
+  "pluginsTab.setup.hwinfoGadget": "Before it shows sensors: in HWiNFO's sensor settings, on the HWiNFO Gadget tab, tick Enable reporting to Gadget and Report value in Gadget for each sensor you want.",
   "chooser.new": "New",
   "chooser.focusHint": "Drag an action onto a key, a knob or the dial; its settings show on the right.",
   "pluginsTab.more": { one: "Show 1 more", other: "Show more ({count} left)" },
@@ -1398,7 +1402,7 @@ const pl: Partial<Record<Key, Text>> = {
 
   "app.hintArranging":
     "Dopasuj rysunek do swojego urządzenia: numery na klawiszach, strzałka na dialu i kolory gałek i suwaków muszą się zgadzać. Obróć każdą rolkę i sprawdź, czy tutaj rusza się ta sama. Przeciągnij lub obróć moduł, aż będzie pasował.",
-  "app.hint": "Naciśnij, obróć lub przesuń cokolwiek na urządzeniu, żeby to zaznaczyć. Ctrl+C / Ctrl+V kopiuje element, Delete go czyści, Ctrl+Z cofa.",
+  "app.hint": "Naciśnij, obróć lub przesuń cokolwiek na urządzeniu, żeby to zaznaczyć. Przeciągnij klawisz, żeby go przenieść; dwuklik na klawiszu strony otwiera tę stronę. Ctrl+C / Ctrl+V kopiuje element, Delete go czyści, Ctrl+Z cofa.",
 
   "edit.notOn": "{action} nie działa na {control}",
   "edit.nothingToUndo": "Nie ma czego cofnąć",
@@ -1408,6 +1412,8 @@ const pl: Partial<Record<Key, Text>> = {
   "edit.pasted": "Wklejono",
   "edit.pastedPartly": "Wklejono (część nie pasuje do tego elementu)",
   "edit.cleared": "Wyczyszczono (Ctrl+Z przywraca)",
+  "edit.moved": "Przeniesiono (Ctrl+Z cofa)",
+  "edit.swapped": "Zamieniono miejscami (Ctrl+Z cofa)",
 
   "library.title": "Akcje",
   "library.search": "Szukaj akcji",
@@ -2419,6 +2425,8 @@ const pl: Partial<Record<Key, Text>> = {
   "pluginsTab.dialTag": "Dial",
   "pluginsTab.updated": "zmieniona {date}",
   "pluginsTab.use": "Użyj",
+  "pluginsTab.setup.hwinfoShm": "Zanim pokaże czujniki: w ustawieniach HWiNFO zaznacz Obsługa pamięci współdzielonej (Shared Memory Support), potem zamknij i uruchom HWiNFO ponownie (darmowe HWiNFO wyłącza ją po 12 godzinach).",
+  "pluginsTab.setup.hwinfoGadget": "Zanim pokaże czujniki: w ustawieniach czujników HWiNFO, na zakładce HWiNFO Gadget, zaznacz Enable reporting to Gadget oraz Report value in Gadget przy każdym czujniku, który chcesz.",
   "chooser.new": "Nowa",
   "chooser.focusHint": "Przeciągnij akcję na klawisz, gałkę albo dial; jej ustawienia pokażą się po prawej.",
   "pluginsTab.more": { one: "Pokaż jeszcze 1", few: "Pokaż więcej (zostały {count})", many: "Pokaż więcej (zostało {count})", other: "Pokaż więcej (zostało {count})" },
@@ -3333,7 +3341,7 @@ function missing(key: string): string {
 }
 
 /** Hints that name the window's own shortcuts: on a Mac they read ⌘ (the keys accept both). */
-const MOD_HINTS = new Set<Key>(["app.hint", "edit.cleared", "suggest.replaced"]);
+const MOD_HINTS = new Set<Key>(["app.hint", "edit.cleared", "edit.moved", "edit.swapped", "suggest.replaced"]);
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
 
 /** The text for `key` in the current language, `{name}` filled from `vars`; `vars.count` picks the plural. */

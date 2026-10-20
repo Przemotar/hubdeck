@@ -62,6 +62,9 @@ pub struct SdAction {
     pub keypad: bool,
     pub encoder: bool,
     pub inspector: Option<String>,
+    /// The manifest's `ShowTitle` (default true): false = the plugin draws the key's title into its
+    /// own picture, so HubDeck writes no label over it (HWiNFO, 2026-10-20).
+    pub show_title: bool,
 }
 
 /// The library's group pictures of Stream Deck plugins, by group (the plugin's name): the plugin's
@@ -189,7 +192,11 @@ pub fn normalize_image(dir: &Path, image: &str) -> Option<String> {
     if let Some(rest) = image.strip_prefix("data:") {
         let (head, data) = rest.split_once(',')?;
         if head.ends_with(";base64") {
-            return Some(image.to_string());
+            // white space inside the base64 is skipped by browsers and Stream Deck: the HWiNFO
+            // plugin sends `base64, iVBOR...`, and the space made the picture fail the safety check,
+            // so its keys kept the logo (owner's deck, 2026-10-20)
+            let data: String = data.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+            return Some(format!("data:{head},{data}"));
         }
         // `data:image/svg+xml;charset=utf8,<svg ...>` (often percent-encoded)
         let mime = head.split(';').next().unwrap_or("image/svg+xml");
@@ -259,6 +266,7 @@ pub fn read(v: &Value, dir: &Path) -> Result<SdManifest, String> {
                         keypad: controllers.contains(&"Keypad"),
                         encoder: controllers.contains(&"Encoder"),
                         inspector: a["PropertyInspectorPath"].as_str().map(str::to_string).filter(|p| !p.is_empty()),
+                        show_title: a["States"].get(0).and_then(|s| s["ShowTitle"].as_bool()).unwrap_or(true),
                         uuid,
                     })
                 })
@@ -322,6 +330,20 @@ pub fn state_look(action_id: &str, state: Option<bool>) -> Option<(Option<String
     let a = action(uuid)?;
     let i = usize::from(state.unwrap_or(false)).min(a.states.len().saturating_sub(1));
     a.states.get(i).cloned()
+}
+
+/// Does HubDeck write the key's label over this Stream Deck action's picture? Not when its manifest
+/// says `ShowTitle: false`: the plugin gets the label as its title and draws it itself.
+pub fn shows_title(action_id: &str) -> bool {
+    action_id.split_once('/').and_then(|(_, uuid)| action(uuid)).is_none_or(|a| a.show_title)
+}
+
+/// The title a Stream Deck control's label gives its plugin: the label HubDeck set by itself until
+/// 2026-10-20 (the action name's first word, "HWiNFO") counts as none, as Stream Deck starts with none.
+pub fn title_of(action_id: &str, label: Option<&str>) -> String {
+    let label = label.unwrap_or("").trim();
+    let default = action_id.split_once('/').and_then(|(_, uuid)| action(uuid)).map(|a| a.name.split(' ').next().unwrap_or("").to_string());
+    if default.as_deref() == Some(label) { String::new() } else { label.to_string() }
 }
 
 /// The system's version as Stream Deck gives it, dotted numbers ("10.0.19045", "14.5.0"): .NET
@@ -471,6 +493,15 @@ pub fn outgoing(m: &Value) -> Option<Value> {
             "willAppear"
         }
         ("willDisappear", _) => "willDisappear",
+        // the key's title as Stream Deck's title field gives it: a plugin that draws its own title
+        // (ShowTitle false) puts it in its picture instead of a long sensor name (HWiNFO)
+        ("titleParametersDidChange", _) => {
+            payload.as_object_mut()?.remove("isInMultiAction");
+            payload["state"] = json!(state_of(context));
+            payload["title"] = json!(m["title"].as_str().unwrap_or(""));
+            payload["titleParameters"] = json!({"fontFamily": "", "fontSize": 9, "fontStyle": "", "fontUnderline": false, "showTitle": shows_title(&format!("x/{action}")), "titleAlignment": "bottom", "titleColor": "#ffffff"});
+            "titleParametersDidChange"
+        }
         ("keyDown", "Encoder") => "dialDown",
         ("keyUp", "Encoder") => "dialUp",
         ("keyDown", _) => "keyDown",
@@ -1151,7 +1182,8 @@ mod tests {
             "SDKVersion": 2, "Software": {"MinimumVersion": "6.4"},
             "Actions": [
                 {"UUID": "com.example.sd.toggle", "Name": "Toggle", "Icon": "imgs/none", "States": [{"Image": "a"}, {"Image": "b", "Title": "On"}], "PropertyInspectorPath": "pi.html"},
-                {"UUID": "com.example.sd.volume", "Name": "Volume", "Controllers": ["Encoder"], "States": [{"Image": "c"}]}
+                {"UUID": "com.example.sd.volume", "Name": "Volume", "Controllers": ["Encoder"], "States": [{"Image": "c"}]},
+                {"UUID": "com.example.sd.reading", "Name": "Sensor reading", "States": [{"Image": "d", "ShowTitle": false}]}
             ]
         })
     }
@@ -1171,6 +1203,23 @@ mod tests {
         let defs = m.action_defs();
         assert_eq!(defs[0].id, "com.example.sd/com.example.sd.toggle");
         assert_eq!(defs[1].inputs, vec![InputKind::Press, InputKind::Turn]);
+    }
+
+    #[test]
+    fn a_plugin_that_draws_its_title_gets_the_label() {
+        let dir = std::env::temp_dir().join("com.example.sd.sdPlugin");
+        let _ = to_manifest(read(&manifest(), &dir).unwrap());
+        assert!(shows_title("com.example.sd/com.example.sd.toggle"), "ShowTitle is true unless the manifest says false");
+        assert!(!shows_title("com.example.sd/com.example.sd.reading"));
+        let t = outgoing(&json!({"event": "titleParametersDidChange", "action": "com.example.sd.reading", "context": "keys.2", "settings": {"a": 1}, "title": "CPU"})).unwrap();
+        assert_eq!(t["event"], "titleParametersDidChange");
+        assert_eq!(t["payload"]["title"], "CPU");
+        assert_eq!(t["payload"]["titleParameters"]["showTitle"], false, "so the plugin draws it");
+        assert_eq!(t["payload"]["coordinates"], json!({"column": 2, "row": 0}));
+        // the label HubDeck used to set by itself is no title
+        assert_eq!(title_of("com.example.sd/com.example.sd.reading", Some("Sensor")), "");
+        assert_eq!(title_of("com.example.sd/com.example.sd.reading", Some("CPU")), "CPU");
+        assert_eq!(title_of("com.example.sd/com.example.sd.reading", None), "");
     }
 
     #[test]
@@ -1199,6 +1248,15 @@ mod tests {
         // back: titles, pictures, settings
         let title = incoming("com.example.sd", &dir, &json!({"event": "setTitle", "context": "keys.7", "payload": {"title": "Hi"}}));
         assert_eq!(title, vec![Incoming::Engine(json!({"event": "setTitle", "context": "keys.7", "title": "Hi"}))]);
+        // HWiNFO (com.moeilijk.hwinfo 3.1.2) puts a space after the comma
+        let spaced = incoming(
+            "com.example.sd",
+            &dir,
+            &json!({"event": "setImage", "context": "keys.7", "payload": {"image": "data:image/png;base64, iVBORw0K
+Ggo="}}),
+        );
+        assert_eq!(spaced, vec![Incoming::Engine(json!({"event": "setImage", "context": "keys.7", "image": "data:image/png;base64,iVBORw0KGgo="}))]);
+        assert!(super::super::images::safe_data_uri("data:image/png;base64,iVBORw0KGgo="));
         let svg = incoming("com.example.sd", &dir, &json!({"event": "setImage", "context": "keys.7", "payload": {"image": "data:image/svg+xml;charset=utf8,%3Csvg%3E%3C/svg%3E"}}));
         let Incoming::Engine(v) = &svg[0] else { panic!() };
         assert!(super::super::images::safe_data_uri(v["image"].as_str().unwrap()));

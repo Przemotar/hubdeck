@@ -132,6 +132,11 @@
 .dk-ctl.is-drop .dk-sel-glow {
   opacity: 0.5;
 }
+/* a key dragged to another place: it fades where it was, the key under the pointer is ringed */
+.dk-ctl.is-lifted {
+  opacity: 0.45;
+  cursor: grabbing;
+}
 
 .dk-pressed {
   fill: #fff;

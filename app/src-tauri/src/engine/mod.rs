@@ -2275,6 +2275,7 @@ impl Worker {
             s.page = page;
         }
         self.gestures.clear();
+        self.watch_live();
         self.redraw_keys();
         self.report_visible();
         let state = self.lock().state();
@@ -2928,7 +2929,8 @@ impl Worker {
         let Some((image, title)) = sdplugins::state_look(&binding.action, self.plugin_looks.get(id).and_then(|p| p.state)) else { return look };
         let set = self.plugin_looks.get(id);
         let image = set.and_then(|p| p.image.clone()).or(look.image.clone()).or(image);
-        let label = set.and_then(|p| p.title.clone()).or(look.label.clone()).or(title);
+        // a plugin that draws its own title (ShowTitle false) has the label in its picture already
+        let label = if sdplugins::shows_title(&binding.action) { set.and_then(|p| p.title.clone()).or(look.label.clone()).or(title) } else { None };
         let fit = if image.is_some() && look.fit.is_none() { Some("fill".to_string()) } else { look.fit.clone() };
         Look { image, label, fit, icon: None, ..look }
     }
@@ -2940,6 +2942,7 @@ impl Worker {
             (s.active_profile().cloned(), s.page.clone())
         };
         let mut now = HashMap::new();
+        let mut titles = HashMap::new();
         if let Some(p) = profile {
             for (id, b) in &p.controls {
                 let base = id.split(':').next().unwrap_or(id);
@@ -2949,6 +2952,9 @@ impl Worker {
                 };
                 if let (true, Some((plugin, action))) = (on_page, b.action.split_once('/')) {
                     now.insert(id.clone(), (plugin.to_string(), action.to_string(), b.params.clone()));
+                    if sdplugins::is_sd_action(&b.action) {
+                        titles.insert(id.clone(), (plugin.to_string(), action.to_string(), b.params.clone(), sdplugins::title_of(&b.action, b.look.label.as_deref())));
+                    }
                 }
             }
         }
@@ -2956,6 +2962,7 @@ impl Worker {
         for gone in plugins::set_visible(now) {
             self.plugin_looks.remove(&gone);
         }
+        plugins::set_titles(titles);
     }
 
     /// Start or end game mode. Ending gives the deck back to the profile.
@@ -3023,10 +3030,16 @@ impl Worker {
         entities.sort();
         entities.dedup();
         homeassistant::watch(entities);
-        // live values on screen (a worker starts the first time one is shown)
-        let (page, ha_url) = {
+        self.watch_live();
+    }
+
+    /// Fetch the live values on screen: the shown page's keys and the dial (a worker starts the
+    /// first time one is shown). A page opened from the deck needs it too, or its values stay "…"
+    /// (8bitcanvascode, Discussions #3, 2026-10-19).
+    fn watch_live(&self) {
+        let (profile, page, ha_url) = {
             let s = self.lock();
-            (s.page.clone(), s.store.settings.ha_url.clone().unwrap_or_default())
+            (s.active_profile().cloned(), s.page.clone(), s.store.settings.ha_url.clone().unwrap_or_default())
         };
         live::show(profile.as_ref(), page.as_deref(), &ha_url);
     }

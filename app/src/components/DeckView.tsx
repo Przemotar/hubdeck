@@ -56,6 +56,10 @@ interface Props {
   page?: string | null;
   /** An action was dropped from the library onto a control. */
   onDropAction?: (c: ControlRef, action: string) => void;
+  /** A key dragged onto another key of its module: it moves there, a swap when that one is set. */
+  onMoveKey?: (from: ControlRef, to: ControlRef) => void;
+  /** A double click on a control: a page key opens its page. */
+  onOpenControl?: (c: ControlRef) => void;
 }
 
 export const ACTION_MIME = "application/x-hubdeck-action";
@@ -77,6 +81,52 @@ interface Ctx extends Props {
   issues?: Record<string, string>;
   /** What plugins show on controls now, by control id (over the saved looks). */
   liveLooks: Record<string, Look>;
+  /** The key being dragged to another place (`controlKey`), and its setter. */
+  keyDrag?: string | null;
+  setKeyDrag?: (k: string | null) => void;
+}
+
+/** When a key drag ended: the click that follows the release does not select. */
+let keyDragEnded = 0;
+
+/**
+ * A key pressed and moved more than a few pixels is dragged, as keys are rearranged in the Stream
+ * Deck app (Discussions #3, 8bitcanvascode, 2026-10-19); let go over another key of the same module
+ * and it moves there. Pointer events, as the drawing is SVG, where HTML5 dragging does not start.
+ */
+function startKeyDrag(e: React.PointerEvent, ctx: Ctx, c: ControlRef) {
+  const [x0, y0] = [e.clientX, e.clientY];
+  let moving = false;
+  const target = (ev: PointerEvent) => {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<SVGGElement>("g.dk-ctl[data-kind='keys']");
+    const index = Number(el?.dataset.index);
+    return el && el.dataset.module === c.module && index !== c.index ? index : null;
+  };
+  const move = (ev: PointerEvent) => {
+    if (!moving && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+    if (!moving) {
+      moving = true;
+      ctx.setKeyDrag?.(controlKey(c.module, c.index));
+    }
+    const to = target(ev);
+    ctx.setDropOn(to === null ? null : controlKey(c.module, to));
+  };
+  const end = (ev: PointerEvent | null) => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+    if (!moving) return;
+    ctx.setKeyDrag?.(null);
+    ctx.setDropOn(null);
+    keyDragEnded = Date.now();
+    const to = ev && target(ev);
+    if (to !== null && to !== undefined) ctx.onMoveKey?.(c, { ...c, index: to });
+  };
+  const up = (ev: PointerEvent) => end(ev);
+  const cancel = () => end(null);
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
 }
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -170,12 +220,17 @@ function Ctl(props: { ctx: Ctx; index: number; kind: ModuleKind; label: string; 
   const droppable = !!ctx.onDropAction && !ctx.arranging;
   return (
     <g
-      className={`dk-ctl${selected ? " is-selected" : ""}${ctx.dropOn === k ? " is-drop" : ""}${ctx.inert ? " is-inert" : ""}`}
+      className={`dk-ctl${selected ? " is-selected" : ""}${ctx.dropOn === k ? " is-drop" : ""}${ctx.keyDrag === k ? " is-lifted" : ""}${ctx.inert ? " is-inert" : ""}`}
       role="button"
       tabIndex={ctx.inert ? -1 : 0}
       aria-label={label}
       aria-pressed={selected}
-      onClick={() => ctx.onSelect(c)}
+      data-kind={kind}
+      data-module={c.module}
+      data-index={index}
+      onPointerDown={kind === "keys" && ctx.onMoveKey && ctx.setKeyDrag && !ctx.inert ? (e) => e.button === 0 && startKeyDrag(e, ctx, c) : undefined}
+      onClick={() => Date.now() - keyDragEnded > 300 && ctx.onSelect(c)}
+      onDoubleClick={ctx.onOpenControl && !ctx.inert ? () => ctx.onOpenControl?.(c) : undefined}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -321,10 +376,12 @@ function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; m
   const svg = usePreview("key", own && look ? { ...look, image: `${look.image}#anim` } : look);
   const [pw, ph] = [KW - 2 * KP, KH - 2 * KP];
   if (mirror && !own) {
-    // this key's window cut out of the picture the hardware got (live values, covers, clocks)
+    // this key's window cut out of the picture the hardware got (live values, covers, clocks);
+    // the whole picture is there, only cut by the clip, so it takes no clicks: the key's own cap
+    // does (its box spans the whole panel; a key drag looks up the key under the pointer)
     const [rx, ry, rw, rh] = mirror.rect;
     return (
-      <g clipPath={`url(#${ctx.id("kclip")})`}>
+      <g clipPath={`url(#${ctx.id("kclip")})`} pointerEvents="none">
         <svg x={KP} y={KP} width={pw} height={ph} viewBox={`${rx} ${ry} ${rw} ${rh}`} preserveAspectRatio="none">
           <use href={mirror.src} />
         </svg>
@@ -937,6 +994,7 @@ export function DeckView(props: DeckViewProps) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [dragTo, setDragTo] = useState<{ col: number; row: number } | null>(null);
   const [dropOn, setDropOn] = useState<string | null>(null);
+  const [keyDrag, setKeyDrag] = useState<string | null>(null);
   const baseRef = useRef<SVGGElement>(null);
   const issues = useIssues(profile);
   // what plugins show now, only for the profile they are for (the assistant draws other profiles)
@@ -1008,7 +1066,8 @@ export function DeckView(props: DeckViewProps) {
     <div
       className={`dk${arranging ? " is-arranging" : ""}${live.deck.paused ? " is-paused" : ""}${!arranging && detachedKinds(live.deck.modules, saved).length ? " has-shelf" : ""}`}
       onClick={(e) => {
-        if (!arranging && !(e.target as Element).closest(".dk-ctl, .dk-rim, button, a, input")) props.onDeselect?.();
+        // the click a key drag ends with lands on the drawing around the keys: the moved key stays selected
+        if (!arranging && Date.now() - keyDragEnded > 300 && !(e.target as Element).closest(".dk-ctl, .dk-rim, button, a, input")) props.onDeselect?.();
       }}
     >
       <div className="dk-stage" style={stageStyle}>
@@ -1048,7 +1107,7 @@ export function DeckView(props: DeckViewProps) {
               const canArrange = arranging && !!p.module.slot;
               const [x, y, w, h] = [col * U, row * U, span(p.cols), span(p.rows)];
               const [w0, h0] = [span(p.baseCols), span(p.baseRows)];
-              const ctx: Ctx = { ...props, leds, m: p.module, id, upright: -(p.rotation + baseTurn), inert: canArrange, dropOn, setDropOn, issues, liveLooks };
+              const ctx: Ctx = { ...props, leds, m: p.module, id, upright: -(p.rotation + baseTurn), inert: canArrange, dropOn, setDropOn, keyDrag, setKeyDrag, issues, liveLooks };
               const labelTurn = -baseTurn;
               // the slot's top edge and top right corner as seen on screen, in base units
               const at = (up: number, right: number) => {

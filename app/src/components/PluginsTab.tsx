@@ -165,6 +165,14 @@ export function PluginsTab({ onClose, onInstalled, onUse }: { onClose: () => voi
   );
 }
 
+/** What a plugin needs set up in another program before it shows anything, from its README
+ * (owner, 2026-10-20: the HWiNFO plugin listed no sensors until HWiNFO's shared memory was on and
+ * HWiNFO restarted; a user with an AMD card saw only its logo). */
+const SETUP: Record<string, Key> = {
+  "com.moeilijk.hwinfo": "pluginsTab.setup.hwinfoShm",
+  "com.5e.hwinfo-reader": "pluginsTab.setup.hwinfoGadget",
+};
+
 function PluginCard({ plugin: p, installed, state, onInstall, onUse }: { plugin: CatalogPlugin; installed: boolean; state?: string; onInstall: () => void; onUse: () => void }) {
   const { lang } = useLanguage();
   // in the window's language, not the system's (a Polish system wrote "maj 2024" in English)
@@ -179,6 +187,7 @@ function PluginCard({ plugin: p, installed, state, onInstall, onUse }: { plugin:
         </div>
       </div>
       {p.description && <p className="help plugin-card-about">{p.description}</p>}
+      {SETUP[p.id] && <p className="help plugin-card-setup">{t(SETUP[p.id])}</p>}
       <div className="plugin-card-tags">
         <span className="pill">{t(`pluginsTab.src.${p.source}` as Key)}</span>
         {p.popular ? <span className="pill">{t("pluginsTab.popElgato", { n: p.popular })}</span> : p.stars ? <span className="pill">{t("pluginsTab.stars", { n: p.stars })}</span> : null}

@@ -5231,6 +5231,12 @@ button.lib-foot:focus-visible span {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* what to set up in another program first: set apart from the description by a thin rule */
+.plugin-card-setup {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent);
+}
 .plugin-card-tags {
   display: flex;
   flex-wrap: wrap;
