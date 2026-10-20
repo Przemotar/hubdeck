@@ -60,6 +60,8 @@ interface Props {
   onMoveKey?: (from: ControlRef, to: ControlRef) => void;
   /** A double click on a control: a page key opens its page. */
   onOpenControl?: (c: ControlRef) => void;
+  /** A right click on a control: its menu at the pointer (the control is selected first). */
+  onControlMenu?: (c: ControlRef, x: number, y: number) => void;
 }
 
 export const ACTION_MIME = "application/x-hubdeck-action";
@@ -231,6 +233,15 @@ function Ctl(props: { ctx: Ctx; index: number; kind: ModuleKind; label: string; 
       onPointerDown={kind === "keys" && ctx.onMoveKey && ctx.setKeyDrag && !ctx.inert ? (e) => e.button === 0 && startKeyDrag(e, ctx, c) : undefined}
       onClick={() => Date.now() - keyDragEnded > 300 && ctx.onSelect(c)}
       onDoubleClick={ctx.onOpenControl && !ctx.inert ? () => ctx.onOpenControl?.(c) : undefined}
+      onContextMenu={
+        ctx.onControlMenu && !ctx.inert
+          ? (e) => {
+              e.preventDefault();
+              ctx.onSelect(c);
+              ctx.onControlMenu?.(c, e.clientX, e.clientY);
+            }
+          : undefined
+      }
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();

@@ -813,6 +813,11 @@ impl Engine {
             if s.active.as_deref() != Some(id) {
                 s.page = None;
             }
+            // a profile picked by hand during a try ends the try: the bar went on saying "Trying"
+            // and a ready-made profile tried was never thrown away (2026-10-20)
+            if s.trying.take().is_some() {
+                s.draft_compare = None;
+            }
             // picked by hand: this is home now, app profiles give back to it, and HubDeck starts on it
             // (owner, 2026-10-14: every restart went back to the first profile, the start profile)
             s.active = Some(id.to_string());
@@ -2615,6 +2620,9 @@ impl Worker {
                     t.cover.as_ref().map_or("none".to_string(), |(m, b)| format!("{m} {} B", b.len()))
                 );
                 let same = self.now_playing.as_ref().is_some_and(|(title, artist, _)| *title == t.title && *artist == t.artist);
+                if !same {
+                    spotify::track_changed();
+                }
                 // a play/pause change of the same track comes without the cover: keep the one we have
                 if !same || t.cover.is_some() {
                     images::set_cover(t.cover.as_ref().map(|(m, b)| (m.as_str(), b.as_slice())));

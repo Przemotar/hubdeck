@@ -49,11 +49,67 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
   const now = useRef({ view, selected, page, notify });
   now.current = { view, selected, page, notify };
 
+  const gestureIds = (c: ControlRef, page: string | null) => Object.fromEntries(GESTURES.map((g) => [g, controlId(c.kind, c.index, page, g)])) as Record<Gesture, string>;
+
+  /** Does the control do anything (press, hold or double press)? */
+  const isSet = (c: ControlRef) => {
+    const { view, page } = now.current;
+    const ids = gestureIds(c, page);
+    return !!view.profile && GESTURES.some((g) => view.profile?.controls[ids[g]]);
+  };
+  const canPaste = () => !!clipboard.current;
+
+  /** Copy a control's press, hold and double press; false when it does nothing. */
+  const copy = (c: ControlRef) => {
+    const { view, page, notify } = now.current;
+    const profile = view.profile;
+    if (!profile) return false;
+    const ids = gestureIds(c, page);
+    const bindings: Partial<Record<Gesture, Binding>> = {};
+    for (const g of GESTURES) if (profile.controls[ids[g]]) bindings[g] = profile.controls[ids[g]];
+    if (!bindings.tap && !bindings.hold && !bindings.double) {
+      notify(t("edit.empty"));
+      return false;
+    }
+    clipboard.current = { bindings, from: c.kind };
+    notify(t("edit.copied"));
+    return true;
+  };
+
+  /** Paste what was copied; the parts that do not fit the control are left out. */
+  const paste = (c: ControlRef) => {
+    const { view, page, notify } = now.current;
+    const profile = view.profile;
+    if (!profile || !clipboard.current) return;
+    const ids = gestureIds(c, page);
+    const changes: Record<string, Binding | null> = {};
+    let skipped = 0;
+    for (const g of GESTURES) {
+      const b = clipboard.current.bindings[g];
+      const def = b && view.catalog?.actions.find((a) => a.id === b.action);
+      // a press gesture needs a pressable control; the tap must fit the control kind
+      if (!b || !def || (g === "tap" ? !actionFits(def, c.kind) : !(def.inputs.includes("press") && actionFits({ ...def, inputs: ["press"] }, c.kind)))) {
+        if (b) skipped++;
+        continue;
+      }
+      changes[ids[g]] = structuredClone(b);
+    }
+    api.setBindings(profile.id, changes).then(() => notify(skipped ? t("edit.pastedPartly") : t("edit.pasted")), (err) => notify(String(err)));
+  };
+
+  /** Clear a control's press, hold and double press (Ctrl+Z brings them back). */
+  const clear = (c: ControlRef) => {
+    const { view, page, notify } = now.current;
+    const profile = view.profile;
+    if (!profile || !isSet(c)) return;
+    const changes: Record<string, Binding | null> = Object.fromEntries(GESTURES.map((g) => [gestureIds(c, page)[g], null]));
+    api.setBindings(profile.id, changes).then(() => notify(t("edit.cleared")), (err) => notify(String(err)));
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { view, selected, page, notify } = now.current;
+      const { view, selected, notify } = now.current;
       if (inField(e) || !view.profile) return;
-      const profile = view.profile;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (mod && key === "z") {
@@ -65,38 +121,21 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
         return;
       }
       if (!selected) return;
-      const ids = Object.fromEntries(GESTURES.map((g) => [g, controlId(selected.kind, selected.index, page, g)])) as Record<Gesture, string>;
       if (mod && key === "c") {
-        const bindings: Partial<Record<Gesture, Binding>> = {};
-        for (const g of GESTURES) if (profile.controls[ids[g]]) bindings[g] = profile.controls[ids[g]];
-        if (!bindings.tap && !bindings.hold && !bindings.double) return notify(t("edit.empty"));
-        e.preventDefault();
-        clipboard.current = { bindings, from: selected.kind };
-        notify(t("edit.copied"));
+        if (isSet(selected)) e.preventDefault();
+        copy(selected);
       } else if (mod && key === "v" && clipboard.current) {
         e.preventDefault();
-        const changes: Record<string, Binding | null> = {};
-        let skipped = 0;
-        for (const g of GESTURES) {
-          const b = clipboard.current.bindings[g];
-          const def = b && view.catalog?.actions.find((a) => a.id === b.action);
-          // a press gesture needs a pressable control; the tap must fit the control kind
-          if (!b || !def || (g === "tap" ? !actionFits(def, selected.kind) : !(def.inputs.includes("press") && actionFits({ ...def, inputs: ["press"] }, selected.kind)))) {
-            if (b) skipped++;
-            continue;
-          }
-          changes[ids[g]] = structuredClone(b);
-        }
-        api.setBindings(profile.id, changes).then(() => notify(skipped ? t("edit.pastedPartly") : t("edit.pasted")), (err) => notify(String(err)));
+        paste(selected);
       } else if ((key === "delete" || key === "backspace") && !mod) {
-        if (!GESTURES.some((g) => profile.controls[ids[g]])) return;
+        if (!isSet(selected)) return;
         e.preventDefault();
-        const changes: Record<string, Binding | null> = Object.fromEntries(GESTURES.map((g) => [ids[g], null]));
-        api.setBindings(profile.id, changes).then(() => notify(t("edit.cleared")), (err) => notify(String(err)));
+        clear(selected);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** A key dragged onto another: its press, hold and double press go there, and that key's come
@@ -136,5 +175,12 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
     api.setPage(to).catch((err) => now.current.notify(String(err)));
   };
 
-  return { dropAction, moveKey, openControl };
+  /** Is it a key that opens a page (a double click or Open page in its menu opens it)? */
+  const opensPage = (c: ControlRef) => {
+    const { view, page } = now.current;
+    const a = view.profile?.controls[controlId(c.kind, c.index, page)]?.action;
+    return a === "core.page" || a === "core.nextPage" || a === "core.previousPage";
+  };
+
+  return { dropAction, moveKey, openControl, copy, paste, clear, isSet, canPaste, opensPage };
 }

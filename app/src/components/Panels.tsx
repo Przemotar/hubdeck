@@ -3,7 +3,7 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { confirmed } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens } from "../engine";
+import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens, triedPresets } from "../engine";
 import { Icon } from "./Icon";
 import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
@@ -120,7 +120,7 @@ export function LeftPanel({ view, tab, onTab, onOpenProfile, onNewProfile, onBui
   );
 }
 
-/** Ready-made profiles; picking one adds it as a new profile and makes it active. */
+/** Ready-made profiles; picking one shows it on the deck for a try, Add on the trying bar keeps it. */
 export function PresetList({ onPicked, kinds }: { onPicked?: () => void; kinds?: string[] }) {
   useLanguage();
   const [presets, setPresets] = useState<PresetSummary[]>([]);
@@ -136,8 +136,8 @@ export function PresetList({ onPicked, kinds }: { onPicked?: () => void; kinds?:
       title={p.description}
       onClick={() =>
         api
-          .addPreset(p.id, kinds)
-          .then((profile) => api.activate(profile.id))
+          .addPreset(p.id, kinds, true)
+          .then((profile) => (triedPresets.add(profile.id), api.tryProfile(profile.id)))
           .then(() => onPicked?.(), (e) => setError(String(e)))
       }
     >
@@ -376,6 +376,35 @@ function ProfileMenu({ profile, x, y, count, onClose }: { profile: ProfileSummar
           </button>
         </form>
       )}
+    </div>
+  );
+}
+
+/** A control's right-click menu in the drawing, as Stream Deck's ("Right-click keys to copy,
+ * delete or move them"; owner's 1a, 2026-10-20): what the shortcuts do, with the shortcuts shown. */
+export function ControlMenu({ title, x, y, isSet, canPaste, opensPage, onCopy, onPaste, onClear, onOpenPage, onClose }: { title: string; x: number; y: number; isSet: boolean; canPaste: boolean; opensPage: boolean; onCopy: () => void; onPaste: () => void; onClear: () => void; onOpenPage: () => void; onClose: () => void }) {
+  useLanguage();
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(true, ref, onClose);
+  const left = Math.min(x, window.innerWidth - 240);
+  const top = Math.min(y + 6, window.innerHeight - 200);
+  const mod = /Mac/i.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl+";
+  const row = (icon: string, text: string, keys: string | null, on: () => void, enabled: boolean, danger = false) => (
+    <button role="menuitem" className={`menu-row compact${danger ? " danger" : ""}`} disabled={!enabled} onClick={() => (onClose(), on())}>
+      <Icon name={icon} />
+      <span className="menu-text">{text}</span>
+      {keys && <kbd className="menu-kbd">{keys}</kbd>}
+    </button>
+  );
+  return (
+    <div className="popover ctx-menu" role="menu" ref={ref} style={{ position: "fixed", left, top }}>
+      <div className="pop-label">{title}</div>
+      <div className="menu-list">
+        {opensPage && row("folder-open", t("ctl.openPage"), null, onOpenPage, true)}
+        {row("copy", t("ctl.copy"), `${mod}C`, onCopy, isSet)}
+        {row("file-plus", t("ctl.paste"), `${mod}V`, onPaste, canPaste)}
+        {row("trash", t("ctl.clear"), "Delete", onClear, isSet, true)}
+      </div>
     </div>
   );
 }

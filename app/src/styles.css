@@ -2218,6 +2218,12 @@ button.chip.is-active {
   width: 230px;
   z-index: 50;
 }
+/* a menu row's shortcut, at its right end */
+.menu-kbd {
+  margin-left: auto;
+  font: 500 11px/1 var(--mono, ui-monospace, monospace);
+  color: var(--tx3, var(--tx2));
+}
 .menu-row.danger {
   color: var(--err);
 }

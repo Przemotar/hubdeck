@@ -100,6 +100,7 @@ try {
   const labelOf = async (k) => (await controls())[k]?.look?.label;
   await key(await labelOf("keys.0") ?? "SRCA").click();
   await win.keyboard.press("Delete");
+  await sleep(300); // a person's pace between two keys
   await key("SRCB").click();
   await win.keyboard.press("Delete");
   await sleep(800);

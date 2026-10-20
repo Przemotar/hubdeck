@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9
+
+- **Spotify no longer runs out of requests.** With a Like key on screen HubDeck asked Spotify every
+  3 seconds, about 2400 times an hour, and after half an hour Spotify made the app wait. It now
+  asks when the song changes and every 30 seconds otherwise, about 160 times an hour, and the log
+  counts the calls.
+- **Right-click a key, knob, fader or the dial** in the window: Copy, Paste, Clear with their
+  shortcuts, and Open page on a page key.
+- **Try a ready-made profile before you add it.** New profile > Ready-made shows it on the deck
+  with Add and Back; nothing is saved and your home profile stays until you press Add.
+- Picking a profile while another one is on the deck for a try ends the try.
+
 ## 0.1.8
 
 - **Move keys by dragging them** in the window: drop a key on an empty

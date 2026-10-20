@@ -532,6 +532,10 @@ export interface ActionDef {
   icon: string;
 }
 
+/** Ready-made profiles put on the deck for a try (draft ids): the trying bar offers Add for them,
+ * and one left without Add is thrown away (owner's 1a, 2026-10-20). */
+export const triedPresets = new Set<string>();
+
 /** Plugins installed in this session (Plugins tab): their actions come first in the library,
  * marked New (owner's 1a, 2026-10-18: "Use it" after Install). */
 const newPlugins: string[] = [];
@@ -735,7 +739,7 @@ export const api = {
   apps: () => invoke<AppInfo[]>("apps_list"),
   presets: () => invoke<PresetSummary[]>("presets_list"),
   /** `kinds`: the module kinds the user has (attached and owned); the preset is adapted to them. */
-  addPreset: (id: string, kinds?: string[]) => invoke<Profile>("preset_add", { id, kinds: kinds && kinds.length ? kinds : null }),
+  addPreset: (id: string, kinds?: string[], draft = false) => invoke<Profile>("preset_add", { id, kinds: kinds && kinds.length ? kinds : null, draft }),
   macroRecordStart: () => invoke("macro_record_start"),
   /** The keys pressed since the start, as Hotkey steps with the pauses between them. */
   macroRecordStop: () => invoke<Step[]>("macro_record_stop"),

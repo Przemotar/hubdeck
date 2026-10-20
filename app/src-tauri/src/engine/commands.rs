@@ -315,13 +315,22 @@ pub fn presets_list() -> Vec<PresetSummary> {
 /// Add a preset as a new profile (a fresh copy; the user's profiles are never overwritten).
 #[tauri::command]
 /// `kinds`: the module kinds the user has (attached and owned); None = the preset as it is.
-pub fn preset_add(engine: State<'_, Engine>, id: String, kinds: Option<Vec<String>>) -> Res<Profile> {
+pub fn preset_add(engine: State<'_, Engine>, id: String, kinds: Option<Vec<String>>, draft: Option<bool>) -> Res<Profile> {
     let preset = super::presets::catalog().into_iter().find(|p| p.id == id).ok_or_else(|| format!("no preset {id}"))?;
     let profile = match kinds {
         Some(k) => super::presets::adapt(preset.make(), &k),
         None => preset.make(),
     };
-    engine.lock().store.save_profile(profile.clone()).map_err(io)?;
+    {
+        let mut s = engine.lock();
+        s.store.save_profile(profile.clone()).map_err(io)?;
+        // a draft, to try on the deck first (owner's 1a, 2026-10-20: picking one only to look at it
+        // added it and made it home): kept out of the bar and of switching until Add
+        if draft == Some(true) {
+            s.store.settings.drafts.push(profile.id.clone());
+            s.store.save_settings().map_err(io)?;
+        }
+    }
     engine.changed();
     Ok(profile)
 }

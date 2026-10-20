@@ -7,12 +7,12 @@ import "./styles.css";
 import "./theme";
 import { useDeck, type ControlRef } from "./deck";
 import type { LeftTab } from "./components/Panels";
-import { api, saverEnd, useEngine, useSaverShown } from "./engine";
+import { api, saverEnd, triedPresets, useEngine, useSaverShown } from "./engine";
 import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
 import { PluginsTab } from "./components/PluginsTab";
-import { ArrangePanel, Banner, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
+import { ArrangePanel, Banner, ControlMenu, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
 import { listen } from "@tauri-apps/api/event";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
@@ -23,7 +23,7 @@ import { CalibrationPanel } from "./components/Calibration";
 import { detachedKinds, placeModules, placementKey, usePlacements } from "./layout";
 import { clearIdentify, identifyModule } from "./identify";
 import { useEditing } from "./editing";
-import { BUILT_IN_LANGUAGES, setLanguage, storedLanguageFile, t, useLanguage } from "./i18n";
+import { BUILT_IN_LANGUAGES, setLanguage, storedLanguageFile, t, useLanguage, type Key } from "./i18n";
 import { demoParam } from "./demo/params";
 
 // `?demo&panel=profile|settings|plugins|calibrate` opens a side panel at start (screenshots)
@@ -87,7 +87,20 @@ export default function App() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2500);
   }, []);
-  const { dropAction, moveKey, openControl } = useEditing(view, selected, notify);
+  const { dropAction, moveKey, openControl, copy, paste, clear, isSet, canPaste, opensPage } = useEditing(view, selected, notify);
+  // a ready-made profile tried and left without Add (Back, or another profile picked) is thrown away
+  const tried = useRef<string | null>(null);
+  useEffect(() => {
+    const now = view.state?.trying ?? null;
+    const was = tried.current;
+    tried.current = now;
+    if (was && was !== now && triedPresets.has(was)) {
+      triedPresets.delete(was);
+      if (view.state?.profiles.some((p) => p.id === was && p.draft)) api.settleDraft(was, false).catch(() => {});
+    }
+  }, [view.state?.trying, view.state?.profiles]);
+  // a control's right-click menu (owner's 1a, 2026-10-20)
+  const [ctlMenu, setCtlMenu] = useState<{ c: ControlRef; x: number; y: number } | null>(null);
   // a control picked in the window is to be edited: whatever covers the inspector goes away
   const showInspector = () => {
     setProfileOpen(false);
@@ -275,6 +288,16 @@ export default function App() {
                 {view.state.comparing
                   ? t("assistant.comparingBar", { n: view.state.comparing[0], count: view.state.comparing[1] })
                   : t("assistant.tryingBar", { name: view.state.profiles.find((p) => p.id === view.state?.trying)?.name ?? "" })}
+                {triedPresets.has(view.state.trying) && (
+                  <button className="link-btn" onClick={() => {
+                      // out of the tried set first: the end of the try must not throw it away
+                      const id = view.state!.trying!;
+                      triedPresets.delete(id);
+                      api.settleDraft(id, true).catch((e) => notify(String(e)));
+                    }}>
+                    {t("stage.addProfile")}
+                  </button>
+                )}
                 <button className="link-btn" onClick={() => api.tryProfile(null)}>
                   {t("assistant.back")}
                 </button>
@@ -324,7 +347,23 @@ export default function App() {
               setSelected(to);
             }}
             onOpenControl={openControl}
+            onControlMenu={(c, x, y) => setCtlMenu({ c, x, y })}
           />
+          {ctlMenu && (
+            <ControlMenu
+              title={`${t(`control.${ctlMenu.c.kind}` as Key)}${ctlMenu.c.kind === "dial" ? "" : ` ${ctlMenu.c.index + 1}`}`}
+              x={ctlMenu.x}
+              y={ctlMenu.y}
+              isSet={isSet(ctlMenu.c)}
+              canPaste={canPaste()}
+              opensPage={opensPage(ctlMenu.c)}
+              onCopy={() => copy(ctlMenu.c)}
+              onPaste={() => paste(ctlMenu.c)}
+              onClear={() => clear(ctlMenu.c)}
+              onOpenPage={() => openControl(ctlMenu.c)}
+              onClose={() => setCtlMenu(null)}
+            />
+          )}
           {arranging && <BaseTurnPicker live={live} />}
           {arranging && <ShareArrangement live={live} saved={saved} />}
           </div>

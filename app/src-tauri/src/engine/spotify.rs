@@ -19,7 +19,15 @@ pub const REDIRECT: &str = "http://127.0.0.1:43123/callback";
 const SCOPES: &str =
     "user-read-private user-library-read user-library-modify user-read-currently-playing user-read-playback-state playlist-modify-public playlist-modify-private playlist-read-private";
 const API: &str = "https://api.spotify.com/v1";
-const POLL: Duration = Duration::from_secs(3);
+/// How often the playing track is asked for while a key shows whether it is liked; a new track
+/// that Windows reports is asked for at once (`track_changed`). Every 3 s with a second call for
+/// the like was ~2400 calls an hour, and Spotify made a development-mode app wait after ~30 min
+/// (Zendeman, #4, 2026-10-20).
+const POLL: Duration = Duration::from_secs(30);
+/// The same track's like is asked again at most this often (liked in Spotify's own app).
+const LIKE_AGAIN: Duration = Duration::from_secs(120);
+/// After Windows reports a new track, Spotify's own "currently playing" needs a moment.
+const AFTER_TRACK: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {
@@ -46,6 +54,8 @@ enum Cmd {
     Request(Request),
     /// Keys show whether the playing track is liked: keep checking.
     Watch(bool),
+    /// Windows reports another track: ask Spotify soon instead of at the next poll.
+    TrackChanged,
     ClientId(String),
 }
 
@@ -66,6 +76,11 @@ fn send(cmd: Cmd) {
 
 pub fn request(r: Request) {
     send(Cmd::Request(r));
+}
+
+/// The player's track changed (Windows' media session): a key showing the like follows it.
+pub fn track_changed() {
+    send(Cmd::TrackChanged);
 }
 
 /// The user's playlists, asked of Spotify now (up to `wait`); None when Spotify is not connected.
@@ -213,13 +228,19 @@ struct Worker {
     watching: bool,
     last_poll: Instant,
     liked: Option<bool>,
+    /// The track whose like was asked last, and when.
+    liked_of: Option<(String, Instant)>,
+    /// Calls to Spotify since `counted_since`: written to the log every 10 minutes, so a
+    /// diagnostics file shows how hard HubDeck asks.
+    calls: u32,
+    counted_since: Instant,
     /// Spotify said "Too Many Requests": nothing is asked before this (its Retry-After).
     wait_until: Option<Instant>,
 }
 
 impl Worker {
     fn new(engine: Sender<Msg>, client_id: String) -> Self {
-        Worker { engine, client_id, access: None, watching: false, last_poll: Instant::now() - POLL, liked: None, wait_until: None }
+        Worker { engine, client_id, access: None, watching: false, last_poll: Instant::now() - POLL, liked: None, liked_of: None, calls: 0, counted_since: Instant::now(), wait_until: None }
     }
 
     fn error(&self, message: String) {
@@ -259,6 +280,12 @@ impl Worker {
         let url = format!("{API}{path}");
         let auth = format!("Bearer {token}");
         let a = agent();
+        self.calls += 1;
+        if self.counted_since.elapsed() >= Duration::from_secs(600) {
+            log::info!("spotify: {} calls in the last {} min", self.calls, self.counted_since.elapsed().as_secs() / 60);
+            self.calls = 0;
+            self.counted_since = Instant::now();
+        }
         let mut resp = match (method, body) {
             ("GET", _) => a.get(&url).header("Authorization", &auth).call(),
             ("PUT", Some(b)) => a.put(&url).header("Authorization", &auth).send_json(&b),
@@ -311,6 +338,7 @@ impl Worker {
                 let method = if saved { "DELETE" } else { "PUT" };
                 self.call(method, &library_path("", &uri), None)?;
                 self.liked = Some(!saved);
+                self.liked_of = Some((uri.clone(), Instant::now()));
                 let _ = self.engine.send(Msg::IntegrationState { key: "spotify:liked".into(), on: !saved });
                 self.feedback(if saved { format!("Unliked {name}") } else { format!("Liked {name}") });
             }
@@ -334,6 +362,11 @@ impl Worker {
 
     fn poll_liked(&mut self) {
         let Ok(Some(Playing { uri, .. })) = self.playing() else { return };
+        // the like of the same track is known: asked again only now and then
+        if self.liked_of.as_ref().is_some_and(|(u, at)| *u == uri && at.elapsed() < LIKE_AGAIN) {
+            return;
+        }
+        self.liked_of = Some((uri.clone(), Instant::now()));
         if let Ok(v) = self.call("GET", &library_path("/contains", &uri), None) {
             let liked = v.get(0).and_then(Value::as_bool).unwrap_or(false);
             if self.liked != Some(liked) {
@@ -358,6 +391,8 @@ impl Worker {
                     }
                 }
                 Ok(Cmd::Watch(on)) => self.watching = on,
+                // poll in a moment, when Spotify knows the new track too
+                Ok(Cmd::TrackChanged) => self.last_poll = Instant::now().checked_sub(POLL).map_or(self.last_poll, |t| t + AFTER_TRACK),
                 Ok(Cmd::ClientId(id)) => {
                     self.client_id = id;
                     self.access = None;
