@@ -307,7 +307,7 @@ mod platform {
     }
 
     fn download(url: &str) -> Option<(String, Vec<u8>)> {
-        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(5))).build().into();
+        let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(std::time::Duration::from_secs(5))).build().into();
         let mut res = agent.get(url).call().ok()?;
         let bytes = res.body_mut().with_config().limit(8 * 1024 * 1024).read_to_vec().ok()?;
         Some(("image/jpeg".to_string(), bytes))

@@ -157,9 +157,9 @@ fn current(generation: u64) -> bool {
 }
 
 fn listen(app: AppSource, generation: u64) {
-    let quick: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(5))).http_status_as_error(false).build().into();
+    let quick: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(Duration::from_secs(5))).http_status_as_error(false).build().into();
     // a stream stays open: no overall timeout, only for connecting
-    let stream: ureq::Agent = ureq::Agent::config_builder().timeout_connect(Some(Duration::from_secs(5))).http_status_as_error(false).build().into();
+    let stream: ureq::Agent = crate::engine::calls::builder().timeout_connect(Some(Duration::from_secs(5))).http_status_as_error(false).build().into();
     let mut known: HashMap<String, Item> = HashMap::new();
     let mut pause = Duration::from_secs(2);
     while current(generation) {

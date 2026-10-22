@@ -340,6 +340,8 @@ export interface EngineState {
   autoProfiles?: boolean;
   /** The draft shown on the deck for a try. */
   trying?: string | null;
+  /** A draft that was on the deck for a try when HubDeck stopped: the window offers it back. */
+  interruptedTry?: string | null;
   /** Comparing drafts on the deck: [which one, of how many]. */
   comparing?: [number, number] | null;
   /** Timers that ran out, wherever they are (another page or profile); the window can stop them. */

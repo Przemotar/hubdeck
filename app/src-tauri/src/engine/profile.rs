@@ -491,6 +491,11 @@ pub struct Settings {
     /// the user picks one ("Use this") or throws it away.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<String>,
+    /// The draft on the deck for a try, kept so a restart in the middle of a try can offer it back
+    /// (owner, 2026-10-22: a restart took the assistant's tried changes off his deck, "wróciło mi
+    /// do poprzedniej wersji").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trying: Option<String>,
     /// Profiles HubDeck made at once for the installed apps it knows ("Ready for your apps",
     /// owner's pick 1a, 2026-10-14); they switch in with their app only once switched on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -611,6 +616,7 @@ impl Default for Settings {
             apps_joined: Vec::new(),
             apps_refused: Vec::new(),
             drafts: Vec::new(),
+            trying: None,
             ready: Vec::new(),
             assistant_model: None,
             assistant_effort: None,

@@ -328,8 +328,8 @@ pub fn run() {
             }
             Ok(())
         })
-        // closing the window destroys it (and its web view); the deck keeps working, the tray
-        // opens it again, Quit is in the tray menu (see RunEvent::ExitRequested below)
+        // closing the window hides it and frees its web view 10 min later (tray::hide_main); the
+        // deck keeps working, the tray opens it again, Quit is in the tray menu
         .invoke_handler(tauri::generate_handler![
             engine::commands::window_log,
             engine::commands::names_list,
@@ -519,6 +519,13 @@ pub fn run() {
         .expect("error while building the app");
 
     app.run(|handle, event| {
+        // the main window's X hides it (tray::hide_main); other windows (plugins) close as usual
+        if let RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event
+            && label == "main"
+        {
+            api.prevent_close();
+            tray::hide_main(handle);
+        }
         // the last window closing is not quitting: only Quit in the tray (app.exit) ends HubDeck
         if let RunEvent::ExitRequested { api, code: None, .. } = &event {
             api.prevent_exit();

@@ -15,7 +15,15 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const personas = JSON.parse(fs.readFileSync(path.join(root, "scripts", "personas", "personas.json"), "utf8"));
-const wanted = process.argv.slice(2);
+// --model opus|sonnet|haiku|fable and --effort low..max: the assistant's model for an A/B (owner's
+// 3a, 2026-10-22: "warto potem jeszcze zrobić testy na Haiku"); the report's name carries them
+const flag = (name) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : null;
+};
+const model = flag("model");
+const effort = flag("effort");
+const wanted = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--")));
 const PORT = 9445;
 const dir = path.join(process.env.TEMP, "hubdeck-persona");
 const real = path.join(process.env.APPDATA, "dev.hubdeck.app");
@@ -37,6 +45,8 @@ function prepare(p) {
   fs.mkdirSync(path.join(dir, "profiles"), { recursive: true });
   const settings = JSON.parse(fs.readFileSync(path.join(real, "settings.json"), "utf8"));
   Object.assign(settings, { drafts: [], pinned: false });
+  if (model) settings.assistantModel = model;
+  if (effort) settings.assistantEffort = effort;
   delete settings.home;
   fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify(settings, null, 2));
   const apps = {};
@@ -166,7 +176,7 @@ for (const p of personas.filter((x) => !wanted.length || wanted.includes(x.id)))
   results.push(await run(p).catch((e) => ({ id: p.id, error: String(e) })));
 }
 const date = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-fs.writeFileSync(path.join(root, "scripts", "personas", `report-${date}.json`), JSON.stringify(results, null, 2));
+fs.writeFileSync(path.join(root, "scripts", "personas", `report-${date}${model ? `-${model}` : ""}${effort ? `-${effort}` : ""}.json`), JSON.stringify(results, null, 2));
 for (const r of results) {
   const d = r.drafts ?? [];
   const sum = (k) => d.reduce((a, x) => a + (Array.isArray(x[k]) ? x[k].length : x[k]), 0);

@@ -24,7 +24,55 @@ const AUTOSTART_TEXT: &str = "Start with Windows";
 
 /// Show the settings window, creating it if it was closed (a closed window frees its web view,
 /// ~300 MB, so HubDeck in the tray stays small).
+/// Each hide of the main window gets a number; showing it again makes the pending free a no-op.
+static HIDDEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The main window is hidden by its X (the engine sends it no pictures meanwhile).
+static HIDDEN_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the main window was hidden by its X and not shown again.
+pub fn main_hidden() -> bool {
+    HIDDEN_NOW.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// How long a closed window keeps what was open in it before its web view is freed.
+const KEEP_HIDDEN: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// The window's X: hide it, so coming back soon finds it as it was, and free the web view (about
+/// 400 MB) only after `KEEP_HIDDEN` (owner's pick 1a, 2026-10-22: "jak zamknąłem okno hubdecka
+/// to mi je zamknęło zamiast zminimalizować"; until then it was destroyed at once).
+pub fn hide_main(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    let _ = w.hide();
+    HIDDEN_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
+    log::info!("window: hidden by its X (kept {} min)", KEEP_HIDDEN.as_secs() / 60);
+    let this_hide = HIDDEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // a walk on the test copy shortens the wait (HUBDECK_KEEP_HIDDEN_SECS)
+        let keep = std::env::var("HUBDECK_KEEP_HIDDEN_SECS").ok().and_then(|v| v.parse().ok()).map(std::time::Duration::from_secs).unwrap_or(KEEP_HIDDEN);
+        std::thread::sleep(keep);
+        if HIDDEN.load(std::sync::atomic::Ordering::SeqCst) != this_hide {
+            return; // shown (or hidden again) meanwhile: `show_main` counts up
+        }
+        let main = app.clone();
+        let sent = app.run_on_main_thread(move || match main.get_webview_window("main") {
+            Some(w) => {
+                log::info!("window: freed after {} s hidden", keep.as_secs());
+                if let Err(e) = w.destroy() {
+                    log::warn!("window: cannot free it: {e}");
+                }
+            }
+            None => log::info!("window: already gone"),
+        });
+        if let Err(e) = sent {
+            log::warn!("window: cannot free it: {e}");
+        }
+    });
+}
+
 pub fn show_main(app: &AppHandle) {
+    HIDDEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    HIDDEN_NOW.store(false, std::sync::atomic::Ordering::SeqCst);
     let window = match app.get_webview_window("main") {
         Some(w) => Some(w),
         None => app.config().app.windows.iter().find(|w| w.label == "main").and_then(|cfg| match tauri::WebviewWindowBuilder::from_config(app, cfg).and_then(|b| b.build()) {

@@ -122,7 +122,7 @@ pub fn is_on(state: &str) -> bool {
 }
 
 fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Receiver<Cmd>) {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into();
+    let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(TIMEOUT)).build().into();
     let mut watched: Vec<String> = Vec::new();
     let mut last_poll = Instant::now() - POLL;
     let mut known: HashMap<String, bool> = HashMap::new();

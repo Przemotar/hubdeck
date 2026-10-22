@@ -14,6 +14,7 @@ pub mod beat;
 mod brightness;
 pub mod builder;
 pub mod call;
+pub mod calls;
 pub mod check;
 pub mod cli;
 pub mod commands;
@@ -360,6 +361,8 @@ pub struct EngineState {
     pub reduced_motion: Option<bool>,
     /// The draft shown on the deck for a try (`Engine::try_profile`).
     pub trying: Option<String>,
+    /// A draft that was on the deck for a try when HubDeck stopped (the window offers it back).
+    pub interrupted_try: Option<String>,
     /// Comparing drafts on the deck: (which one, of how many).
     pub comparing: Option<(usize, usize)>,
     /// Timers that ran out (the window names them and can stop them).
@@ -500,6 +503,7 @@ impl Shared {
                 })
                 .collect(),
             trying: self.trying.as_ref().map(|t| t.profile.clone()),
+            interrupted_try: self.store.settings.trying.clone().filter(|id| self.trying.is_none() && self.store.settings.drafts.contains(id) && self.store.profiles.contains_key(id)),
             comparing: self.draft_compare.as_ref().map(|(ids, i)| (i + 1, ids.len())),
             active: self.active.clone(),
             fallback: self.store.fallback_id(),
@@ -818,13 +822,12 @@ impl Engine {
             if s.trying.take().is_some() {
                 s.draft_compare = None;
             }
-            // picked by hand: this is home now, app profiles give back to it, and HubDeck starts on it
-            // (owner, 2026-10-14: every restart went back to the first profile, the start profile)
+            // picked by hand: app profiles give back to it; HubDeck still starts on the home profile,
+            // set only by "Set as home" (owner, 2026-10-22: a click made the profile home)
             s.active = Some(id.to_string());
             s.home = Some(id.to_string());
             s.auto_app = None;
             s.store.settings.active = Some(id.to_string());
-            s.store.settings.fallback = Some(id.to_string());
             s.store.save_settings().map_err(|e| e.to_string())?;
         }
         self.changed();
@@ -846,6 +849,12 @@ impl Engine {
                         None => (s.active.clone(), s.home.clone(), s.auto_app.clone()),
                     };
                     s.trying = Some(Trying { profile: id.to_string(), back });
+                    if s.store.settings.trying.as_deref() != Some(id) {
+                        s.store.settings.trying = Some(id.to_string());
+                        if let Err(e) = s.store.save_settings() {
+                            log::warn!("settings: {e}");
+                        }
+                    }
                     s.active = Some(id.to_string());
                     s.auto_app = None;
                     s.page = None;
@@ -855,7 +864,16 @@ impl Engine {
                     if s.draft_compare.take().is_some() {
                         s.status = None;
                     }
-                    let Some(t) = s.trying.take() else { return Ok(()) };
+                    if s.store.settings.trying.take().is_some()
+                        && let Err(e) = s.store.save_settings()
+                    {
+                        log::warn!("settings: {e}");
+                    }
+                    let Some(t) = s.trying.take() else {
+                        drop(s);
+                        self.changed();
+                        return Ok(());
+                    };
                     let (active, home, auto_app) = t.back;
                     s.active = active.filter(|a| s.store.profiles.contains_key(a)).or_else(|| s.store.fallback_id());
                     s.home = home;
@@ -1041,13 +1059,11 @@ impl Engine {
             let mut s = self.lock();
             s.store.settings.pinned = pinned;
             if pinned {
-                // what shows now stays; it is the home profile from here on
+                // what shows now stays; the start profile does not change ("Set as home" sets it;
+                // owner, 2026-10-22)
                 s.home = s.active.clone();
                 s.auto_app = None;
                 s.store.settings.active = s.active.clone();
-                if s.active.is_some() {
-                    s.store.settings.fallback = s.active.clone();
-                }
             }
             s.store.save_settings().map_err(|e| e.to_string())?;
         }
@@ -1265,6 +1281,7 @@ impl Perf {
         if secs < 10.0 {
             return;
         }
+        calls::flush();
         let sent = |i: usize| {
             let (n, us) = &PICTURES_SENT[i];
             (n.swap(0, std::sync::atomic::Ordering::Relaxed), us.swap(0, std::sync::atomic::Ordering::Relaxed))
@@ -2357,8 +2374,8 @@ impl Worker {
         }
     }
 
-    /// The user picked a profile (on the deck, by a plugin): it becomes home, then shows. Home is
-    /// saved as the start profile, so the deck starts on it again after HubDeck restarts.
+    /// The user picked a profile (on the deck, by a plugin): app profiles give back to it, then it
+    /// shows. The start profile stays as it is ("Set as home" sets it; owner, 2026-10-22).
     fn choose(&mut self, id: &str) {
         {
             let mut s = self.lock();
@@ -2367,16 +2384,15 @@ impl Worker {
             }
             s.home = Some(id.to_string());
             s.auto_app = None;
-            if s.store.settings.active.as_deref() != Some(id) || s.store.settings.fallback.as_deref() != Some(id) {
+            if s.store.settings.active.as_deref() != Some(id) {
                 s.store.settings.active = Some(id.to_string());
-                s.store.settings.fallback = Some(id.to_string());
                 if let Err(e) = s.store.save_settings() {
-                    log::warn!("cannot save the home profile: {e}");
+                    log::warn!("cannot save the picked profile: {e}");
                 }
             }
         }
         let name = self.lock().store.profiles.get(id).map(|p| p.name.clone()).unwrap_or_default();
-        log::info!("picked on the deck: profile \"{name}\" (home)");
+        log::info!("picked on the deck: profile \"{name}\"");
         self.activate(id);
     }
 
@@ -3933,7 +3949,8 @@ impl Worker {
         if !self.dial_mirror_due && !self.keys_mirror_due {
             return;
         }
-        let open = self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false));
+        // a window hidden by its X counts as closed (`is_visible` stayed true for it on the test copy)
+        let open = !crate::tray::main_hidden() && self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false));
         if self.dial_mirror_due && self.dial_mirror_at.elapsed() >= DIAL_MIRROR_EVERY {
             self.dial_mirror_due = false;
             self.dial_mirror_at = Instant::now();

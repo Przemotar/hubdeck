@@ -300,7 +300,7 @@ pub fn parse_index(bytes: &[u8]) -> Result<Vec<GalleryEntry>, String> {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into()
+    crate::engine::calls::builder().timeout_global(Some(TIMEOUT)).build().into()
 }
 
 pub(crate) fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {

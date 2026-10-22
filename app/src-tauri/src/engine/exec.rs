@@ -758,7 +758,7 @@ pub fn http_request(method: &str, url: &str, body: &str, headers: &str) -> Resul
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err("set an address starting with http:// or https://".into());
     }
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(5))).http_status_as_error(false).build().into();
+    let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(std::time::Duration::from_secs(5))).http_status_as_error(false).build().into();
     let headers: Vec<(String, String)> = headers.lines().filter_map(|l| l.split_once(':')).map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, _)| !k.is_empty()).collect();
     let json = body.trim_start().starts_with(['{', '[']);
     macro_rules! with_headers {

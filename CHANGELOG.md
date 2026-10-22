@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.10
+
+- **Picking a profile only switches to it.** A click in the profile list, on a tab or on the deck
+  no longer makes that profile the one HubDeck starts with. The house button in a profile's row
+  sets the home profile; turning Auto-switch off does not change it either. A game's or an app's
+  profile still hands the deck back to the profile you picked last.
+- **The profile list is grouped:** Home, Your profiles, and For apps and games (the ones that
+  switch in by themselves); Ready for your apps is folded until you open it. The home profile is
+  the first tab in the top bar.
+- **Closing the window keeps what was open in it.** The X hides the window; coming back within
+  10 minutes finds it as you left it, and only after that is its memory given back.
+- **A draft you were trying is offered back after a restart.** If HubDeck restarts while an
+  assistant's draft is on the deck, the window says so, with Put it back, Use this and Not now.
+- **Show on the "made a profile for ..." banner** scrolls to the new profile and lights it up; with
+  the profile list already open it used to do nothing.
+- The log counts the calls HubDeck makes to other services, by address, once a minute.
+
 ## 0.1.9
 
 - **Spotify no longer runs out of requests.** With a Like key on screen HubDeck asked Spotify every

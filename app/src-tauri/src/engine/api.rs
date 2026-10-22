@@ -112,6 +112,8 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
             }
             e.settle_draft(id, false).map(|_| json!({"ok": true})).map_err(bad)
         }),
+        // "Use this" for a draft (the same as the window's button; a version of a profile replaces it)
+        ("POST", ["drafts", id, "use"]) => engine().and_then(|e| e.use_draft(id).map(|(kept, replaced)| json!({"ok": true, "id": kept, "replaced": replaced})).map_err(bad)),
         ("POST", ["try", "end"]) => engine().and_then(|e| e.try_profile(None).map(|_| json!({"ok": true})).map_err(not_found)),
         ("GET", ["lights"]) => engine().map(|e| json!(e.lock().store.settings.lights)),
         ("POST", ["lights"]) => engine().and_then(|e| set_lights(&e, &body_json(body)?)),
@@ -174,6 +176,11 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
         ("GET", ["ask", id]) => engine().and_then(|e| ask_answer(&e, id)),
         ("GET", ["controls"]) => engine().map(|e| controls(&e)),
         ("POST", ["test", "input"]) if crate::automation::get().is_some() => body_json(body).and_then(|b| test_input(app, &b)),
+        // the window's X, as the system sends it (CloseRequested), for walks on the test copy
+        ("POST", ["test", "close"]) if crate::automation::get().is_some() => {
+            let _ = app.get_webview_window("main").map(|w| w.close());
+            Ok(json!({"ok": true}))
+        }
         ("POST", ["test", "foreground"]) if crate::automation::get().is_some() => engine().and_then(|e| {
             let b = body_json(body)?;
             let exe = b["exe"].as_str().ok_or_else(|| bad("exe is missing"))?.to_string();

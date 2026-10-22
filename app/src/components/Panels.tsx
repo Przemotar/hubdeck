@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { confirmed } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
@@ -423,6 +423,12 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
   const found = state.profiles.filter((p) => !p.draft).filter((p) => !q || p.name.toLowerCase().includes(q) || p.apps.some((a) => a.toLowerCase().includes(q)));
   const list = found.filter((p) => !p.ready);
   const ready = found.filter((p) => p.ready);
+  // grouped (owner's pick A, 2026-10-22): home, the user's own, the ones that switch in with an app
+  const groups = [
+    { key: "home", title: t("profiles.groupHome"), help: t("profiles.groupHomeHelp"), rows: list.filter((p) => p.id === state.fallback) },
+    { key: "own", title: t("profiles.groupOwn"), help: "", rows: list.filter((p) => p.id !== state.fallback && p.apps.length === 0) },
+    { key: "apps", title: t("profiles.groupApps"), help: t("profiles.groupAppsHelp"), rows: list.filter((p) => p.id !== state.fallback && p.apps.length > 0) },
+  ].filter((g) => g.rows.length > 0);
   return (
     <>
       <div className="lib-head">
@@ -432,16 +438,18 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
         </div>
       </div>
       <div className="lib-groups lib-profiles">
-        <div className="plist-head" aria-hidden="true">
-          <span>{t("profiles.title")}</span>
-          <span>{t("profiles.inBar")}</span>
+        {groups.map((g, gi) => (
+        <section key={g.key} className="plist-group" aria-label={g.title}>
+        <div className="plist-head" aria-hidden="true" title={g.help || undefined}>
+          <span>{g.title}</span>
+          {gi === 0 && <span>{t("profiles.inBar")}</span>}
         </div>
         <ul className="plist">
-          {list.map((p) => {
+          {g.rows.map((p) => {
             const icons = p.apps.map((a) => appIcon(apps, a)).filter(Boolean).slice(0, 3) as string[];
             const active = state.active === p.id;
             return (
-              <li key={p.id} className={`prow${active ? " is-active" : ""}`}>
+              <li key={p.id} className={`prow${active ? " is-active" : ""}`} data-profile={p.id}>
                 {renaming?.id === p.id ? (
                   <form
                     className="prow-rename"
@@ -456,11 +464,11 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
                   </form>
                 ) : (
                   <button className="prow-main" onClick={() => (active ? onOpenProfile() : api.activate(p.id))} title={active ? t("topbar.profileSettings") : t("topbar.activate")}>
-                    <span className="prow-ic">{icons.length ? icons.map((src) => <img key={src} src={src} alt="" width={16} height={16} />) : <Icon name={state.home === p.id ? "home" : "layers"} />}</span>
+                    <span className="prow-ic">{icons.length ? icons.map((src) => <img key={src} src={src} alt="" width={16} height={16} />) : <Icon name={state.fallback === p.id ? "home" : "layers"} />}</span>
                     <span className="prow-text">
                       <b>{p.name}</b>
                       <small>
-                        {state.home === p.id && <span className="tag">{t("profiles.home")}</span>}
+                        {state.fallback === p.id && <span className="tag">{t("profiles.home")}</span>}
                         {active && <span className="tag is-acc">{t("profiles.active")}</span>}
                         {state.autoMade?.includes(p.id) && <span className="tag is-acc">{t("auto.new")}</span>}
                         {p.apps.length > 0 && <span className="mono">{p.apps.join(", ")}</span>}
@@ -481,6 +489,12 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
                   />
                 </label>
                 <span className="prow-tools">
+                  {/* picking a profile only switches to it; home is set here (owner, 2026-10-22) */}
+                  {state.fallback !== p.id && (
+                    <button className="icon-btn" title={t("profiles.setHome")} aria-label={t("profiles.setHome")} onClick={() => api.settings({ fallback: p.id })}>
+                      <Icon name="home" />
+                    </button>
+                  )}
                   <button className="icon-btn" title={t("profiles.rename")} aria-label={t("profiles.rename")} onClick={() => setRenaming({ id: p.id, name: p.name })}>
                     <Icon name="pencil" />
                   </button>
@@ -495,20 +509,22 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
             );
           })}
         </ul>
+        </section>
+        ))}
         {list.length === 0 && ready.length === 0 && <p className="help">{t("profiles.none")}</p>}
         {ready.length > 0 && (
           // owner's pick 1a, 2026-10-14: made at once for the apps installed, off until switched on
-          <section className="ready-apps" aria-labelledby="ready-title">
-            <div className="plist-head">
+          <details className="ready-apps" open={!!q || undefined}>
+            <summary className="plist-head">
               <span id="ready-title">{t("profiles.ready", { count: ready.length })}</span>
-            </div>
+            </summary>
             <p className="help">{t("profiles.readyHelp")}</p>
             <ul className="plist">
               {ready.map((p) => {
                 const icon = p.apps.map((a) => appIcon(apps, a)).find(Boolean);
                 const active = state.active === p.id;
                 return (
-                  <li key={p.id} className={`prow${active ? " is-active" : ""}`}>
+                  <li key={p.id} className={`prow${active ? " is-active" : ""}`} data-profile={p.id}>
                     <button className="prow-main" onClick={() => (active ? onOpenProfile() : api.activate(p.id))} title={active ? t("topbar.profileSettings") : t("topbar.activate")}>
                       <span className="prow-ic">{icon ? <img src={icon} alt="" width={16} height={16} /> : <Icon name="app-window" />}</span>
                       <span className="prow-text">
@@ -531,7 +547,7 @@ function ProfilesList({ view, onOpenProfile, onNewProfile }: { view: EngineView;
                 );
               })}
             </ul>
-          </section>
+          </details>
         )}
         <button className="tool lib-new" onClick={onNewProfile}>
           <Icon name="plus" />
@@ -646,7 +662,10 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
   const state = view.state;
   const all = state?.profiles ?? [];
   // the bar: profiles shown in it, the home profile and the active one
-  const profiles = all.filter((p) => inBar(p) || p.id === state?.active || p.id === state?.home);
+  // home always first, set apart by a thin line (owner's pick A, 2026-10-22)
+  const profiles = all
+    .filter((p) => inBar(p) || p.id === state?.active || p.id === state?.home || p.id === state?.fallback)
+    .sort((x, y) => Number(y.id === state?.fallback) - Number(x.id === state?.fallback));
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const apps = useApps(state?.foreground);
   useLinkedIcons(all, apps);
@@ -677,7 +696,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
     const calc = () => {
       // fractional widths rounded up, and a little room: the active tab (its dot, its weight) is wider
       // than its measured copy (the last tab was cut by 4px at 1440; release audit)
-      const widths = Array.from(measure.children, (c) => Math.ceil(c.getBoundingClientRect().width) + 2);
+      const widths = Array.from(measure.children, (c) => Math.ceil(c.getBoundingClientRect().width) + 2 + (c.classList.contains("is-home") ? 6 : 0));
       const tabs = widths.slice(0, profiles.length);
       const more = widths[profiles.length] ?? 90;
       const gap = 2;
@@ -702,7 +721,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
   const tab = (p: (typeof profiles)[number], measuring = false) => (
     <button
       key={p.id}
-      className={`tab${state?.active === p.id ? " is-active" : ""}`}
+      className={`tab${state?.active === p.id ? " is-active" : ""}${state?.fallback === p.id ? " is-home" : ""}`}
       tabIndex={measuring ? -1 : undefined}
       onClick={measuring ? undefined : () => (state?.active === p.id ? onOpenProfile() : api.activate(p.id))}
       onContextMenu={
@@ -716,7 +735,7 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
       title={measuring ? undefined : state?.active === p.id ? t("topbar.profileSettings") : p.apps.length ? t("topbar.switchesFor", { apps: p.apps.join(", ") }) : t("topbar.activate")}
     >
       {state?.autoSwitch && p.apps.length > 0 && <span className="auto" aria-hidden="true" />}
-      {state?.home === p.id && <Icon name="home" />}
+      {state?.fallback === p.id && <Icon name="home" />}
       {/* pinned (3A): the tab of the profile the deck stays on carries the pin */}
       {state?.pinned && state.active === p.id && <Icon name="pin" className="tab-pin" />}
       {p.apps.slice(0, 3).map((a) => {
@@ -730,7 +749,14 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
   return (
     <>
       <nav className="profiles" aria-label={t("topbar.profiles")} ref={navRef}>
-        <div className="tabs-row">{shown.map((p) => tab(p))}</div>
+        <div className="tabs-row">
+          {shown.map((p, i) => (
+            <Fragment key={p.id}>
+              {tab(p)}
+              {i === 0 && p.id === state?.fallback && shown.length > 1 && <span className="tab-sep" aria-hidden="true" />}
+            </Fragment>
+          ))}
+        </div>
         {hidden.length > 0 && (
           <span className="pop-anchor" ref={moreRef}>
             <button className={`tab more${moreOpen ? " is-open" : ""}`} aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
@@ -3613,7 +3639,7 @@ function OwnedKinds({ live, saved, onPlace }: { live: LiveState; saved: Record<s
   );
 }
 
-export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live: LiveState; view: EngineView; onOpenProfiles?: () => void; onOpenConnections?: () => void }) {
+export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live: LiveState; view: EngineView; onOpenProfiles?: (ids: string[]) => void; onOpenConnections?: () => void }) {
   useLanguage();
   const made = (view.state?.autoMade ?? []).map((id) => view.state?.profiles.find((p) => p.id === id)?.name).filter(Boolean) as string[];
   const names = made.length > 4 ? `${made.slice(0, 4).join(", ")} +${made.length - 4}` : made.join(", ");
@@ -3623,12 +3649,28 @@ export function Banner({ live, view, onOpenProfiles, onOpenConnections }: { live
       <RingingBanner view={view} />
       <CrashBanner />
       <AccessibilityBanner />
+      {view.state?.interruptedTry && (
+        // a restart in the middle of a try took the draft off the deck (owner, 2026-10-22)
+        <div className="banner is-info" role="status">
+          <Icon name="sparkles" />
+          <span className="grow">{t("try.interrupted", { name: view.state.profiles.find((p) => p.id === view.state?.interruptedTry)?.name ?? "" })}</span>
+          <button className="tool small" onClick={() => api.tryProfile(view.state?.interruptedTry ?? null)}>
+            {t("try.putBack")}
+          </button>
+          <button className="tool small" onClick={() => api.settleDraft(view.state?.interruptedTry ?? "", true)}>
+            {t("try.useThis")}
+          </button>
+          <button className="tool small" onClick={() => api.tryProfile(null)}>
+            {t("try.dismiss")}
+          </button>
+        </div>
+      )}
       {made.length > 0 && (
         <div className="banner is-info" role="status">
           <Icon name="sparkles" />
           <span className="grow">{t(made.length === 1 ? "auto.bannerOne" : "auto.banner", { names })}</span>
           {onOpenProfiles && (
-            <button className="tool small" onClick={onOpenProfiles}>
+            <button className="tool small" onClick={() => (onOpenProfiles(view.state?.autoMade ?? []), api.autoSeen())}>
               {t("auto.show")}
             </button>
           )}

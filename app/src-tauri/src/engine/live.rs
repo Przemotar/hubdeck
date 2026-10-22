@@ -382,7 +382,7 @@ fn allow(command: &str) -> Result<(), String> {
 }
 
 fn run(engine: Option<Sender<Msg>>, rx: Receiver<Cmd>) {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).http_status_as_error(false).build().into();
+    let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(TIMEOUT)).http_status_as_error(false).build().into();
     let mut watched: Vec<Source> = Vec::new();
     let mut due: HashMap<String, Instant> = HashMap::new();
     let mut last: HashMap<String, String> = HashMap::new();
@@ -541,7 +541,7 @@ pub async fn weather_search(name: String) -> Result<Vec<Place>, String> {
         return Ok(Vec::new());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into();
+        let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(TIMEOUT)).build().into();
         search_places(&agent, &name)
     })
     .await

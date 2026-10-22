@@ -32,6 +32,8 @@ query($owner: String!, $name: String!) {
 
 
 def main() -> None:
+    # -I ignores PYTHONIOENCODING and a Windows console is cp1250: emoji in posts crashed print
+    sys.stdout.reconfigure(encoding="utf-8")
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not args:
         sys.exit("usage: github-new.py <since, ISO 8601 UTC> [--all]")

@@ -226,6 +226,20 @@ export default function App() {
     }
   }, [live.lastTouched]);
 
+  // "Show" on the made-by-itself banner: the profile list was often open already, so the click
+  // looked dead (owner, 2026-10-22); bring the first new profile into view and light it once
+  const showProfiles = (ids: string[]) => {
+    setLeftTab("profiles");
+    window.setTimeout(() => {
+      const row = ids.map((id) => document.querySelector<HTMLElement>(`.prow[data-profile="${CSS.escape(id)}"]`)).find(Boolean);
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.remove("is-shown");
+      void row.offsetWidth; // restart the glow on a second click
+      row.classList.add("is-shown");
+    }, 50);
+  };
+
   return (
     <div className="app">
       <TopBar
@@ -245,7 +259,7 @@ export default function App() {
       <Banner
         live={live}
         view={view}
-        onOpenProfiles={() => setLeftTab("profiles")}
+        onOpenProfiles={showProfiles}
         onOpenConnections={() => (setSettingsSection("connections"), setSettingsOpen(true))}
       />
       {tourShown ? (

@@ -973,7 +973,7 @@ pub fn download(url: &str) -> Result<Vec<u8>, String> {
     if !url.starts_with("https://") {
         return Err("plugins are downloaded over https only".into());
     }
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(300))).build().into();
+    let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(std::time::Duration::from_secs(300))).build().into();
     let mut res = agent.get(url).header("User-Agent", "HubDeck").call().map_err(|e| format!("download failed: {e}"))?;
     res.body_mut().with_config().limit(300 * 1024 * 1024).read_to_vec().map_err(|e| format!("download failed: {e}"))
 }

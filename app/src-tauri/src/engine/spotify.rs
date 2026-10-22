@@ -135,7 +135,7 @@ pub fn pkce() -> (String, String) {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(8))).http_status_as_error(false).build().into()
+    crate::engine::calls::builder().timeout_global(Some(Duration::from_secs(8))).http_status_as_error(false).build().into()
 }
 
 /// Who signed in, for the window: their Spotify name and whether they have Premium (None: Spotify

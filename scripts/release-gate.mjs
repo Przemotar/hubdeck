@@ -10,9 +10,12 @@
 //      module that was attached must come back
 //   5. window (Windows): a test copy shows the busiest deck with the screensaver for
 //      --window-seconds (150); its page's smoothness and the WebView2 memory
+//   6. calls: the calls to other services during the soak, by host, from the app's log (`calls in
+//      the last minute:`); fails above --calls-per-hour (720, one every 5 s) for any host (owner's
+//      pick 3a, 2026-10-22: Spotify was asked every 3 s)
 //
 //   node scripts/release-gate.mjs [--profile <name or id>, default: a draft with every GIF and Mochi] [--minutes 5] [--every 5] [--restarts 3]
-//                                 [--skip audit,sizes,readme,soak,restarts,window] [--window-seconds 150]
+//                                 [--skip audit,sizes,readme,soak,calls,restarts,window] [--window-seconds 150] [--calls-per-hour 720]
 //
 // The soak only shows the profile (a try, like the assistant's Try): the user's home and active
 // profile come back at the end. Nothing takes the focus: the app is started with --hidden.
@@ -41,6 +44,7 @@ const LIMITS = {
   cpuAvgPct: 15, // % of one core, with the animated profile on screen
   installerMb: 60,
   installedMb: 200,
+  callsPerHour: Number(opt("calls-per-hour", "720")),
 };
 
 const dataDir = win
@@ -181,6 +185,39 @@ function sizes() {
 }
 
 // --- 3. soak -------------------------------------------------------------------------------
+// --- calls to other services ---------------------------------------------------------------
+// The app writes `calls in the last minute: <host> N, ...` once a minute (engine/calls.rs); the
+// lines inside the soak are added up per host and turned into calls an hour.
+function callsStage() {
+  if (!soakWindow) return report("calls", false, "no soak ran: the calls are counted during the soak");
+  const logDir = win ? path.join(process.env.LOCALAPPDATA, "dev.hubdeck.app", "logs") : path.join(os.homedir(), "Library", "Logs", "dev.hubdeck.app");
+  const files = fs.existsSync(logDir) ? fs.readdirSync(logDir).filter((f) => f.endsWith(".log")).map((f) => path.join(logDir, f)) : [];
+  const [from, to] = soakWindow;
+  const hosts = {};
+  let lines = 0;
+  for (const file of files) {
+    if (fs.statSync(file).mtimeMs < from) continue;
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      const m = line.match(/^\[(\d{4}-\d{2}-\d{2})\]\[(\d{2}:\d{2}:\d{2})\].*calls in the last minute: (.*)$/);
+      if (!m) continue;
+      const at = new Date(`${m[1]}T${m[2]}`).getTime(); // the log's local time
+      if (at < from || at > to + 60_000) continue;
+      lines++;
+      for (const part of m[3].split(", ")) {
+        const [host, n] = part.trim().split(" ");
+        if (host && Number(n)) hosts[host] = (hosts[host] ?? 0) + Number(n);
+      }
+    }
+  }
+  const hours = (to - from) / 3_600_000;
+  const rows = Object.entries(hosts).map(([host, n]) => [host, Math.round(n / hours)]).sort((a, b) => b[1] - a[1]);
+  const over = rows.filter(([, n]) => n > LIMITS.callsPerHour);
+  const text = rows.length ? rows.map(([h, n]) => `${h} ${n}/h`).join(", ") : `no calls to other services (${lines} log lines)`;
+  report("calls", over.length === 0, `${text}; limit ${LIMITS.callsPerHour}/h a host${over.length ? `; over: ${over.map(([h]) => h).join(", ")}` : ""}`);
+}
+
+let soakWindow = null;
+
 async function soak() {
   const p = pid();
   if (!p) return report("soak", false, `the installed app is not running (${appPath})`);
@@ -217,6 +254,7 @@ async function soak() {
     let last = sample(p);
     let lastAt = Date.now();
     const end = Date.now() + minutes * 60_000;
+    soakWindow = [end - minutes * 60_000, end];
     while (Date.now() < end) {
       await sleep(every * 1000);
       const s = sample(p);
@@ -438,6 +476,7 @@ if (!skip.has("readme")) {
   }
 }
 if (!skip.has("soak")) await soak().catch((e) => report("soak", false, e.message));
+if (!skip.has("calls")) callsStage();
 if (!skip.has("restarts")) await restartLoop().catch((e) => report("restarts", false, e.message));
 if (!skip.has("window")) await windowStage().catch((e) => report("window", false, e.message));
 const failed = results.filter((r) => !r.ok);

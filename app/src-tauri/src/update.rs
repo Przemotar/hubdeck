@@ -103,7 +103,7 @@ pub async fn update_previous(app: AppHandle) -> Result<Option<UpdateInfo>, Strin
     }
     let current = app.package_info().version.to_string();
     let list = tauri::async_runtime::spawn_blocking(|| -> Result<serde_json::Value, String> {
-        let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
+        let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(std::time::Duration::from_secs(15))).build().into();
         agent.get(RELEASES).header("User-Agent", "HubDeck").header("Accept", "application/vnd.github+json").call().map_err(|e| e.to_string())?.body_mut().read_json().map_err(|e| e.to_string())
     })
     .await

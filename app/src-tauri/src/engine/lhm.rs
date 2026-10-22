@@ -81,7 +81,7 @@ pub fn from_json(v: &serde_json::Value) -> Vec<Sensor> {
 /// The sensors from the web server now; Err when it does not answer (not running, or its web
 /// server is off).
 pub fn from_web() -> Result<Vec<Sensor>, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_millis(600))).build().into();
+    let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(std::time::Duration::from_millis(600))).build().into();
     let v: serde_json::Value = agent.get(WEB).call().map_err(|e| e.to_string())?.body_mut().read_json().map_err(|e| e.to_string())?;
     Ok(from_json(&v))
 }

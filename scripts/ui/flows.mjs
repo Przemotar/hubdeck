@@ -267,6 +267,8 @@ for (const [label, viewport] of [['wide', { width: 1440, height: 900 }], ['half'
     await page.locator('.lib-tabs [role="tab"]', { hasText: 'Profiles' }).click();
     await page.waitForTimeout(300);
     if (!(await page.locator('.ready-apps .plist-head', { hasText: /Ready for your apps \(3\)/ }).isVisible())) return 'no group';
+    // folded until opened (owner's pick A, 2026-10-22)
+    if (!(await page.locator('.ready-apps').evaluate((d) => d.open))) await page.locator('.ready-apps > summary').click();
     const sw = page.locator('.ready-apps input[type=checkbox]').first();
     if (await sw.isChecked()) return 'on by default';
     await sw.click();

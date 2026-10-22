@@ -700,6 +700,33 @@ select.input option {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* groups of the profile list (owner's pick A, 2026-10-22) */
+.plist-group + .plist-group {
+  margin-top: 10px;
+}
+/* the home tab first in the top bar, a thin line after it */
+.tabs-row .tab-sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  align-self: center;
+  background: var(--ln2);
+}
+.ready-apps > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.ready-apps > summary::-webkit-details-marker {
+  display: none;
+}
+.ready-apps > summary::after {
+  content: "▸";
+  margin-left: 6px;
+}
+.ready-apps[open] > summary::after {
+  content: "▾";
+}
 /* "Ready for your apps" (owner's pick 1a, 2026-10-14) */
 .ready-apps {
   margin-top: 16px;
@@ -5366,6 +5393,12 @@ button.lib-foot:focus-visible span {
     transform: translateX(-6px);
   }
 }
+/* "Show" on the made-by-itself banner: the new profile's row lights up once */
+.prow.is-shown {
+  border-radius: 8px;
+  animation: focus-glow 1.6s ease-out 1;
+}
+.reduce-motion .prow.is-shown,
 .reduce-motion .chooser-group.is-focus > .chooser-group-head,
 .reduce-motion .focus-arrow {
   animation: none;
