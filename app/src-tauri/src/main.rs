@@ -23,6 +23,11 @@ fn main() {
         let args: Vec<String> = std::env::args().skip(2).collect();
         return hubdeck_lib::guard(&args);
     }
+    // the release gate: what Install would get for the most popular catalog plugins here
+    if std::env::args().nth(1).as_deref() == Some("--catalog-check") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        std::process::exit(hubdeck_lib::catalog_check(&args));
+    }
     // a terminal or a script: `hubdeck cli status`, `hubdeck cli profile Desk`...
     if std::env::args().nth(1).as_deref() == Some("cli") {
         let args: Vec<String> = std::env::args().skip(2).collect();

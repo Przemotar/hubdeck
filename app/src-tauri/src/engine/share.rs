@@ -304,7 +304,19 @@ fn agent() -> ureq::Agent {
 }
 
 pub(crate) fn download(url: &str, limit: u64) -> Result<Vec<u8>, String> {
-    let mut response = agent().get(url).call().map_err(|e| e.to_string())?;
+    read(agent(), url, limit)
+}
+
+/// A big file: the answer must come soon, the body may take minutes. A Stream Deck plugin can be
+/// ~60 MB (VTube Studio's 59 MB); 5 s for the whole download failed on the owner's Mac with
+/// "timeout: global" (2026-10-23) while the PC's faster line made it in time.
+pub(crate) fn download_big(url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    let agent = crate::engine::calls::builder().timeout_connect(Some(TIMEOUT)).timeout_recv_response(Some(Duration::from_secs(20))).timeout_global(Some(Duration::from_secs(600))).build().into();
+    read(agent, url, limit)
+}
+
+fn read(agent: ureq::Agent, url: &str, limit: u64) -> Result<Vec<u8>, String> {
+    let mut response = agent.get(url).call().map_err(|e| e.to_string())?;
     response.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| e.to_string())
 }
 

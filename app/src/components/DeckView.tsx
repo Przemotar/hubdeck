@@ -382,7 +382,7 @@ const KP = 0.8;
 const GIFS_IN_WINDOW = false; // WINDOW_PLAYS_GIFS in engine/mod.rs: smooth, but WebView2 440-600 MB instead of ~320
 const playsItself = (look?: Look) => GIFS_IN_WINDOW && !!look?.image && /\.gif$/i.test(look.image);
 
-function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; mirror?: { src: string; rect: [number, number, number, number]; saver?: boolean } | null }) {
+function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; mirror?: { src: string; rect: [number, number, number, number]; saver?: boolean; frame?: string } | null }) {
   const own = playsItself(look) && !mirror?.saver;
   const svg = usePreview("key", own && look ? { ...look, image: `${look.image}#anim` } : look);
   const [pw, ph] = [KW - 2 * KP, KH - 2 * KP];
@@ -394,7 +394,10 @@ function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; m
     return (
       <g clipPath={`url(#${ctx.id("kclip")})`} pointerEvents="none">
         <svg x={KP} y={KP} width={pw} height={ph} viewBox={`${rx} ${ry} ${rw} ${rh}`} preserveAspectRatio="none">
-          <use href={mirror.src} />
+          {/* a new <use> for each frame: WebKit (the macOS window) does not repaint a <use> whose
+              image changed its address, the old action stayed on the key until another profile
+              and back (issue #9, 2026-10-23) */}
+          <use key={mirror.frame} href={mirror.src} />
         </svg>
       </g>
     );
@@ -503,7 +506,7 @@ function Keys({ ctx }: { ctx: Ctx }) {
                       : // while the deck shows its screensaver, the window shows what the keys do
                         // (owner's pick 1a, 2026-10-18), not the screensaver's frames
                         !shown && frame && frame.rects[i]
-                        ? { src: `#${id("kpanel")}`, rect: frame.rects[i] }
+                        ? { src: `#${id("kpanel")}`, rect: frame.rects[i], frame: frame.src }
                         : null
                   }
                 />

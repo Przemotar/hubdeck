@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.11
+
+- **Uninstall a plugin** (#8): Settings > Plugins and the plugin's card in the Plugins tab have
+  Uninstall. It stops the plugin and deletes its folder; the question first names the keys that
+  use it. Those keys stay where they are and say the plugin is missing instead of doing nothing.
+- **A key's picture in the window follows the deck** (#9): a clock, a GIF or a counter on a key
+  changes in the window too, instead of keeping its first picture.
+- **Questions come up in HubDeck's own window**, with the button named for what it does: Delete
+  profile, Delete page, Uninstall, Restore backup, Go back, Remove icon pack, and an import that
+  runs programs.
+- **Deleting the home profile makes your next own profile home**, instead of an assistant's draft
+  or a ready-made one.
+- **Big plugins install from the catalog**: the download had 5 seconds in all, too little for a
+  59 MB plugin such as VTube Studio; it now waits up to 10 minutes and says when GitHub did not
+  answer. A catalog plugin says on which system it was tried in HubDeck.
+
 ## 0.1.10
 
 - **Picking a profile only switches to it.** A click in the profile list, on a tab or on the deck

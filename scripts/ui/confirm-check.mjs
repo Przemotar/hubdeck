@@ -1,8 +1,8 @@
 // Questions before something that cannot be undone wait for the answer (2026-10-18: in HubDeck's
 // window window.confirm returned a promise, taken as yes, and the owner's "test" profile went
 // without a question). In the browser demo, headless, never the focus: Delete page answered Cancel
-// keeps the page, answered OK deletes it. The native question in the real window is the owner's
-// step (a dialog of a test copy would take his focus).
+// keeps the page, answered Delete deletes it. Since 2026-10-23 the question is HubDeck's own, in the
+// window (owner's pick 1b), so the walk clicks its buttons as the user does.
 //   node scripts/ui/confirm-check.mjs     # needs the Vite server (cd app && pnpm dev)
 import { chromium } from "playwright-core";
 import fs from "node:fs";
@@ -39,14 +39,18 @@ try {
   await page.locator("button.tab", { hasText: /^Walk$/ }).first().click();
   await page.waitForTimeout(500);
   const before = await tabs();
-  let asked = "";
-  page.once("dialog", (d) => ((asked = d.message()), d.dismiss()));
+  // the question is HubDeck's own, in the window (owner's pick 1b, 2026-10-23)
+  const question = page.getByRole("alertdialog");
   await page.getByRole("button", { name: "Delete page" }).click();
-  await page.waitForTimeout(800);
-  check("Delete page asks first", asked.length > 0, asked);
+  await page.waitForTimeout(500);
+  const asked = (await question.innerText().catch(() => "")).replace(/\s+/g, " ");
+  check("Delete page asks first, in the window", asked.includes("Walk"), asked);
+  await question.getByRole("button", { name: "Cancel" }).click().catch(() => {});
+  await page.waitForTimeout(500);
   check("answered Cancel, the page stays", (await tabs()) === before && before > 0, `pages named Walk: ${before} -> ${await tabs()}`);
-  page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Delete page" }).click();
+  await page.waitForTimeout(500);
+  await question.getByRole("button", { name: "Delete" }).click().catch(() => {});
   await page.waitForTimeout(800);
   check("answered OK, the page goes", (await tabs()) === before - 1);
 } finally {

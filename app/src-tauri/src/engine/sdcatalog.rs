@@ -425,8 +425,16 @@ pub async fn sd_catalog_install(app: tauri::AppHandle, id: String) -> Result<Str
         let entry = catalog()?.into_iter().find(|e| e.id == id).ok_or("not in the plugin catalog")?;
         // a repository its author removed answers 404 (YouTube Ticker, 2026-10-18): say that, not
         // "http status: 404"
-        let gone = |e: String| if e.contains("404") { format!("{}: its author removed or moved its files on GitHub, so it cannot be installed", entry.name) } else { e };
-        let bytes = file_url(&entry).and_then(|url| super::share::download(&url, MAX_PLUGIN)).map_err(gone)?;
+        let gone = |e: String| {
+            if e.contains("404") {
+                format!("{}: its author removed or moved its files on GitHub, so it cannot be installed", entry.name)
+            } else if e.contains("timeout") {
+                format!("{}: GitHub did not answer in time ({e}); try again", entry.name)
+            } else {
+                e
+            }
+        };
+        let bytes = file_url(&entry).and_then(|url| super::share::download_big(&url, MAX_PLUGIN)).map_err(gone)?;
         let id = super::plugins::install_sd(&bytes)?;
         // a plugin made for another system installs but cannot run here: say so and take it out
         if let Some((sd, dir)) = super::plugins::sd_of(&id)
@@ -442,6 +450,64 @@ pub async fn sd_catalog_install(app: tauri::AppHandle, id: String) -> Result<Str
     .map_err(|e| e.to_string())??;
     let _ = app.emit("engine://catalog", ());
     Ok(installed)
+}
+
+/// What Install would get for one catalog plugin on this system, without installing it: its file
+/// downloaded the same way, unpacked into `scratch` and its manifest read. The size and program.
+fn check_one(entry: &Entry, scratch: &std::path::Path) -> Result<String, String> {
+    let bytes = file_url(entry).and_then(|url| super::share::download_big(&url, MAX_PLUGIN))?;
+    std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
+    let id = super::sdplugins::install(&bytes, scratch)?;
+    let dir = scratch.join(format!("{id}.sdPlugin"));
+    let v: Value = std::fs::read(dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(super::sdplugins::without_bom(&b)).ok()).ok_or("no manifest")?;
+    let sd = super::sdplugins::read(&v, &dir)?;
+    super::sdplugins::runs_here(&sd)?;
+    // Windows starts `name` as `name.exe` (Audio Mixer, Color Picker, 2026-10-23)
+    let program = |rel: &str| super::sdplugins::inside(&dir, rel).filter(|p| p.is_file());
+    program(&sd.code_path).or_else(|| program(&format!("{}.exe", sd.code_path)).filter(|_| cfg!(windows))).ok_or_else(|| format!("its program {} is not in the file", sd.code_path))?;
+    Ok(format!("{} KB, {}{}", bytes.len() / 1024, sd.code_path, if sd.node { " (Node.js)" } else { "" }))
+}
+
+/// `hubdeck --catalog-check [N]`: the N most popular catalog plugins (Elgato's order, then stars)
+/// checked as above, a few at a time; a line each and the exit code 1 when one fails. The release
+/// gate's stage "catalog" on both systems (owner's pick 1a, 2026-10-23: on the Mac VTube Studio
+/// would not install, the catalog had been tried on Windows only; it runs beside the soak, as he
+/// wants no longer gates).
+pub fn check(n: usize) -> i32 {
+    let mut list = match catalog() {
+        Ok(list) => list,
+        Err(e) => {
+            println!("FAIL catalog: {e}");
+            return 1;
+        }
+    };
+    list.sort_by_key(|e| (e.popular.unwrap_or(u32::MAX), std::cmp::Reverse(e.stars.unwrap_or(0))));
+    list.truncate(n);
+    let scratch = std::env::temp_dir().join("hubdeck-catalog-check");
+    let _ = std::fs::remove_dir_all(&scratch);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let failed = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for _ in 0..4 {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(entry) = list.get(i) else { break };
+                    match check_one(entry, &scratch.join(i.to_string())) {
+                        Ok(what) => println!("ok   {} ({}): {what}", entry.name, entry.id),
+                        Err(e) => {
+                            failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            println!("FAIL {} ({}): {e}", entry.name, entry.id);
+                        }
+                    }
+                }
+            });
+        }
+    });
+    let _ = std::fs::remove_dir_all(&scratch);
+    let failed = failed.into_inner();
+    println!("catalog: {} of {} install and run here", list.len() - failed, list.len());
+    i32::from(failed > 0)
 }
 
 #[cfg(test)]
@@ -469,6 +535,24 @@ mod tests {
             let root = super::super::sdplugins::install_root(&bytes).unwrap();
             println!("{id}: {url} -> {} KB, {root}", bytes.len() / 1024);
         }
+    }
+
+    /// Live: the biggest plugin we know (VTube Studio, 59 MB) downloads whole (network; it failed
+    /// on the owner's Mac within the old 5 s for the whole download, 2026-10-23).
+    /// Live: the release gate's catalog check on this system (network).
+    #[test]
+    #[ignore]
+    fn catalog_check_live() {
+        assert_eq!(check(20), 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn big_plugin_downloads() {
+        let entry = catalog().unwrap().into_iter().find(|e| e.id == "dev.cazzar.streamdeck.vtubestudio").unwrap();
+        let bytes = super::super::share::download_big(&file_url(&entry).unwrap(), MAX_PLUGIN).unwrap();
+        assert!(bytes.len() > 50 * 1024 * 1024, "{} bytes", bytes.len());
+        assert_eq!(super::super::sdplugins::install_root(&bytes).unwrap(), "dev.cazzar.streamdeck.vtubestudio");
     }
 
     #[test]

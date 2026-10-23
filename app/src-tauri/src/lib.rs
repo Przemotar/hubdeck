@@ -228,6 +228,12 @@ fn take_the_deck_lock() {
     let _ = HELD.set(file);
 }
 
+/// `hubdeck --catalog-check [N]`: the N most popular catalog plugins downloaded, unpacked and read
+/// as Install would, nothing installed (the release gate's stage "catalog"); the exit code.
+pub fn catalog_check(args: &[String]) -> i32 {
+    engine::sdcatalog::check(args.first().and_then(|n| n.parse().ok()).unwrap_or(20))
+}
+
 /// `hubdeck cli ...`: one command against the running app; the exit code for the shell.
 pub fn cli(args: &[String]) -> i32 {
     engine::cli::run(args)
@@ -450,6 +456,8 @@ pub fn run() {
             engine::commands::midi_ports,
             engine::commands::audio_devices,
             engine::commands::plugins_list,
+            engine::commands::plugin_uninstall,
+            engine::commands::plugin_uses,
             engine::commands::plugin_stop,
             engine::commands::plugin_start,
             engine::commands::sd_install,

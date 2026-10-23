@@ -139,7 +139,11 @@ macOS (2026-10-13): 200 ms between software mode on and the first read was not a
 the module had just been handed back by another app; the read then wedged it. 600 ms and a second
 software-mode command before the read: no wedge in twelve restarts.
 
-macOS: to be checked (candidate: `USBDeviceReEnumerate` from IOKit).
+macOS: re-enumeration through IOUSBHost (no admin rights) brought stuck keys and dial back in
+2026-10-14 (both within 4 s), but not every time: a dial stuck after brightness 0 needed a reseat,
+and on 2026-10-23 a dial that had stopped answering feature reports during a long run (its
+hand-back at quit timed out after 5 s, pictures were still taken until then) left USB altogether
+after the re-enumeration until it was reseated (twice). Reseating always unlocks.
 
 Consequences:
 - `mh-device` refuses to read from the keys and the dial outside software mode (`Error::HardwareMode`).

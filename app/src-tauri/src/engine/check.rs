@@ -27,6 +27,8 @@ pub struct Env<'a> {
     /// A bare name opens something here: a program on PATH, an installed app or game, an app seen
     /// in front ("notepad", "Visual Studio Code").
     pub name_opens: &'a dyn Fn(&str) -> bool,
+    /// A plugin of this id is installed (a key of an uninstalled one does nothing; issue #8).
+    pub plugin_installed: &'a dyn Fn(&str) -> bool,
 }
 
 /// A target that is a path (not a URL, not a bare program name found through PATH).
@@ -94,6 +96,11 @@ pub fn issues(p: &Profile, env: &Env) -> Vec<Issue> {
             "core.run" if is_path(&param("command")) && !(env.file_exists)(&param("command")) => flag(format!("Program or script not found: {}", param("command"))),
             "core.sound" if !param("file").is_empty() && !(env.file_exists)(&param("file")) => flag(format!("Sound file not found: {}", param("file"))),
             _ => {}
+        }
+        if let Some((plugin, _)) = b.action.split_once('/')
+            && !(env.plugin_installed)(plugin)
+        {
+            flag(format!("Its plugin is not installed: {plugin}"));
         }
         let device = param("device");
         if (b.action == "core.audioDevice" || b.action == "core.sound")
@@ -169,6 +176,7 @@ mod tests {
             obs: Some((vec!["Gaming".into()], vec!["Mic/Aux".into()])),
             ha_missing: vec!["light.gone".into()],
             name_opens: &|n| n == "notepad",
+            plugin_installed: &|id| id == "com.here",
         };
         p.controls.insert("keys.5".into(), bind("obs.scene", json!({"scene": "Gaming"})));
         p.controls.insert("keys.6".into(), bind("obs.scene", json!({"scene": "Old scene"})));
@@ -180,9 +188,12 @@ mod tests {
         p.controls.insert("keys.12".into(), bind("core.game", json!({"game": "Path of Exile 2"})));
         // a Microsoft Store app opens through its shell: link
         p.controls.insert("keys.13".into(), bind("core.launch", json!({"target": r"shell:AppsFolder\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"})));
+        // a key of an uninstalled plugin says so, one of an installed plugin does not
+        p.controls.insert("keys.14".into(), bind("com.gone/com.gone.ping", json!({})));
+        p.controls.insert("dial".into(), bind("com.here/com.here.ping", json!({})));
         let all = issues(&p, &env);
         let found: Vec<&str> = all.iter().map(|i| i.control.as_str()).collect();
-        assert_eq!(found, ["keys.0", "keys.10", "keys.12", "keys.3", "keys.4", "keys.6", "keys.8"], "URLs, names that open, existing ports, scenes and inputs are fine");
+        assert_eq!(found, ["keys.0", "keys.10", "keys.12", "keys.14", "keys.3", "keys.4", "keys.6", "keys.8"], "URLs, names that open, existing ports, scenes and inputs are fine");
         assert_eq!(needs(&p), (true, true));
     }
 }

@@ -753,6 +753,10 @@ export const api = {
   plugins: () => invoke<PluginInfo[]>("plugins_list"),
   pluginStop: (id: string) => invoke("plugin_stop", { id }),
   pluginStart: (id: string) => invoke("plugin_start", { id }),
+  /** Stop a plugin, take its actions out and delete its folder. */
+  pluginUninstall: (id: string) => invoke("plugin_uninstall", { id }),
+  /** Where a plugin's actions stand in the profiles. */
+  pluginUses: (id: string) => invoke<{ profile: string; pages: Profile["pages"]; control: string; label: string | null }[]>("plugin_uses", { id }),
   /** macOS: may HubDeck send keys and type (Accessibility)? */
   accessibilityOk: () => invoke<boolean>("accessibility_ok"),
   /** macOS: ask for Accessibility with the system's dialog. */

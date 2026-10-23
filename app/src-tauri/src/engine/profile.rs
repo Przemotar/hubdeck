@@ -705,11 +705,13 @@ impl Store {
         if self.settings.active.as_deref() == Some(id) {
             self.settings.active = None;
         }
-        if self.settings.fallback.as_deref() == Some(id) {
-            self.settings.fallback = None;
-        }
         self.settings.drafts.retain(|d| d != id);
         self.settings.ready.retain(|d| d != id);
+        // home moves to the next profile and stays there (owner, 2026-10-23: the deleted home
+        // left a draft as home in the top bar; "home przeskakuje automatycznie na kolejny profil")
+        if self.settings.fallback.as_deref() == Some(id) {
+            self.settings.fallback = self.next_home();
+        }
         self.save_settings()
     }
 
@@ -719,12 +721,22 @@ impl Store {
 
     /// Fallback profile id, repaired if it points nowhere.
     pub fn fallback_id(&self) -> Option<String> {
-        self.settings
-            .fallback
-            .clone()
-            .filter(|id| self.profiles.contains_key(id))
-            .or_else(|| self.profiles.values().find(|p| p.apps.is_empty()).map(|p| p.id.clone()))
-            .or_else(|| self.profiles.keys().next().cloned())
+        self.settings.fallback.clone().filter(|id| self.profiles.contains_key(id)).or_else(|| self.next_home())
+    }
+
+    /// The profile that becomes home when none is set: the first of the user's own profiles as
+    /// the profile list shows them (no app, not a draft of the assistant, not a ready-made one),
+    /// then any that is not a draft, then any.
+    fn next_home(&self) -> Option<String> {
+        let draft = |p: &&Profile| self.settings.drafts.contains(&p.id);
+        let ready = |p: &&Profile| self.settings.ready.contains(&p.id);
+        let all = || self.profiles.values();
+        all()
+            .find(|p| p.apps.is_empty() && !draft(p) && !ready(p))
+            .or_else(|| all().find(|p| p.apps.is_empty() && !draft(p)))
+            .or_else(|| all().find(|p| !draft(p)))
+            .or_else(|| all().next())
+            .map(|p| p.id.clone())
     }
 }
 
@@ -811,6 +823,27 @@ mod tests {
         assert_eq!(again.profiles.len(), 1);
         assert_eq!(again.profiles[&p.id], p);
         assert_eq!(safe_file_name("../evil"), "___evil");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn deleting_home_moves_it_to_the_next_own_profile() {
+        let dir = std::env::temp_dir().join(format!("mh-home-{}", std::process::id()));
+        let mut store = Store::load(&dir);
+        for (id, apps) in [("a-draft", vec![]), ("b-app", vec!["obs64.exe".to_string()]), ("c-home", vec![]), ("d-ready", vec![]), ("e-own", vec![])] {
+            let mut p = Profile::new(id);
+            p.id = id.into();
+            p.apps = apps;
+            store.save_profile(p).unwrap();
+        }
+        store.settings.drafts.push("a-draft".into());
+        store.settings.ready.push("d-ready".into());
+        store.settings.fallback = Some("c-home".into());
+        store.delete_profile("c-home").unwrap();
+        assert_eq!(store.settings.fallback.as_deref(), Some("e-own"), "not the draft, the app's or the ready-made profile");
+        assert_eq!(Store::load(&dir).settings.fallback.as_deref(), Some("e-own"), "saved");
+        store.delete_profile("e-own").unwrap();
+        assert_eq!(store.fallback_id().as_deref(), Some("d-ready"));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

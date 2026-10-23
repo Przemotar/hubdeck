@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { screenClean } from "./screen.mjs";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..", "..");
 const exe = process.argv[2] ?? path.join(root, "target", "test-build", "release", "hubdeck.exe");
@@ -104,6 +105,7 @@ try {
   spawn("taskkill", ["/F", "/T", "/PID", String(app.pid)]);
   await sleep(1500);
 }
+check("nothing came up on the owner's screen", ...screenClean(dir));
 const passed = results.filter(Boolean).length;
 console.log(`${passed}/${results.length}${passed === results.length ? "" : " FAILED"}`);
 process.exit(passed === results.length ? 0 : 1);

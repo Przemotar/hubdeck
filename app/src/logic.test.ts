@@ -210,4 +210,10 @@ describe("questions before something that cannot be undone", () => {
     expect(Object.keys(sources).length).toBeGreaterThan(10);
     expect(Object.entries(sources).filter(([, text]) => text.includes("window.confirm(")).map(([file]) => file)).toEqual([]);
   });
+  // the system's dialogs only through confirm.ts: a test copy must never show one on the owner's
+  // screen (2026-10-23)
+  it("opens the system's dialogs only through confirm.ts", () => {
+    const sources = import.meta.glob(["./**/*.{ts,tsx}", "!./demo/**", "!./**/*.test.ts", "!./confirm.ts"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    expect(Object.entries(sources).filter(([, text]) => text.includes("@tauri-apps/plugin-dialog")).map(([file]) => file)).toEqual([]);
+  });
 });

@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ask, open, save } from "@tauri-apps/plugin-dialog";
-import { confirmed } from "../confirm";
+import { askInWindow, confirmed, open, save } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
 import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens, triedPresets } from "../engine";
@@ -34,6 +33,24 @@ function controlIdName(id: string, pages: Profile["pages"] = []): string {
 /** A control id from the engine ("keys.2", "dial:hold", "page/knobs.0") as its name; other text as is. */
 function controlLabel(id: string, pages: Profile["pages"] = []): string {
   return /^([^/]+\/)?((keys|knobs|faders|rollers)\.\d+|dial)(:|$)/.test(id) ? controlIdName(id, pages) : id;
+}
+
+/** Uninstall a plugin after asking in the window, naming the keys that use it (issue #8). Settings >
+ * Plugins and the catalog's card both use it (owner's pick 1a, 2026-10-23: he looked for it on the
+ * card). Resolves true when it was uninstalled; an error is thrown for the caller to show. */
+export async function askUninstall(p: { id: string; name: string }): Promise<boolean> {
+  const uses = await api.pluginUses(p.id).catch(() => []);
+  const details = uses.map((u) => `${u.profile} · ${controlLabel(u.control, u.pages)}${u.label ? ` “${u.label}”` : ""}`);
+  const yes = await askInWindow({
+    title: t("plugins.uninstallTitle", { name: p.name }),
+    body: uses.length ? t("plugins.uninstallBody", { count: uses.length }) : t("plugins.uninstallUnused"),
+    details,
+    ok: t("plugins.uninstall"),
+    danger: true,
+  });
+  if (!yes) return false;
+  await api.pluginUninstall(p.id);
+  return true;
 }
 
 /** The note after an import or "Adapt to my modules": "Volume: Dial → Knob 1; ...". */
@@ -1963,7 +1980,7 @@ function GoBack() {
         className="tool align-start"
         disabled={state === "going"}
         onClick={async () => {
-          if (!(await confirmed(t("updates.backConfirm", { version: previous.version })))) return;
+          if (!(await askInWindow({ title: t("updates.backConfirm", { version: previous.version }), ok: t("confirm.goBack") }))) return;
           setState("going");
           updates.rollback(previous.version).catch((e) => setState({ error: String(e) }));
         }}
@@ -2585,7 +2602,7 @@ function Backups() {
               <button
                 className="tool ghost small"
                 onClick={async () => {
-                  if (await confirmed(t("backups.confirm", { when: b.when })))
+                  if (await askInWindow({ title: t("backups.confirm", { when: b.when }), ok: t("confirm.putBack") }))
                     api.restoreBackup(b.id).then(
                       () => (setMessage(t("backups.restored")), load()),
                       (e) => setMessage(String(e)),
@@ -3328,6 +3345,16 @@ function PluginsList({ onBrowse }: { onBrowse?: () => void }) {
                       {t("plugins.stop")}
                     </button>
                   )}
+                  <button
+                    className="tool"
+                    onClick={async () => {
+                      await askUninstall(p).catch((e) => setMessage(localizeError(String(e))));
+                      api.plugins().then(setPlugins, () => {});
+                    }}
+                  >
+                    <Icon name="trash" />
+                    {t("plugins.uninstall")}
+                  </button>
                 </div>
                 {p.permissions.length > 0 && (
                   <div className="perm">
@@ -3735,7 +3762,7 @@ async function keepImported(p: Imported): Promise<boolean> {
   const runs = p.runs ?? [];
   if (!runs.length) return true;
   const list = runs.slice(0, 8).map((r) => `• ${r.length > 90 ? `${r.slice(0, 90)}…` : r}`).join("\n") + (runs.length > 8 ? `\n${t("import.runsMore", { count: runs.length - 8 })}` : "");
-  const keep = await ask(t("import.runsAsk", { name: p.name, list }), { title: t("import.runsTitle"), kind: "warning", okLabel: t("import.keep"), cancelLabel: t("import.remove") }).catch(() => false);
+  const keep = await askInWindow({ title: t("import.runsTitle"), body: t("import.runsAsk", { name: p.name, list }), ok: t("import.keep"), cancel: t("import.remove") });
   if (!keep) await api.deleteProfile(p.id).catch(() => {});
   return keep;
 }

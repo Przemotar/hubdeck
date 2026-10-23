@@ -1,3 +1,4 @@
+import { ConfirmHost } from "./components/ConfirmHost";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
@@ -415,6 +416,7 @@ export default function App() {
         </Sheet>
       )}
       {guideOpen && !tourShown && <Guide onClose={() => setGuideOpen(false)} />}
+      <ConfirmHost />
       {pluginFiles.length > 0 && <PluginFileSheet key={pluginFiles[0]} path={pluginFiles[0]} onClose={() => setPluginFiles((now) => now.slice(1))} />}
       {dropping && (
         <div className="drop-overlay" aria-hidden="true">

@@ -120,7 +120,7 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 | System | Every release | On a real deck |
 |---|---|---|
 | Windows 10 and 11 | built and tested by CI | checked before every release (modules, window, a soak of memory and CPU) |
-| macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-15, a build before 0.1.0 |
+| macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-23, a build after 0.1.10 |
 | Linux | not supported | |
 
 Something wrong on a Mac? Please [open an issue](https://github.com/Przemotar/hubdeck/issues): Mac

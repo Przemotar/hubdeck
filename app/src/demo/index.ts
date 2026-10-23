@@ -185,6 +185,18 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     { id: "com.example.pomodoro", name: "Pomodoro", version: "0.9.1", actions: 2, status: "exited (code 1)", connected: false, restarts: 2, permissions: [], cpu: null, memoryMb: null, held: false },
   ],
   plugin_stop: () => null,
+  // `&runs=1`: Import picks a shared profile that runs a script, so it asks first (scripts/ui/questions.mjs)
+  "plugin:dialog|open": () => (demoParam("runs") ? "C:/Users/you/Downloads/Photo backup.hubdeck" : null),
+  profile_import: () => {
+    const source = profiles.get("demo-everyday") ?? [...profiles.values()][0];
+    const copy = { ...structuredClone(source), id: `import-${Date.now()}`, name: "Photo backup", runs: ["powershell -NoProfile -File backup-photos.ps1"], moved: [] };
+    profiles.set(copy.id, copy);
+    changed();
+    return copy;
+  },
+  plugin_uses: ({ id }) => (id === "com.example.weather" ? [{ profile: "Everyday desk", pages: [], control: "keys.4", label: "Weather" }] : []),
+  plugin_uninstall: () => null,
+  iconpack_remove: () => null,
   plugin_start: () => null,
   backups_list: () => [
     { id: "b3", when: "2026-10-11 09:12", reason: "daily", profiles: 7 },
@@ -487,6 +499,9 @@ export function installDemo() {
   mockIPC(
     (cmd, args) => {
       const handler = handlers[cmd];
+      // what the window asked for, for walks: a question answered Cancel must ask for nothing
+      // (scripts/ui/questions.mjs)
+      ((window as unknown as { __demoCalls?: string[] }).__demoCalls ??= []).push(cmd);
       if (!handler) console.info("demo: no mock for", cmd, args);
       return handler?.((args ?? {}) as Record<string, unknown>) ?? null;
     },

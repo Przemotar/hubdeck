@@ -129,6 +129,10 @@ pub fn profile_delete(engine: State<'_, Engine>, id: String) -> Res<()> {
         if s.active.as_deref() == Some(id.as_str()) {
             s.active = s.store.fallback_id();
         }
+        // the profile picked last goes too: app profiles give back to the new home
+        if s.home.as_deref() == Some(id.as_str()) {
+            s.home = s.store.fallback_id();
+        }
     }
     engine.changed();
     Ok(())
@@ -203,6 +207,7 @@ pub async fn profile_check(engine: State<'_, Engine>, id: String) -> Res<Vec<sup
             obs: super::obs::known(),
             ha_missing: super::homeassistant::missing(),
             name_opens: &super::check::name_opens,
+            plugin_installed: &super::plugins::installed,
         };
         super::check::issues(&profile, &env)
     })
@@ -522,6 +527,34 @@ pub fn plugin_stop(id: String) -> Res<()> {
 #[tauri::command]
 pub fn plugin_start(id: String) -> Res<()> {
     super::plugins::start_one(&id)
+}
+
+/// Where a plugin's actions stand in the profiles (the question before Uninstall names them):
+/// `{profile, pages, control, label}` each, profiles by name.
+#[tauri::command]
+pub fn plugin_uses(engine: State<'_, Engine>, id: String) -> Vec<serde_json::Value> {
+    let prefix = format!("{id}/");
+    let s = engine.lock();
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for p in s.store.profiles.values() {
+        for (control, b) in &p.controls {
+            if b.action.starts_with(&prefix) {
+                out.push(serde_json::json!({"profile": p.name, "pages": p.pages, "control": control, "label": b.look.label}));
+            }
+        }
+    }
+    out.sort_by(|a, b| a["profile"].as_str().cmp(&b["profile"].as_str()));
+    out
+}
+
+/// Uninstall a plugin: its program ends, its actions leave the library and its folder goes
+/// (issue #8, 2026-10-23: there was no way to remove one). Keys that used it say it is missing.
+#[tauri::command]
+pub async fn plugin_uninstall(app: tauri::AppHandle, id: String) -> Res<()> {
+    use tauri::Emitter as _;
+    tauri::async_runtime::spawn_blocking(move || super::plugins::remove(&id)).await.map_err(|e| e.to_string())??;
+    let _ = app.emit("engine://catalog", ());
+    Ok(())
 }
 
 #[tauri::command]

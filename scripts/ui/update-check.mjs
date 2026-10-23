@@ -11,6 +11,7 @@ import { chromium } from "playwright-core";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { screenClean } from "./screen.mjs";
 
 const [setup, want] = process.argv.slice(2);
 if (!setup || !want) throw new Error("usage: update-check.mjs <older setup.exe> <newest version>");
@@ -91,6 +92,7 @@ const modules = [...new Set([...real.matchAll(/connected (keys|dial|knobs|roller
 check("every module of the deck back", ["keys", "dial", "base"].every((m) => modules.includes(m)), modules.join(", "));
 const errors = real.split("\n").filter((l) => l.includes("[ERROR]"));
 check("no errors in its log", errors.length === 0, errors[0]?.slice(0, 160) ?? "");
+check("nothing came up on the owner's screen", ...screenClean(copy));
 const failed = results.filter((r) => !r.ok).length;
 console.log(failed ? `\nFAILED: ${failed} of ${results.length}` : `\npassed ${results.length}/${results.length}`);
 process.exit(failed ? 1 : 0);

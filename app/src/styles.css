@@ -5127,6 +5127,66 @@ button.lib-foot:focus-visible span {
   background: var(--bg1);
   box-shadow: var(--popsh);
 }
+/* a question before something that cannot be undone (owner's pick 1b, 2026-10-23) */
+.confirm-backdrop {
+  z-index: 80;
+}
+.confirm {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 20px 22px 18px;
+  border-radius: 14px;
+  background: var(--popbg);
+  box-shadow: var(--popsh);
+}
+.confirm h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.confirm p {
+  margin: 0;
+  color: var(--tx2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.confirm-details {
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--bg1);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.confirm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.tool.is-danger {
+  background: var(--err);
+  color: #fff;
+  box-shadow: var(--prish);
+}
+.tool.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--err) 88%, #fff);
+}
+.confirm .tool:focus-visible {
+  outline: 2px solid var(--accring);
+  outline-offset: 2px;
+}
 .sheet > .inspector {
   width: 100%;
   max-height: inherit;

@@ -13,9 +13,16 @@
 //   6. calls: the calls to other services during the soak, by host, from the app's log (`calls in
 //      the last minute:`); fails above --calls-per-hour (720, one every 5 s) for any host (owner's
 //      pick 3a, 2026-10-22: Spotify was asked every 3 s)
+//   7. questions: every question before something that cannot be undone comes up in the window and
+//      its Cancel changes nothing (`scripts/ui/questions.mjs` in the browser demo; owner, 2026-10-23:
+//      "dodaj ten test siedmiu pytań do bramki"; on 2026-10-18 a profile went without a question)
+//   8. catalog: the installed app's `--catalog-check 20` downloads the 20 most popular catalog plugins
+//      as Install does and checks they would run on this system, nothing installed (owner's pick 1a,
+//      2026-10-23, "ale nie chce kolejnych testow ktore beda jeszcze bardizej wydluzaly deploy": it
+//      starts with the gate and runs beside the audits and the soak)
 //
 //   node scripts/release-gate.mjs [--profile <name or id>, default: a draft with every GIF and Mochi] [--minutes 5] [--every 5] [--restarts 3]
-//                                 [--skip audit,sizes,readme,soak,calls,restarts,window] [--window-seconds 150] [--calls-per-hour 720]
+//                                 [--skip audit,sizes,readme,soak,calls,restarts,window,questions,catalog] [--window-seconds 150] [--calls-per-hour 720]
 //
 // The soak only shows the profile (a try, like the assistant's Try): the user's home and active
 // profile come back at the end. Nothing takes the focus: the app is started with --hidden.
@@ -23,6 +30,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { screenClean } from "./ui/screen.mjs";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
 const args = process.argv.slice(2);
@@ -458,12 +466,72 @@ async function windowStage() {
   }
 }
 
+/** The seven questions in the browser demo, with Vite started for it when it is not running. */
+async function questionsStage() {
+  const serves = async () => {
+    try {
+      const res = await fetch("http://localhost:1460/", { signal: AbortSignal.timeout(2000) });
+      const text = await res.text();
+      if (!text.includes("<title>HubDeck</title>")) throw new Error("port 1460 serves another app's page, not HubDeck's: stop it first");
+      return true;
+    } catch (e) {
+      if (String(e.message).includes("another app")) throw e;
+      return false;
+    }
+  };
+  let vite = null;
+  if (!(await serves())) {
+    vite = spawn(process.execPath, [path.join(root, "app", "node_modules", "vite", "bin", "vite.js"), "--port", "1460", "--strictPort"], { cwd: path.join(root, "app"), stdio: "ignore" });
+    for (let i = 0; i < 60 && !(await serves()); i++) await sleep(500);
+  }
+  try {
+    const out = execFileSync("node", [path.join(root, "scripts", "ui", "questions.mjs")], { encoding: "utf8", timeout: 240000 });
+    const last = out.trim().split("\n").at(-1);
+    report("questions", true, `${last} checks: each question in the window, Cancel and Escape change nothing`);
+  } catch (e) {
+    const lines = String(e.stdout ?? e.message).split("\n").filter((l) => l.startsWith("FAIL"));
+    report("questions", false, lines.slice(0, 4).join(" | ") || String(e.message).split("\n")[0]);
+  } finally {
+    vite?.kill();
+  }
+}
+
+// --- 8. catalog ---------------------------------------------------------------------------
+// Started first, read after the soak: downloads only, in a process of its own (the soak samples the
+// app's own process).
+function catalogStart() {
+  const exe = win ? appPath : path.join(appPath, "Contents", "MacOS", "hubdeck");
+  // an app without the flag would start a second HubDeck instead
+  if (!fs.existsSync(exe) || !fs.readFileSync(exe).includes("--catalog-check")) {
+    return async () => report("catalog", false, `${exe} has no --catalog-check (a build before 0.1.11)`);
+  }
+  const child = spawn(exe, ["--catalog-check", "20"], { stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  child.stderr.on("data", (d) => (out += d));
+  const done = new Promise((ok) => {
+    child.on("error", (e) => ok({ code: -1, out: e.message }));
+    child.on("exit", (code) => ok({ code, out }));
+  });
+  return async () => {
+    const { code, out } = await Promise.race([done, sleep(10 * 60_000).then(() => ({ code: -2, out }))]);
+    if (code === -2) child.kill();
+    const lines = out.split(/\r?\n/).filter(Boolean);
+    const failures = lines.filter((l) => l.startsWith("FAIL"));
+    const summary = lines.find((l) => l.startsWith("catalog:"));
+    if (!summary && code !== -2) return report("catalog", false, `the installed app has no --catalog-check (a build before 0.1.11?): ${lines.slice(-2).join(" | ") || `exit ${code}`}`);
+    const text = code === -2 ? "no answer in 10 min" : summary.replace(/^catalog: /, "");
+    report("catalog", code === 0, `${text}${failures.length ? `; ${failures.join("; ")}` : ""}`);
+  };
+}
+
 // --- run -----------------------------------------------------------------------------------
 if (!win && !mac) {
   console.error("the release gate runs on Windows and macOS");
   process.exit(2);
 }
 console.log(`release gate on ${win ? "Windows" : "macOS"}, ${new Date().toLocaleString()}`);
+const catalogDone = skip.has("catalog") ? null : catalogStart();
 if (!skip.has("audit")) audits();
 if (!skip.has("sizes")) sizes();
 if (!skip.has("readme")) {
@@ -477,8 +545,12 @@ if (!skip.has("readme")) {
 }
 if (!skip.has("soak")) await soak().catch((e) => report("soak", false, e.message));
 if (!skip.has("calls")) callsStage();
+if (catalogDone) await catalogDone();
 if (!skip.has("restarts")) await restartLoop().catch((e) => report("restarts", false, e.message));
+if (!skip.has("questions")) await questionsStage().catch((e) => report("questions", false, e.message));
 if (!skip.has("window")) await windowStage().catch((e) => report("window", false, e.message));
+// the window stage's test copy put nothing on the owner's screen (owner's pick 1a, 2026-10-23)
+if (!skip.has("window") && win) report("screen", ...screenClean(path.join(process.env.TEMP, "hubdeck-gate-window")));
 const failed = results.filter((r) => !r.ok);
 console.log(failed.length ? `\nFAILED: ${failed.map((r) => r.step).join(", ")} (do not release)` : "\nPASSED");
 process.exit(failed.length ? 1 : 0);

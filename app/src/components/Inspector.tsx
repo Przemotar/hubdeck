@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState } from "../deck";
 import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, inWindow, newBinding, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type AppInfo, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";

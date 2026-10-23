@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, markPluginNew, type CatalogPlugin } from "../engine";
 import { localizeError, t, useLanguage, type Key } from "../i18n";
 import { Icon } from "./Icon";
+import { askUninstall } from "./Panels";
 
 /** The system this window runs on, as the catalog names systems. */
 const HERE = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent) ? "macOS" : "Windows";
@@ -53,6 +54,13 @@ export function PluginsTab({ onClose, onInstalled, onUse }: { onClose: () => voi
       (e) => setState((s) => ({ ...s, [p.id]: localizeError(String(e)) })),
     );
   };
+  const uninstall = (p: CatalogPlugin) =>
+    askUninstall({ id: p.id, name: p.name }).then(
+      (done) => {
+        if (done) refreshInstalled();
+      },
+      (e) => (setState((s) => ({ ...s, [p.id]: localizeError(String(e)) })), refreshInstalled()),
+    );
   const all = Array.isArray(list) ? list : [];
   // every filter but the one being counted, so a count says what picking it would show
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -149,7 +157,7 @@ export function PluginsTab({ onClose, onInstalled, onUse }: { onClose: () => voi
             <>
               <ul className="plugin-grid">
                 {found.slice(0, shown).map((p) => (
-                  <PluginCard key={p.id} plugin={p} installed={installed.has(p.id)} state={state[p.id]} onInstall={() => install(p)} onUse={() => onUse(p.id)} />
+                  <PluginCard key={p.id} plugin={p} installed={installed.has(p.id)} state={state[p.id]} onInstall={() => install(p)} onUse={() => onUse(p.id)} onUninstall={() => uninstall(p)} />
                 ))}
               </ul>
               {found.length > shown && (
@@ -173,7 +181,7 @@ const SETUP: Record<string, Key> = {
   "com.5e.hwinfo-reader": "pluginsTab.setup.hwinfoGadget",
 };
 
-function PluginCard({ plugin: p, installed, state, onInstall, onUse }: { plugin: CatalogPlugin; installed: boolean; state?: string; onInstall: () => void; onUse: () => void }) {
+function PluginCard({ plugin: p, installed, state, onInstall, onUse, onUninstall }: { plugin: CatalogPlugin; installed: boolean; state?: string; onInstall: () => void; onUse: () => void; onUninstall: () => void }) {
   const { lang } = useLanguage();
   // in the window's language, not the system's (a Polish system wrote "maj 2024" in English)
   const updated = p.updated ? new Date(`${p.updated}T12:00:00`).toLocaleDateString(lang === "en" ? "en-GB" : lang, { month: "short", year: "numeric" }) : null;
@@ -191,7 +199,9 @@ function PluginCard({ plugin: p, installed, state, onInstall, onUse }: { plugin:
       <div className="plugin-card-tags">
         <span className="pill">{t(`pluginsTab.src.${p.source}` as Key)}</span>
         {p.popular ? <span className="pill">{t("pluginsTab.popElgato", { n: p.popular })}</span> : p.stars ? <span className="pill">{t("pluginsTab.stars", { n: p.stars })}</span> : null}
-        {p.tried ? <span className="pill is-ok">{t("pluginsTab.tried")}</span> : p.source === "github" && <span className="pill">{t("pluginsTab.notTried")}</span>}
+        {/* tried on another system says which (owner, 2026-10-23 on the Mac: "Tried" on a plugin
+            tried only on Windows) */}
+        {p.tried ? <span className="pill is-ok">{p.tried.includes(HERE) ? t("pluginsTab.tried") : t("pluginsTab.triedOn", { os: p.tried })}</span> : p.source === "github" && <span className="pill">{t("pluginsTab.notTried")}</span>}
         {p.dial && <span className="pill">{t("pluginsTab.dialTag")}</span>}
       </div>
       {/* systems and date on a line of their own: next to the buttons they broke into four lines */}
@@ -206,6 +216,10 @@ function PluginCard({ plugin: p, installed, state, onInstall, onUse }: { plugin:
         {installed ? (
           <>
             <span className="pill is-ok">{t("plugins.isInstalled")}</span>
+            {/* where he looked for it (owner's pick 1a, 2026-10-23); an icon: a word does not fit the line */}
+            <button className="icon-btn" title={t("plugins.uninstall")} aria-label={t("plugins.uninstall")} onClick={onUninstall}>
+              <Icon name="trash" />
+            </button>
             {/* where its actions are: the deck, with the library open at them */}
             <button className="tool small primary" onClick={onUse}>
               <Icon name="chevron-right" />

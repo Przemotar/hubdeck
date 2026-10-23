@@ -669,6 +669,40 @@ pub fn uninstall(id: &str) {
     host.plugins.write().unwrap_or_else(|e| e.into_inner()).retain(|p| p.manifest.id != id);
 }
 
+/// Uninstall a plugin on the user's word: stop it, take its actions out and delete its folder.
+/// Windows keeps a file locked for a moment after its program ends, so the delete is tried again.
+pub fn remove(id: &str) -> Result<(), String> {
+    let host = HOST.get().ok_or("plugins are not running")?;
+    let dir = host.plugins.read().unwrap_or_else(|e| e.into_inner()).iter().find(|p| p.manifest.id == id).map(|p| p.dir.clone()).ok_or_else(|| format!("no plugin {id}"))?;
+    // only a folder inside HubDeck's plugins folder is ever deleted
+    if !dir.starts_with(&host.dir) {
+        return Err(format!("{id} is not in HubDeck's plugins folder"));
+    }
+    uninstall(id);
+    host.held.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    host.status.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    host.outbox.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    let mut last = String::new();
+    for _ in 0..20 {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {
+                log::info!("plugin {id} uninstalled by the user");
+                return Ok(());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => last = e.to_string(),
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    log::warn!("plugin {id} uninstalled, its folder stays: {last}");
+    Err(format!("its folder could not be deleted ({last}): {}", dir.display()))
+}
+
+/// A plugin of this id is installed (running or not).
+pub fn installed(id: &str) -> bool {
+    HOST.get().is_some_and(|h| h.plugins.read().unwrap_or_else(|e| e.into_inner()).iter().any(|p| p.manifest.id == id))
+}
+
 /// Where plugin folders go (created if missing).
 pub fn folder() -> Option<PathBuf> {
     let dir = HOST.get()?.dir.clone();
