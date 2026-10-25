@@ -88,7 +88,7 @@ export default function App() {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2500);
   }, []);
-  const { dropAction, moveKey, openControl, copy, paste, clear, isSet, canPaste, opensPage } = useEditing(view, selected, notify);
+  const { dropAction, moveKey, openControl, copy, paste, pasteLook, clear, isSet, canPaste, opensPage } = useEditing(view, selected, notify);
   // a ready-made profile tried and left without Add (Back, or another profile picked) is thrown away
   const tried = useRef<string | null>(null);
   useEffect(() => {
@@ -374,6 +374,7 @@ export default function App() {
               opensPage={opensPage(ctlMenu.c)}
               onCopy={() => copy(ctlMenu.c)}
               onPaste={() => paste(ctlMenu.c)}
+              onPasteLook={() => pasteLook(ctlMenu.c)}
               onClear={() => clear(ctlMenu.c)}
               onOpenPage={() => openControl(ctlMenu.c)}
               onClose={() => setCtlMenu(null)}

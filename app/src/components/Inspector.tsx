@@ -813,11 +813,13 @@ function NamedField({ id, value, onChange, what, arg }: { id: string; value: str
 
 function AudioDeviceField({ id, value, onChange, empty }: { id: string; value: string; onChange: (v: string) => void; empty?: string }) {
   useLanguage();
-  const [devices, setDevices] = useState<[{ name: string }[], { name: string }[]] | null>(null);
+  const [devices, setDevices] = useState<[{ id: string; name: string }[], { id: string; name: string }[]] | null>(null);
   useEffect(() => {
     api.audioDevices().then(setDevices, () => setDevices([[], []]));
   }, []);
-  const known = devices ? [...devices[0], ...devices[1]].some((d) => d.name === value) : true;
+  // a key may keep the device's system id (a converted Stream Deck key): it shows by its name
+  const known = devices ? [...devices[0], ...devices[1]].some((d) => d.name === value || d.id === value) : true;
+  const pick = (d: { id: string; name: string }) => (d.id === value ? d.id : d.name);
   return (
     <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{empty ?? t("audio.next")}</option>
@@ -826,14 +828,14 @@ function AudioDeviceField({ id, value, onChange, empty }: { id: string; value: s
         <>
           <optgroup label={t("audio.outputs")}>
             {devices[0].map((d) => (
-              <option key={`o${d.name}`} value={d.name}>
+              <option key={`o${d.name}`} value={pick(d)}>
                 {d.name}
               </option>
             ))}
           </optgroup>
           <optgroup label={t("audio.inputs")}>
             {devices[1].map((d) => (
-              <option key={`i${d.name}`} value={d.name}>
+              <option key={`i${d.name}`} value={pick(d)}>
                 {d.name}
               </option>
             ))}
@@ -997,6 +999,9 @@ function useOutside(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
   }, [open, ref, close]);
 }
 
+/** Label sizes in key pixels (a key is 72; the label fits itself at 9.5 to 11.5 when Auto). */
+const LABEL_SIZES = [8, 10, 12, 14, 16, 20, 24];
+
 /**
  * The look of a key or the dial (owner's pick 2A): preview, label, Change icon (a popover),
  * Picture and the icon colors at hand; style, background, text color and presets under More looks.
@@ -1094,6 +1099,43 @@ function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }
             {t("look.iconColor")}
           </label>
         </div>
+        {screen === "key" && (
+          <>
+            <div className="field">
+              <span className="label">{t("look.labelPos")}</span>
+              <div className="seg full" role="radiogroup" aria-label={t("look.labelPos")}>
+                {([undefined, "top", "middle", "bottom"] as const).map((p) => (
+                  <button key={p ?? "auto"} role="radio" aria-checked={look.labelPos === p} className={`tab${look.labelPos === p ? " is-active" : ""}`} onClick={() => onChange({ ...look, labelPos: p })}>
+                    {t(p ? `look.pos.${p}` : "look.auto")}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <>
+              <label className="field">
+                <span className="label">{t("look.labelSize")}</span>
+                <select className="input" value={look.labelSize ?? ""} onChange={(e) => onChange({ ...look, labelSize: e.target.value ? Number(e.target.value) : undefined })}>
+                  <option value="">{t("look.auto")}</option>
+                  {LABEL_SIZES.map((z) => (
+                    <option key={z} value={z}>
+                      {z}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field">
+                <span className="label">{t("look.iconSize")}</span>
+                <div className="seg full" role="radiogroup" aria-label={t("look.iconSize")}>
+                  {([undefined, "small", "large"] as const).map((z) => (
+                    <button key={z ?? "auto"} role="radio" aria-checked={look.iconSize === z} className={`tab${look.iconSize === z ? " is-active" : ""}`} onClick={() => onChange({ ...look, iconSize: z })}>
+                      {t(z ? `look.size.${z}` : "look.auto")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          </>
+        )}
         {screen === "key" && (
           <div className="field">
             <span className="label">{t("look.style")}</span>

@@ -487,23 +487,73 @@ fn key_content(look: &Look, rotation: i32) -> String {
         }
         return format!(r#"<g transform="rotate({rotation} {c} {c})">{under}{body}{over}</g>"#, c = s / 2.0);
     }
+    let emoji = look.icon.as_deref().and_then(|i| i.strip_prefix(EMOJI_PREFIX)).filter(|e| !e.trim().is_empty());
     let icon_name = look.icon.as_deref().filter(|n| icon_svg(n).is_some());
-    let mark = |x: f32, y: f32, size: f32| match (&logo, icon_name) {
-        (Some(uri), _) => logo_image(uri, x, y, size),
-        (None, Some(i)) => icon(i, x, y, size, &ic),
-        _ => String::new(),
+    let scale = match look.icon_size.as_deref() {
+        Some("small") => 0.7,
+        Some("large") => 1.3,
+        _ => 1.0,
     };
-    let body = match (logo.is_some() || icon_name.is_some(), label.is_empty()) {
-        (true, true) => mark(16.0, 16.0, 40.0),
-        (true, false) => match fit(label, 11.5, 9.5, s - 6.0, true) {
+    // the icon's square, made smaller or bigger around its own centre and kept on the key
+    let mark = |x: f32, y: f32, size: f32| {
+        let new = (size * scale).min(s - 4.0);
+        let (x, y) = ((x + (size - new) / 2.0).clamp(2.0, s - 2.0 - new), (y + (size - new) / 2.0).clamp(2.0, s - 2.0 - new));
+        match (&logo, emoji, icon_name) {
+            (Some(uri), _, _) => logo_image(uri, x, y, new),
+            (None, Some(e), _) => emoji_mark(e, x, y, new),
+            (None, None, Some(i)) => icon(i, x, y, new, &ic),
+            _ => String::new(),
+        }
+    };
+    let has_mark = logo.is_some() || emoji.is_some() || icon_name.is_some();
+    let size = look.label_size.map(|px| (px as f32).clamp(6.0, 30.0));
+    let body = match (look.label_pos.as_deref(), has_mark, label.is_empty()) {
+        // placed as on Stream Deck: the icon in the middle, the label over it at the top, middle
+        // or bottom, with a dark edge so it reads on any icon
+        (Some(pos), _, false) => {
+            let (rows, px) = fit(label, size.unwrap_or(11.5), size.map_or(7.5, |z| z.min(7.5)), s - 6.0, true);
+            let gap = 1.1;
+            let block = (rows.len() - 1) as f32 * px * gap;
+            let y = match pos {
+                "top" => px * 0.8 + 3.0,
+                "middle" => s / 2.0 + px * 0.35 - block / 2.0,
+                _ => s - 6.0 - block,
+            };
+            let edge = if has_mark { r##" stroke="#000" stroke-opacity="0.55" stroke-width="2.4" stroke-linejoin="round" paint-order="stroke""## } else { "" };
+            mark(16.0, 16.0, 40.0) + &format!("<g{edge}>{}</g>", lines(s / 2.0, y, px, gap, &fg, &rows))
+        }
+        (_, true, true) => mark(16.0, 16.0, 40.0),
+        (_, true, false) => match fit(label, size.unwrap_or(11.5), size.map_or(9.5, |z| z.min(9.5)), s - 6.0, true) {
             (rows, px) if rows.len() == 1 => mark(21.0, 8.0, 30.0) + &text(s / 2.0, 61.0, px, &fg, &rows[0]),
             // a long label: a smaller icon above two lines
-            (rows, px) => mark(25.0, 6.0, 22.0) + &lines(s / 2.0, 47.0, px.min(10.5), 1.12, &fg, &rows),
+            (rows, px) => mark(25.0, 6.0, 22.0) + &lines(s / 2.0, 47.0, if size.is_some() { px } else { px.min(10.5) }, 1.12, &fg, &rows),
         },
-        (false, false) => centered_label(label, s, s, s - 8.0, &fg),
-        (false, true) => String::new(),
+        (_, false, false) => match size {
+            Some(z) => {
+                let (rows, px) = fit(label, z, z.min(7.5), s - 8.0, true);
+                lines(s / 2.0, s / 2.0 + px * 0.35 - (rows.len() - 1) as f32 * px * 1.1 / 2.0, px, 1.1, &fg, &rows)
+            }
+            None => centered_label(label, s, s, s - 8.0, &fg),
+        },
+        (_, false, true) => String::new(),
     };
     format!(r#"<g transform="rotate({rotation} {c} {c})">{under}{body}{over}</g>"#, c = s / 2.0)
+}
+
+/// `Look::icon` of an emoji: `emoji:🎵`.
+pub const EMOJI_PREFIX: &str = "emoji:";
+
+/// An emoji in the system's color emoji font, filling the icon's square.
+fn emoji_mark(emoji: &str, x: f32, y: f32, size: f32) -> String {
+    // one emoji (a flag or a family is several characters): at most 8 characters of it
+    let one: String = emoji.trim().chars().take(8).collect();
+    format!(
+        r#"<text x="{}" y="{}" font-size="{}" text-anchor="middle" font-family="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji">{}</text>"#,
+        x + size / 2.0,
+        y + size * 0.86,
+        size * 0.92,
+        escape(&one)
+    )
 }
 
 /// `rotation`: clockwise degrees applied to the content so it reads upright on the deck.
@@ -1749,5 +1799,43 @@ mod timing {
         let t = std::time::Instant::now();
         r.jpeg(&dial_svg(&Look::default(), Some((Some(0.5), "Volume")), 0)).unwrap();
         eprintln!("15 keys {:?}, dial {:?}", keys, t.elapsed());
+    }
+}
+
+#[cfg(test)]
+mod look_editor {
+    use super::*;
+
+    /// The look editor's new fields drawn as the deck draws them, a sheet of keys at 3x in
+    /// logs/look-editor.jpg to be looked at (issue #10, owner's 1a; session 29).
+    #[test]
+    fn the_look_editor_keys_are_drawn() {
+        let base = |label: &str| Look { label: Some(label.into()), icon: Some("music".into()), ..Look::default() };
+        let looks = [
+            ("auto", base("Song sorter")),
+            ("top", Look { label_pos: Some("top".into()), ..base("Like") }),
+            ("middle", Look { label_pos: Some("middle".into()), ..base("Like") }),
+            ("bottom", Look { label_pos: Some("bottom".into()), ..base("Like") }),
+            ("size 16", Look { label_size: Some(16), ..base("Next") }),
+            ("size 8", Look { label_size: Some(8), ..base("Do wywalenia") }),
+            ("icon small", Look { icon_size: Some("small".into()), ..base("Focus 25") }),
+            ("icon large", Look { icon_size: Some("large".into()), ..base("CPU") }),
+            ("emoji", Look { icon: Some("emoji:🔥".into()), ..base("Oceń") }),
+            ("emoji alone", Look { icon: Some("emoji:🗑️".into()), label: None, ..Look::default() }),
+            ("emoji top", Look { icon: Some("emoji:❤️".into()), label_pos: Some("top".into()), icon_size: Some("large".into()), ..base("Lubię to") }),
+            ("text 24", Look { label: Some("OBS".into()), label_size: Some(24), ..Look::default() }),
+        ];
+        let mut sheet = String::from(r##"<svg xmlns="http://www.w3.org/2000/svg" width="1296" height="648" viewBox="0 0 432 216"><rect width="432" height="216" fill="#111"/>"##);
+        for (i, (_, look)) in looks.iter().enumerate() {
+            let (x, y) = ((i % 6) as f32 * 72.0, (i / 6) as f32 * 108.0);
+            sheet += &format!(r#"<g transform="translate({x} {y})">{}</g>"#, key_body(look, 0));
+            assert!(key_svg(look, 0).contains("<g"), "{} draws", looks[i].0);
+        }
+        sheet += "</svg>";
+        let jpeg = Renderer::default().jpeg(&sheet).unwrap();
+        std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/../../logs/look-editor.jpg"), jpeg).unwrap();
+        // the emoji is drawn as text in the emoji font, escaped
+        assert!(key_svg(&looks[8].1, 0).contains("Segoe UI Emoji"));
+        assert!(!key_svg(&Look { icon: Some("emoji:<x>".into()), ..Look::default() }, 0).contains("<x>"));
     }
 }

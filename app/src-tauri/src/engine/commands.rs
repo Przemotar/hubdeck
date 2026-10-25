@@ -195,9 +195,9 @@ pub async fn profile_check(engine: State<'_, Engine>, id: String) -> Res<Vec<sup
         let (audio, midi) = super::check::needs(&profile);
         let audio_devices = audio.then(|| {
             super::volume::init_thread();
-            let mut names: Vec<String> = super::audiodev::list(false).unwrap_or_default().into_iter().map(|d| d.name).collect();
-            names.extend(super::audiodev::list(true).unwrap_or_default().into_iter().map(|d| d.name));
-            names
+            // a device is found by its name or its system id (audiodev::find)
+            let devices = [super::audiodev::list(false).unwrap_or_default(), super::audiodev::list(true).unwrap_or_default()].concat();
+            devices.into_iter().flat_map(|d| [d.name, d.id]).collect()
         });
         let env = super::check::Env {
             file_exists: &|p: &str| std::path::Path::new(p).exists(),

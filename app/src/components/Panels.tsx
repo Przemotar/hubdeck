@@ -399,7 +399,7 @@ function ProfileMenu({ profile, x, y, count, onClose }: { profile: ProfileSummar
 
 /** A control's right-click menu in the drawing, as Stream Deck's ("Right-click keys to copy,
  * delete or move them"; owner's 1a, 2026-10-20): what the shortcuts do, with the shortcuts shown. */
-export function ControlMenu({ title, x, y, isSet, canPaste, opensPage, onCopy, onPaste, onClear, onOpenPage, onClose }: { title: string; x: number; y: number; isSet: boolean; canPaste: boolean; opensPage: boolean; onCopy: () => void; onPaste: () => void; onClear: () => void; onOpenPage: () => void; onClose: () => void }) {
+export function ControlMenu({ title, x, y, isSet, canPaste, opensPage, onCopy, onPaste, onPasteLook, onClear, onOpenPage, onClose }: { title: string; x: number; y: number; isSet: boolean; canPaste: boolean; opensPage: boolean; onCopy: () => void; onPaste: () => void; onPasteLook: () => void; onClear: () => void; onOpenPage: () => void; onClose: () => void }) {
   useLanguage();
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(true, ref, onClose);
@@ -420,6 +420,7 @@ export function ControlMenu({ title, x, y, isSet, canPaste, opensPage, onCopy, o
         {opensPage && row("folder-open", t("ctl.openPage"), null, onOpenPage, true)}
         {row("copy", t("ctl.copy"), `${mod}C`, onCopy, isSet)}
         {row("file-plus", t("ctl.paste"), `${mod}V`, onPaste, canPaste)}
+        {row("palette", t("ctl.pasteLook"), mod === "⌘" ? "⇧⌘V" : "Ctrl+Shift+V", onPasteLook, canPaste && isSet)}
         {row("trash", t("ctl.clear"), "Delete", onClear, isSet, true)}
       </div>
     </div>
@@ -1597,6 +1598,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
               <LanguageSettings />
               <Appearance view={view} />
               <SwitchingSettings view={view} />
+              <StartupSettings />
               <ProfilesFolder />
             </>
           )}
@@ -1650,6 +1652,35 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
         </div>
       </div>
     </div>
+  );
+}
+
+/** Starting with the system: the same switch as the tray's (issue #10: only the tray had it). */
+function StartupSettings() {
+  useLanguage();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api.autostart().then(setOn, () => {});
+  }, []);
+  if (on === null) return null;
+  const mac = navigator.userAgent.includes("Mac");
+  return (
+    <section className="sec">
+      <h3 className="sec-title">{t("startup.title")}</h3>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => {
+            setError("");
+            api.autostartSet(e.target.checked).then(setOn, (err) => setError(String(err)));
+          }}
+        />
+        {t(mac ? "startup.mac" : "startup.windows")}
+      </label>
+      <p className="help">{error || t("startup.help")}</p>
+    </section>
   );
 }
 

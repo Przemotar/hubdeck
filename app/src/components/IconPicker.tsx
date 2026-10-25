@@ -16,12 +16,29 @@ function loadGameIcons() {
   return gameIcons;
 }
 
-type Category = "interface" | "games" | `pack:${string}`;
+type Category = "interface" | "emoji" | "games" | `pack:${string}`;
+
+/** Emoji for a key, drawn in the system's color emoji font; looks name them `emoji:<emoji>`. A
+ * list, not a typed field (owner's rule, 2026-10-16); the names are for the search. */
+const EMOJI_LIST: [string, string][] = [
+  ["🎵", "music note"], ["🎶", "music notes"], ["🎧", "headphones"], ["🔊", "speaker loud"], ["🔇", "mute"], ["🎤", "microphone"], ["🎙️", "studio microphone"], ["📻", "radio"],
+  ["▶️", "play"], ["⏸️", "pause"], ["⏭️", "next"], ["⏮️", "previous"], ["⏹️", "stop"], ["⏺️", "record"], ["🔁", "repeat"], ["🔀", "shuffle"],
+  ["❤️", "heart love like"], ["⭐", "star"], ["🔥", "fire hot"], ["👍", "thumbs up"], ["👎", "thumbs down"], ["🗑️", "trash bin delete"], ["🏷️", "tag label"], ["✅", "check done"],
+  ["❌", "cross no"], ["⚠️", "warning"], ["❓", "question"], ["💡", "light bulb idea"], ["🔒", "lock"], ["🔓", "unlock"], ["🔔", "bell notification"], ["🔕", "bell off"],
+  ["💻", "laptop computer"], ["🖥️", "desktop computer"], ["⌨️", "keyboard"], ["🖱️", "mouse"], ["📁", "folder files"], ["📄", "document"], ["📋", "clipboard"], ["✂️", "scissors cut"],
+  ["📷", "camera"], ["🎥", "movie camera video"], ["📸", "camera flash screenshot"], ["🖼️", "picture"], ["🎨", "palette art"], ["✏️", "pencil edit"], ["🔍", "search"], ["⚙️", "settings gear"],
+  ["📧", "mail email"], ["💬", "chat message"], ["📞", "phone call"], ["📅", "calendar"], ["⏰", "alarm clock"], ["⏱️", "stopwatch timer"], ["🍅", "tomato pomodoro"], ["☕", "coffee break"],
+  ["🎮", "game controller"], ["🕹️", "joystick"], ["🏆", "trophy"], ["🎯", "target"], ["🎲", "dice"], ["👾", "alien game"], ["⚔️", "swords"], ["🛡️", "shield"],
+  ["🏠", "home"], ["💡", "lamp light"], ["🌙", "moon night"], ["☀️", "sun day"], ["🌡️", "thermometer temperature"], ["🔋", "battery"], ["🔌", "plug power"], ["📶", "signal wifi"],
+  ["🚀", "rocket launch"], ["🤖", "robot ai"], ["🧠", "brain"], ["👀", "eyes look"], ["😀", "smile"], ["😎", "cool"], ["🙂", "slight smile"], ["🎉", "party"],
+  ["🔴", "red circle"], ["🟠", "orange circle"], ["🟡", "yellow circle"], ["🟢", "green circle"], ["🔵", "blue circle"], ["🟣", "purple circle"], ["⚫", "black circle"], ["⚪", "white circle"],
+];
+const EMOJI = EMOJI_LIST.filter(([e], i) => EMOJI_LIST.findIndex(([x]) => x === e) === i);
 
 /** Icons by category (interface, games, installed icon packs) with search. A pack icon is a picture. */
 export function IconPicker({ value, onChange, onPicture, view }: { value?: string; onChange: (v?: string) => void; onPicture: (image: string) => void; view: EngineView }) {
   useLanguage();
-  const [category, setCategory] = useState<Category>(value?.startsWith("game:") ? "games" : ((demoParam("icons") as Category | null) ?? "interface"));
+  const [category, setCategory] = useState<Category>(value?.startsWith("game:") ? "games" : value?.startsWith("emoji:") ? "emoji" : ((demoParam("icons") as Category | null) ?? "interface"));
   const [query, setQuery] = useState("");
   const [games, setGames] = useState<{ name: string; svg: string }[] | null>(null);
   const [packs, setPacks] = useState<PackInfo[]>([]);
@@ -58,9 +75,11 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
   }, [q, category, games, view.icons]);
   const pack = category.startsWith("pack:") ? category.slice(5) : null;
   const shownPack = pack ? (packIcons[pack] ?? []).filter((i) => matches(i.name, i.tags)) : [];
+  const shownEmoji = category === "emoji" || q ? EMOJI.filter(([, name]) => matches(name)) : [];
 
   const tabs: [Category, string][] = [
     ["interface", t("icons.interface")],
+    ["emoji", t("icons.emoji")],
     ["games", t("icons.games")],
     ...packs.map((p) => [`pack:${p.id}` as Category, p.name] as [Category, string]),
   ];
@@ -103,13 +122,19 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
               –
             </button>
           )}
+          {(category === "emoji" || q) &&
+            shownEmoji.map(([e, name]) => (
+              <button key={e} className={`icon-cell emoji${value === `emoji:${e}` ? " is-active" : ""}`} onClick={() => onChange(`emoji:${e}`)} title={name} aria-label={name}>
+                {e}
+              </button>
+            ))}
           {shownIcons.map((i) => (
             <button key={i.name} className={`icon-cell${i.name.startsWith("game:") ? " game" : ""}${value === i.name ? " is-active" : ""}`} onClick={() => onChange(i.name)} title={i.name.replace(/^game:/, "")} aria-label={i.name.replace(/^game:/, "")}>
               <span dangerouslySetInnerHTML={{ __html: i.svg }} />
             </button>
           ))}
           {(category === "games" || q) && !games && <span className="help">{t("icons.loading")}</span>}
-          {q && shownIcons.length === 0 && <span className="help">{t("icons.none")}</span>}
+          {q && shownIcons.length === 0 && shownEmoji.length === 0 && <span className="help">{t("icons.none")}</span>}
         </div>
       )}
       {category === "games" && !q && <p className="help">{t("icons.gamesCredit")}</p>}

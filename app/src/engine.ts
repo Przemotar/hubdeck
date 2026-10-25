@@ -29,6 +29,12 @@ export interface Look {
   ledSpeed?: number;
   /** The user's own picture (name returned by `importImage`); replaces the icon. */
   image?: string;
+  /** Where a key's label stands, over the icon as on Stream Deck; absent = under the icon. */
+  labelPos?: "top" | "middle" | "bottom";
+  /** A key label's size in key pixels (a key is 72); absent = fitted to the key. */
+  labelSize?: number;
+  /** A key icon's size; absent = as the label leaves room for. */
+  iconSize?: "small" | "large";
 }
 
 /** One picture or a clock across all 15 keys. */
@@ -697,6 +703,8 @@ export const api = {
   timerStop: (profile: string, control: string) => invoke("timer_stop", { profile, control }),
   appsSeen: () => invoke("apps_seen"),
   callSwitchSet: (on: boolean) => invoke("call_switch_set", { on }),
+  autostart: () => invoke<boolean>("autostart_get"),
+  autostartSet: (on: boolean) => invoke<boolean>("autostart_set", { on }),
   reducedMotionSet: (on: boolean) => invoke("reduced_motion_set", { on }),
   pressesCounting: () => invoke<boolean>("presses_counting"),
   pressesCountSet: (on: boolean) => invoke("presses_count_set", { on }),
@@ -749,7 +757,7 @@ export const api = {
   integrations: () =>
     invoke<{ obsUrl: string; obsPasswordSet: boolean; haUrl: string; haTokenSet: boolean; streamlabsUrl: string; streamlabsTokenSet: boolean }>("integrations_get"),
   midiPorts: () => invoke<string[]>("midi_ports"),
-  audioDevices: () => invoke<[{ name: string; default: boolean }[], { name: string; default: boolean }[]]>("audio_devices"),
+  audioDevices: () => invoke<[{ id: string; name: string; default: boolean }[], { id: string; name: string; default: boolean }[]]>("audio_devices"),
   plugins: () => invoke<PluginInfo[]>("plugins_list"),
   pluginStop: (id: string) => invoke("plugin_stop", { id }),
   pluginStart: (id: string) => invoke("plugin_start", { id }),

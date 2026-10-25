@@ -1,10 +1,24 @@
 import { useEffect, useRef } from "react";
 import type { ControlRef } from "./deck";
 import { actionName, t } from "./i18n";
-import { actionFits, api, controlId, newBinding, type Binding, type EngineView, type Gesture, type Profile } from "./engine";
+import { actionFits, api, controlId, newBinding, type Binding, type EngineView, type Gesture, type Look, type Profile } from "./engine";
 
 const GESTURES: Gesture[] = ["tap", "hold", "double"];
 const HISTORY = 50;
+
+/** What "Paste look" carries: colors, the LED and its effect, the key's style; not the label,
+ * icon or picture (issue #10, killa8boll: "Copy Color" / "Paste Color"; owner's pick 1a). */
+const LOOK_FIELDS = ["bg", "fg", "iconColor", "led", "ledLevel", "ledEffect", "ledSpeed", "style"] as const;
+
+/** `to` with the look fields of `from` (a field `from` leaves unset is unset on the result too). */
+export function withLook(to: Look, from: Look): Look {
+  const out: Look = { ...to };
+  for (const f of LOOK_FIELDS) {
+    if (from[f] === undefined) delete out[f];
+    else (out as Record<string, unknown>)[f] = from[f];
+  }
+  return out;
+}
 
 /** Typing in a field keeps the browser's own copy, paste and undo. */
 const inField = (e: KeyboardEvent) => {
@@ -97,6 +111,21 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
     api.setBindings(profile.id, changes).then(() => notify(skipped ? t("edit.pastedPartly") : t("edit.pasted")), (err) => notify(String(err)));
   };
 
+  /** Paste only the look of what was copied onto the control's press: its action stays. */
+  const pasteLook = (c: ControlRef) => {
+    const { view, page, notify } = now.current;
+    const profile = view.profile;
+    const from = clipboard.current?.bindings.tap ?? clipboard.current?.bindings.hold ?? clipboard.current?.bindings.double;
+    if (!profile || !from) return;
+    const id = controlId(c.kind, c.index, page);
+    const to = profile.controls[id];
+    if (!to) return notify(t("edit.lookNeedsAction"));
+    const next: Binding = { ...to, look: withLook(to.look ?? {}, from.look ?? {}) };
+    // the "on" look follows only where both have one (a new one would lose the control's own red)
+    if (to.lookOn && from.lookOn) next.lookOn = withLook(to.lookOn, from.lookOn);
+    api.setBindings(profile.id, { [id]: next }).then(() => notify(t("edit.lookPasted")), (err) => notify(String(err)));
+  };
+
   /** Clear a control's press, hold and double press (Ctrl+Z brings them back). */
   const clear = (c: ControlRef) => {
     const { view, page, notify } = now.current;
@@ -124,6 +153,9 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
       if (mod && key === "c") {
         if (isSet(selected)) e.preventDefault();
         copy(selected);
+      } else if (mod && e.shiftKey && key === "v" && clipboard.current) {
+        e.preventDefault();
+        pasteLook(selected);
       } else if (mod && key === "v" && clipboard.current) {
         e.preventDefault();
         paste(selected);
@@ -182,5 +214,5 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
     return a === "core.page" || a === "core.nextPage" || a === "core.previousPage";
   };
 
-  return { dropAction, moveKey, openControl, copy, paste, clear, isSet, canPaste, opensPage };
+  return { dropAction, moveKey, openControl, copy, paste, pasteLook, clear, isSet, canPaste, opensPage };
 }

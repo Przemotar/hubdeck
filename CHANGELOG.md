@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.12
+
+- **A multi action switch shows the right side after a restart** (#10): when its first press sets
+  something HubDeck can read (an audio device, mute, a Home Assistant light, OBS), the key shows
+  what Windows really has, also after a change made outside the deck. Anything else keeps its last
+  side across restarts, for each profile.
+- **The volume knob follows the speakers you switch to** (#10): after switching from speakers to
+  headphones it kept turning the speakers.
+- **Start with Windows is in Settings > General > Startup** (#10), the same switch as the tray
+  icon's. HubDeck also renews its startup entry at every start, and the log says whether it is on.
+- **Paste look** (#10): right-click a control > Paste look, or Ctrl+Shift+V, puts the copied
+  control's colors, LED color and effect, and style on another one; its action stays.
+- **More ways to style a key** (#10): the label at the top, middle or bottom over the icon (as on
+  Stream Deck), the label's size, a small or large icon, and emoji as icons (Change icon > Emoji).
+- Fixed a crash at start that could happen when an app was in front while HubDeck started.
+
 ## 0.1.11
 
 - **Uninstall a plugin** (#8): Settings > Plugins and the plugin's card in the Plugins tab have

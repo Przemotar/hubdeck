@@ -174,7 +174,7 @@ mod platform {
     use windows::Win32::Media::Audio::{
         AudioSessionStateActive, EDataFlow, IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator, eCapture, eConsole, eRender,
     };
-    use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx};
+    use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree};
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
     use windows::core::{Interface, PWSTR};
 
@@ -223,21 +223,45 @@ mod platform {
     }
 
     thread_local! {
-        /// Created once per thread; re-created when a call fails (e.g. the default device changed).
-        static ENDPOINT: std::cell::RefCell<Option<IAudioEndpointVolume>> = const { std::cell::RefCell::new(None) };
-        static MIC: std::cell::RefCell<Option<IAudioEndpointVolume>> = const { std::cell::RefCell::new(None) };
+        static ENUMERATOR: std::cell::RefCell<Option<IMMDeviceEnumerator>> = const { std::cell::RefCell::new(None) };
+        /// The default device's id and volume, per thread; taken again when another device becomes
+        /// the default. Checking only that the old one still answers kept the knob on the speakers
+        /// after a switch to the headphones (the speakers are still there; issue #10).
+        static ENDPOINT: std::cell::RefCell<Option<(String, IAudioEndpointVolume)>> = const { std::cell::RefCell::new(None) };
+        static MIC: std::cell::RefCell<Option<(String, IAudioEndpointVolume)>> = const { std::cell::RefCell::new(None) };
     }
 
-    fn cached(slot: &'static std::thread::LocalKey<std::cell::RefCell<Option<IAudioEndpointVolume>>>, flow: EDataFlow) -> Result<IAudioEndpointVolume, String> {
-        if let Some(ep) = slot.with(|e| e.borrow().clone()) {
-            // SAFETY: COM call on an initialised thread; a failure means the object went stale.
-            if unsafe { ep.GetMasterVolumeLevelScalar() }.is_ok() {
-                return Ok(ep);
-            }
+    /// The default device now, through one enumerator per thread (made again if it fails).
+    fn default_device(flow: EDataFlow) -> Result<IMMDevice, String> {
+        let kept = ENUMERATOR.with(|e| e.borrow().clone());
+        // SAFETY: COM calls on an initialised thread; results are checked.
+        if let Some(found) = kept.and_then(|e| unsafe { e.GetDefaultAudioEndpoint(flow, eConsole) }.ok()) {
+            return Ok(found);
+        }
+        // SAFETY: as above.
+        let enumerator: IMMDeviceEnumerator = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(err)? };
+        ENUMERATOR.with(|e| *e.borrow_mut() = Some(enumerator.clone()));
+        // SAFETY: as above.
+        unsafe { enumerator.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(|e| if flow == eCapture { "no microphone found".to_string() } else { err(e) })
+    }
+
+    fn cached(slot: &'static std::thread::LocalKey<std::cell::RefCell<Option<(String, IAudioEndpointVolume)>>>, flow: EDataFlow) -> Result<IAudioEndpointVolume, String> {
+        let device = default_device(flow)?;
+        // SAFETY: COM call on an initialised thread; the string is freed below.
+        let id = unsafe {
+            let p = device.GetId().map_err(err)?;
+            let s = p.to_string().unwrap_or_default();
+            CoTaskMemFree(Some(p.0 as *const std::ffi::c_void));
+            s
+        };
+        if let Some((kept, ep)) = slot.with(|e| e.borrow().clone())
+            && kept == id
+        {
+            return Ok(ep);
         }
         // SAFETY: see device().
-        let ep: IAudioEndpointVolume = unsafe { device_for(flow)?.Activate(CLSCTX_ALL, None).map_err(err)? };
-        slot.with(|e| *e.borrow_mut() = Some(ep.clone()));
+        let ep: IAudioEndpointVolume = unsafe { device.Activate(CLSCTX_ALL, None).map_err(err)? };
+        slot.with(|e| *e.borrow_mut() = Some((id, ep.clone())));
         Ok(ep)
     }
 
@@ -710,5 +734,35 @@ mod platform {
     }
     pub fn is_muted(_: &Target) -> Result<bool, String> {
         Err("volume control is not implemented on this platform yet".into())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    /// Switches the PC's default speakers for about two seconds and back: run only with the
+    /// owner's word (`cargo test -p hubdeck --lib follows_the_default -- --ignored --nocapture`).
+    /// The system volume read on a thread that read it before the switch must be the new device's,
+    /// as a fresh thread reads it (issue #10: the knob kept turning the old device).
+    #[test]
+    #[ignore]
+    fn the_system_volume_follows_the_default_device() {
+        init_thread();
+        let devices = super::super::audiodev::list(false).expect("output devices");
+        let before = devices.iter().find(|d| d.default).expect("a default output").clone();
+        let other = devices.iter().find(|d| !d.default).expect("a second output").clone();
+        let fresh = || std::thread::spawn(|| (init_thread(), get(&Target::System)).1).join().unwrap();
+        let old_level = get(&Target::System).expect("volume");
+        super::super::audiodev::set_default(false, &other.id).expect("switch");
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let kept = get(&Target::System);
+        let truth = fresh();
+        super::super::audiodev::set_default(false, &before.id).expect("switch back");
+        println!("{} {old_level:.3} -> {}: this thread {kept:?}, a fresh thread {truth:?}", before.name, other.name);
+        assert_eq!(kept, truth, "the volume read after the switch is the old device's");
+        if (old_level - truth.unwrap()).abs() < 0.005 {
+            println!("both devices are at the same level: this run does not tell the two apart");
+        }
     }
 }

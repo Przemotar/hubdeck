@@ -147,7 +147,9 @@ pub fn on_foreground(app: &AppHandle, exe: &str, title: &str) {
     }
     let (app, exe, title) = (app.clone(), exe.to_string(), title.to_string());
     std::thread::spawn(move || {
-        let engine = app.state::<Engine>();
+        // the engine's first look at the front app can come before the app manages the engine
+        // (a panic at start, 2026-10-25 11:23); the next change of the front app asks again
+        let Some(engine) = app.try_state::<Engine>() else { return };
         if let Some(found) = consider(&engine, &exe, &title, true)
             && make(&app, &engine, found, false).is_some()
         {

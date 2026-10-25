@@ -359,13 +359,25 @@ pub fn check_binding(id: &str, b: &Binding, pages: &[super::profile::Page], erro
         }
     }
     for look in std::iter::once(&b.look).chain(b.look_on.as_ref()) {
+        // a plugin action's own picture is kept as a data URI (the window drops plugin actions so)
         if let Some(icon) = look.icon.as_deref().filter(|i| !i.is_empty())
             && super::render::icon_svg(icon).is_none()
+            && !super::images::safe_data_uri(icon)
+            && !icon.strip_prefix(super::render::EMOJI_PREFIX).is_some_and(|e| !e.trim().is_empty() && e.chars().count() <= 8)
         {
-            errors.push(format!("{id}: unknown icon {icon:?} (see list_icons)"));
+            errors.push(format!("{id}: unknown icon {icon:?} (see list_icons, or emoji:🎵)"));
         }
         if look.fit.as_deref().is_some_and(|f| f != "icon" && f != "fill") {
             errors.push(format!("{id}: look.fit is icon or fill"));
+        }
+        if look.label_pos.as_deref().is_some_and(|p| !matches!(p, "top" | "middle" | "bottom")) {
+            errors.push(format!("{id}: look.labelPos is top, middle or bottom"));
+        }
+        if look.label_size.is_some_and(|z| !(6..=30).contains(&z)) {
+            errors.push(format!("{id}: look.labelSize is 6 to 30 (key pixels; a key is 72)"));
+        }
+        if look.icon_size.as_deref().is_some_and(|z| z != "small" && z != "large") {
+            errors.push(format!("{id}: look.iconSize is small or large"));
         }
         for (field, value) in [("bg", &look.bg), ("fg", &look.fg), ("iconColor", &look.icon_color), ("led", &look.led)] {
             if let Some(v) = value.as_deref().filter(|v| !is_hex(v)) {
@@ -918,6 +930,8 @@ mod tests {
         p.controls.insert("faders.0".into(), binding(json!({"action": "core.volume", "params": {"target": "system"}, "look": {"led": "#20ff40", "ledLevel": true}})));
         p.controls.insert("keys.1".into(), binding(json!({"action": "core.volume", "params": {"target": "system", "turnOnPress": 1}, "look": {"label": "Vol +"}})));
         p.controls.insert("keys.2".into(), binding(json!({"action": "", "look": {"label": "Hi", "icon": "game:crowned-skull"}})));
+        // a picture as the icon, as the window keeps a plugin action's (owner's Audio Switcher key, 2026-10-23)
+        p.controls.insert("keys.8".into(), binding(json!({"action": "core.media", "params": {"command": "next"}, "look": {"icon": "data:image/png;base64,iVBORw0KGgo="}})));
         let (errors, warnings) = check_profile(&p);
         assert!(errors.is_empty(), "{errors:?}");
         assert!(warnings.is_empty(), "{warnings:?}");

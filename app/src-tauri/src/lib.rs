@@ -228,6 +228,22 @@ fn take_the_deck_lock() {
     let _ = HELD.set(file);
 }
 
+/// Said in the log at every start (a user's log tells whether HubDeck starts with the system).
+/// When it is on, the entry is written again: an entry left by a copy of HubDeck in another
+/// folder (a build of one's own, an older install) starts that program or nothing, and the tray
+/// still shows it ticked (issue #10). Off stays off, also when turned off in the system's list.
+fn autostart_check(app: &tauri::AppHandle) {
+    let manager = app.autolaunch();
+    match manager.is_enabled() {
+        Ok(true) => match manager.enable() {
+            Ok(()) => log::info!("autostart: on ({})", std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default()),
+            Err(e) => log::warn!("autostart: on, the entry not renewed: {e}"),
+        },
+        Ok(false) => log::info!("autostart: off"),
+        Err(e) => log::warn!("autostart: {e}"),
+    }
+}
+
 /// `hubdeck --catalog-check [N]`: the N most popular catalog plugins downloaded, unpacked and read
 /// as Install would, nothing installed (the release gate's stage "catalog"); the exit code.
 pub fn catalog_check(args: &[String]) -> i32 {
@@ -298,6 +314,12 @@ pub fn run() {
                 let _ = s.store.save_settings();
             }
             app.manage(engine);
+            // after manage: the registry write took long enough for another thread to ask for the
+            // engine before it was managed (a panic at start, 2026-10-25 11:23); off the start path
+            if !offer_autostart && !cfg!(debug_assertions) && testing.is_none() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || autostart_check(&handle));
+            }
             // the assistant routes of the local HTTP API (`hubdeck --mcp` talks to them)
             engine::api::install(app.handle().clone());
             engine::tour::recover(app.handle());
@@ -417,6 +439,8 @@ pub fn run() {
             engine::gallery::dial_gallery,
             engine::commands::language_set,
             engine::commands::call_switch_set,
+            tray::autostart_get,
+            tray::autostart_set,
             engine::commands::reduced_motion_set,
             engine::mcp::ai_prompt,
             engine::mcp::ai_build,

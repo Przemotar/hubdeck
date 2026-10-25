@@ -501,8 +501,10 @@ async function questionsStage() {
 // app's own process).
 function catalogStart() {
   const exe = win ? appPath : path.join(appPath, "Contents", "MacOS", "hubdeck");
-  // an app without the flag would start a second HubDeck instead
-  if (!fs.existsSync(exe) || !fs.readFileSync(exe).includes("--catalog-check")) {
+  // an app without the flag would start a second HubDeck instead. The check's own output line
+  // tells, not the flag: an optimised build compares "--catalog-check" as numbers and keeps no
+  // such text (session 29: a 0.1.11 test build was called "a build before 0.1.11")
+  if (!fs.existsSync(exe) || !fs.readFileSync(exe).includes("install and run here")) {
     return async () => report("catalog", false, `${exe} has no --catalog-check (a build before 0.1.11)`);
   }
   const child = spawn(exe, ["--catalog-check", "20"], { stdio: ["ignore", "pipe", "pipe"] });

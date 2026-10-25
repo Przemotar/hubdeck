@@ -681,7 +681,7 @@ impl Engine {
             fleet_sweep: Instant::now(),
             plugin_leds: HashMap::new(),
             plugin_panel: None,
-            toggles: HashMap::new(),
+            toggles: load_toggles(data_dir),
             arcade: None,
             profiles_stamp: (0, None),
             last_folder_check: Instant::now(),
@@ -1388,6 +1388,36 @@ fn schedule_steps(start: Instant, params: &serde_json::Value) -> Vec<(Instant, B
     schedule_steps_list(start, actions::steps(params))
 }
 
+/// The steps of a toggle's first press as bindings (their state tells which side is on).
+fn toggle_first(binding: &Binding) -> Vec<Binding> {
+    actions::steps_at(&binding.params, "first").into_iter().map(|s| Binding { action: s.action, params: s.params, look: Look::default(), accel: false, look_on: None, swap_turns: false }).collect()
+}
+
+/// A toggle's side is kept per profile: the same key on two profiles is two toggles.
+fn toggle_key(profile: Option<&str>, control: &str) -> String {
+    format!("{}/{control}", profile.unwrap_or(""))
+}
+
+/// On when every first step with a readable state is on; nothing readable: the remembered side.
+fn toggle_side(read: &[bool], remembered: Option<bool>) -> bool {
+    if read.is_empty() { remembered.unwrap_or(false) } else { read.iter().all(|on| *on) }
+}
+
+const TOGGLES_FILE: &str = "toggles.json";
+
+fn load_toggles(data_dir: &Path) -> HashMap<String, bool> {
+    std::fs::read(data_dir.join(TOGGLES_FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// Written on a press of a toggle (a few bytes, not on a timer).
+fn save_toggles(data_dir: &Path, toggles: &HashMap<String, bool>) {
+    if let Ok(json) = serde_json::to_vec_pretty(toggles)
+        && let Err(e) = profile::write_atomic(&data_dir.join(TOGGLES_FILE), &json)
+    {
+        log::warn!("{TOGGLES_FILE}: {e}");
+    }
+}
+
 fn schedule_steps_list(start: Instant, steps: Vec<actions::Step>) -> Vec<(Instant, Binding, String)> {
     let mut due = start;
     steps
@@ -1598,7 +1628,8 @@ struct Worker {
     plugin_leds: HashMap<String, Rgb>,
     /// A picture for the whole key panel set by a plugin or the API (data URI).
     plugin_panel: Option<String>,
-    /// Toggles that ran their first steps last (the next press runs the second).
+    /// Toggles that ran their first steps last (the next press runs the second), by
+    /// `profile/control`; kept in `toggles.json` so a toggle shows the same side after a restart.
     toggles: HashMap<String, bool>,
     /// Game mode: the deck belongs to the arcade.
     arcade: Option<games::Arcade>,
@@ -2009,11 +2040,13 @@ impl Worker {
         }
         if binding.action == actions::TOGGLE {
             if matches!(event, InputEvent::Press(true)) {
-                let on = self.toggles.get(id).copied().unwrap_or(false);
+                let key = toggle_key(self.lock().active.as_deref(), id);
+                let on = self.toggle_on(&key, &binding);
                 let list = actions::steps_at(&binding.params, if on { "second" } else { "first" });
                 self.scheduled.extend(schedule_steps_list(Instant::now(), list));
                 self.scheduled.make_contiguous().sort_by_key(|(due, _, _)| *due);
-                self.toggles.insert(id.to_string(), !on);
+                self.toggles.insert(key, !on);
+                save_toggles(&self.data_dir, &self.toggles);
                 self.redraw_keys();
                 self.dial_dirty = true;
             }
@@ -2467,7 +2500,7 @@ impl Worker {
                                 .plugin_looks
                                 .get(&id)
                                 .and_then(|p| p.state)
-                                .or_else(|| (b.action == actions::TOGGLE).then(|| self.toggles.get(&id).copied().unwrap_or(false)))
+                                .or_else(|| (b.action == actions::TOGGLE).then(|| self.toggle_on(&toggle_key(profile.as_ref().map(|p| p.id.as_str()), &id), b)))
                                 .or_else(|| self.state_of(b));
                             // a Stream Deck action's state picks its picture, it is not HubDeck's red "on"
                             let shown_state = if sdplugins::is_sd_action(&b.action) { None } else { state };
@@ -3113,19 +3146,24 @@ impl Worker {
             (s.active_profile().cloned(), s.page.clone())
         };
         let Some(profile) = profile else { return false };
-        let mut wanted: Vec<String> =
-            (0..15).filter_map(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}")))).chain(profile.controls.get("dial")).filter_map(Self::state_key).collect();
+        // a toggle's first steps too: their state tells which side the toggle is on
+        let mut wanted: Vec<String> = (0..15)
+            .filter_map(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))))
+            .chain(profile.controls.get("dial"))
+            .flat_map(|b| std::iter::once(b.clone()).chain(if b.action == actions::TOGGLE { toggle_first(b) } else { Vec::new() }))
+            .filter_map(|b| Self::state_key(&b))
+            .collect();
         wanted.sort();
         wanted.dedup();
         let mut changed = false;
         // which audio devices are the defaults now (one call per kind)
-        let mut defaults: HashMap<bool, Vec<String>> = HashMap::new();
+        let mut defaults: HashMap<bool, Vec<audiodev::Device>> = HashMap::new();
         for key in &wanted {
             if let Some(rest) = key.strip_prefix("audio:") {
                 let (kind, name) = rest.split_once(':').unwrap_or(("output", rest));
                 let input = kind == "input";
-                let list = defaults.entry(input).or_insert_with(|| audiodev::list(input).unwrap_or_default().into_iter().filter(|d| d.default).map(|d| d.name.to_lowercase()).collect());
-                let on = list.iter().any(|n| n == name || n.contains(name));
+                let list = defaults.entry(input).or_insert_with(|| audiodev::list(input).unwrap_or_default());
+                let on = audiodev::find(list, name).is_some_and(|d| d.default);
                 if self.states.insert(key.clone(), on) != Some(on) {
                     changed = true;
                 }
@@ -3145,6 +3183,15 @@ impl Worker {
         }
         self.states.retain(|k, _| wanted.contains(k));
         changed
+    }
+
+    /// Whether a toggle ran its first steps last (the next press runs the second). Read from the
+    /// system when its first steps have a state HubDeck can read (an audio device, mute, a light,
+    /// OBS recording), so it follows a change made elsewhere or a restart of the PC; else the side
+    /// it remembers.
+    fn toggle_on(&self, key: &str, binding: &Binding) -> bool {
+        let read: Vec<bool> = toggle_first(binding).iter().filter_map(|b| self.state_of(b)).collect();
+        toggle_side(&read, self.toggles.get(key).copied())
     }
 
     fn state_of(&self, binding: &Binding) -> Option<bool> {
@@ -4156,6 +4203,37 @@ impl Worker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_toggle_follows_the_system_and_else_remembers_its_side() {
+        // issue #10: headphones made the default before a restart, the key still said speakers
+        assert!(toggle_side(&[true], Some(false)));
+        assert!(!toggle_side(&[false], Some(true)));
+        assert!(!toggle_side(&[true, false], None));
+        assert!(toggle_side(&[], Some(true)));
+        assert!(!toggle_side(&[], None));
+        let b = Binding {
+            action: actions::TOGGLE.into(),
+            params: serde_json::json!({
+                "first": [{"action": "core.audioDevice", "params": {"kind": "output", "device": "Headphones"}}, {"action": "core.text", "params": {"text": "x"}}],
+                "second": [{"action": "core.audioDevice", "params": {"kind": "output", "device": "Speakers"}}]
+            }),
+            look: Look::default(),
+            accel: false,
+            look_on: None,
+            swap_turns: false,
+        };
+        let first = toggle_first(&b);
+        assert_eq!(first.len(), 2);
+        // only the audio device has a state to read; the snippet is left out
+        assert_eq!(first.iter().filter_map(Worker::state_key).collect::<Vec<_>>(), vec!["audio:output:headphones".to_string()]);
+        assert_ne!(toggle_key(Some("a"), "keys.3"), toggle_key(Some("b"), "keys.3"));
+        let dir = std::env::temp_dir().join(format!("hubdeck-toggles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        save_toggles(&dir, &HashMap::from([(toggle_key(Some("a"), "keys.3"), true)]));
+        assert_eq!(load_toggles(&dir).get("a/keys.3"), Some(&true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_tour_highlight_is_found_on_any_page() {

@@ -189,6 +189,33 @@ fn save_diagnostics(app: &AppHandle) -> Result<(), String> {
     app.opener().reveal_item_in_dir(&path).map_err(|e| e.to_string())
 }
 
+/// A test copy keeps its "starts with the system" here, never in the system (it would start the
+/// test build at the next login).
+static TEST_AUTOSTART: Mutex<bool> = Mutex::new(false);
+
+/// Whether HubDeck starts with the system; Settings > General and the tray show the same switch.
+#[tauri::command]
+pub fn autostart_get(app: AppHandle) -> bool {
+    if crate::automation::get().is_some() {
+        return *TEST_AUTOSTART.lock().unwrap_or_else(|e| e.into_inner());
+    }
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Turns starting with the system on or off; returns what the system says now.
+#[tauri::command]
+pub fn autostart_set(app: AppHandle, on: bool) -> Result<bool, String> {
+    if crate::automation::get().is_some() {
+        *TEST_AUTOSTART.lock().unwrap_or_else(|e| e.into_inner()) = on;
+        return Ok(on);
+    }
+    let manager = app.autolaunch();
+    if on { manager.enable() } else { manager.disable() }.map_err(|e| e.to_string())?;
+    log::info!("autostart: {} (from the window)", if on { "on" } else { "off" });
+    refresh(&app);
+    Ok(manager.is_enabled().unwrap_or(false))
+}
+
 /// Rebuild the menu and tooltip if the profiles, the active one, pause or autostart changed.
 pub fn refresh(app: &AppHandle) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };

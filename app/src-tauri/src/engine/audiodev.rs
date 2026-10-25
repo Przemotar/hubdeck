@@ -15,15 +15,25 @@ pub fn list(input: bool) -> Result<Vec<Device>, String> {
     platform::list(input)
 }
 
-/// Make the device whose name contains `name` (case-insensitive) the default for every role.
+/// The device a saved value names: its system id (what Stream Deck's Audio Switcher keeps, and
+/// what a converted key carries), else the same name, else a name that contains it (all
+/// case-insensitive).
+pub fn find<'a>(devices: &'a [Device], wanted: &str) -> Option<&'a Device> {
+    let wanted = wanted.trim().to_lowercase();
+    if wanted.is_empty() {
+        return None;
+    }
+    devices
+        .iter()
+        .find(|d| d.id.to_lowercase() == wanted)
+        .or_else(|| devices.iter().find(|d| d.name.to_lowercase() == wanted))
+        .or_else(|| devices.iter().find(|d| d.name.to_lowercase().contains(&wanted)))
+}
+
+/// Make the device `name` names (see [`find`]) the default for every role.
 pub fn set_default(input: bool, name: &str) -> Result<String, String> {
     let devices = list(input)?;
-    let wanted = name.trim().to_lowercase();
-    let d = devices
-        .iter()
-        .find(|d| d.name.to_lowercase() == wanted)
-        .or_else(|| devices.iter().find(|d| d.name.to_lowercase().contains(&wanted)))
-        .ok_or_else(|| format!("no {} device named {name:?}", if input { "input" } else { "output" }))?;
+    let d = find(&devices, name).ok_or_else(|| format!("no {} device named {name:?}", if input { "input" } else { "output" }))?;
     platform::set_default(&d.id)?;
     Ok(d.name.clone())
 }
@@ -128,6 +138,23 @@ mod platform {
 
     pub fn set_default(_id: &str) -> Result<(), String> {
         Err("switching audio devices is not available on this system yet".into())
+    }
+}
+
+#[cfg(test)]
+mod find_tests {
+    use super::{Device, find};
+
+    #[test]
+    fn a_device_is_found_by_id_name_or_part_of_the_name() {
+        let d = |id: &str, name: &str| Device { id: id.into(), name: name.into(), default: false };
+        let devices = [d("{0.0.0.00000000}.{5306ea6f}", "LG ULTRAGEAR (NVIDIA High Definition Audio)"), d("{0.0.0.00000000}.{9c79ccff-8f51}", "Głośniki (Realtek(R) Audio)")];
+        // the owner's Key 15 after its Audio Switcher key became a built-in one (2026-10-23)
+        assert_eq!(find(&devices, "{0.0.0.00000000}.{9C79CCFF-8f51}").unwrap().name, "Głośniki (Realtek(R) Audio)");
+        assert_eq!(find(&devices, "głośniki (realtek(r) audio)").unwrap().name, "Głośniki (Realtek(R) Audio)");
+        assert_eq!(find(&devices, "ultragear").unwrap().name, "LG ULTRAGEAR (NVIDIA High Definition Audio)");
+        assert!(find(&devices, "fifine").is_none());
+        assert!(find(&devices, " ").is_none());
     }
 }
 

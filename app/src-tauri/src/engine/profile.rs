@@ -14,7 +14,8 @@ pub const PROFILE_VERSION: u32 = 1;
 pub struct Look {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// Name of a built-in icon (see `icons_list`).
+    /// Name of a built-in icon (see `icons_list`), or `emoji:` and an emoji drawn in the system's
+    /// color emoji font.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     /// Background, `#rrggbb`.
@@ -50,6 +51,16 @@ pub struct Look {
     /// dial, the label on a strip); None = by the picture (logos as icons, photos fill).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fit: Option<String>,
+    /// Where a key's label stands, over the icon or picture as on Stream Deck ("Title alignment"):
+    /// `top`, `middle`, `bottom`; None = under the icon (the house layout). Issue #10, owner's 1a.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_pos: Option<String>,
+    /// A key label's size in key pixels (a key is 72, see `LABEL_SIZES`); None = fitted to the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_size: Option<u8>,
+    /// A key icon's size: `small`, `large`; None = as the label leaves room for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_size: Option<String>,
     /// What this control does and how to set it, shown in the window when it is picked or pressed
     /// (the demo's `demo:<id>` are translated by the window).
     #[serde(default, skip_serializing_if = "Option::is_none")]
