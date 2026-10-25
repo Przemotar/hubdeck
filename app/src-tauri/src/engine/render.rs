@@ -1833,7 +1833,10 @@ mod look_editor {
         }
         sheet += "</svg>";
         let jpeg = Renderer::default().jpeg(&sheet).unwrap();
-        std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/../../logs/look-editor.jpg"), jpeg).unwrap();
+        // logs/ is not in the public repository (its CI failed on 0.1.12's first sync)
+        let logs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../logs");
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(logs.join("look-editor.jpg"), jpeg).unwrap();
         // the emoji is drawn as text in the emoji font, escaped
         assert!(key_svg(&looks[8].1, 0).contains("Segoe UI Emoji"));
         assert!(!key_svg(&Look { icon: Some("emoji:<x>".into()), ..Look::default() }, 0).contains("<x>"));
