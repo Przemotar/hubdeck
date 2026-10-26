@@ -325,10 +325,11 @@ pub fn is_sd_action(action_id: &str) -> bool {
 }
 
 /// The picture and title Stream Deck would show for a state when the plugin set none.
-pub fn state_look(action_id: &str, state: Option<bool>) -> Option<(Option<String>, Option<String>)> {
+/// `state` is the index into the action's `States` (0 when the plugin has not set one).
+pub fn state_look(action_id: &str, state: Option<u8>) -> Option<(Option<String>, Option<String>)> {
     let (_, uuid) = action_id.split_once('/')?;
     let a = action(uuid)?;
-    let i = usize::from(state.unwrap_or(false)).min(a.states.len().saturating_sub(1));
+    let i = usize::from(state.unwrap_or(0)).min(a.states.len().saturating_sub(1));
     a.states.get(i).cloned()
 }
 
@@ -405,15 +406,15 @@ pub fn settings_known(context: &str, settings: &Value) -> bool {
     with(&SETTINGS, |s| s.get(context) == Some(settings))
 }
 
-/// A key-up on a two-state action flips its state, as Stream Deck does; returns the new state.
-pub fn toggle_after_key_up(action_id: &str, context: &str) -> Option<bool> {
+/// A key-up on a two-state action flips its state, as Stream Deck does; returns the new index.
+pub fn toggle_after_key_up(action_id: &str, context: &str) -> Option<u8> {
     let (_, uuid) = action_id.split_once('/')?;
     let a = action(uuid)?;
     (a.states.len() == 2).then(|| {
         with(&STATES, |s| {
             let next = 1 - s.get(context).copied().unwrap_or(0).min(1);
             s.insert(context.to_string(), next);
-            next == 1
+            next
         })
     })
 }
@@ -548,9 +549,11 @@ pub fn incoming(plugin: &str, dir: &Path, m: &Value) -> Vec<Incoming> {
             vec![Incoming::Engine(json!({"event": "setImage", "context": context, "image": image}))]
         }
         "setState" => {
-            let state = p["state"].as_u64().unwrap_or(0).min(1) as u8;
+            // index into States, not a boolean: Google Meet sends 2 for unmuted (0 disconnected,
+            // 1 muted). Clamping to 1 drew the muted icon for both.
+            let state = p["state"].as_u64().unwrap_or(0).min(u64::from(u8::MAX)) as u8;
             with(&STATES, |s| s.insert(context.clone(), state));
-            vec![Incoming::Engine(json!({"event": "setState", "context": context, "state": state == 1}))]
+            vec![Incoming::Engine(json!({"event": "setState", "context": context, "state": state}))]
         }
         "showOk" | "showAlert" => vec![Incoming::Engine(json!({"event": "flash", "context": context, "ok": m["event"] == "showOk"}))],
         "openUrl" => vec![Incoming::Engine(json!({"event": "openUrl", "url": p["url"]}))],
@@ -1183,7 +1186,8 @@ mod tests {
             "Actions": [
                 {"UUID": "com.example.sd.toggle", "Name": "Toggle", "Icon": "imgs/none", "States": [{"Image": "a"}, {"Image": "b", "Title": "On"}], "PropertyInspectorPath": "pi.html"},
                 {"UUID": "com.example.sd.volume", "Name": "Volume", "Controllers": ["Encoder"], "States": [{"Image": "c"}]},
-                {"UUID": "com.example.sd.reading", "Name": "Sensor reading", "States": [{"Image": "d", "ShowTitle": false}]}
+                {"UUID": "com.example.sd.reading", "Name": "Sensor reading", "States": [{"Image": "d", "ShowTitle": false}]},
+                {"UUID": "com.example.sd.meet", "Name": "Mic", "States": [{"Image": "off", "Title": "Disconnected"}, {"Image": "muted", "Title": "Muted"}, {"Image": "live", "Title": "Live"}]}
             ]
         })
     }
@@ -1243,7 +1247,7 @@ mod tests {
         outgoing(&json!({"event": "keyUp", "action": "com.example.sd.volume", "context": "knobs.1", "settings": {}}));
         assert_eq!((turn["payload"]["ticks"].as_i64(), turn["payload"]["controller"].as_str()), (Some(-2), Some("Encoder")));
         // a key-up flips a two-state action
-        assert_eq!(toggle_after_key_up("com.example.sd/com.example.sd.toggle", "keys.7"), Some(true));
+        assert_eq!(toggle_after_key_up("com.example.sd/com.example.sd.toggle", "keys.7"), Some(1));
         assert_eq!(toggle_after_key_up("com.example.sd/com.example.sd.volume", "dial"), None);
         // back: titles, pictures, settings
         let title = incoming("com.example.sd", &dir, &json!({"event": "setTitle", "context": "keys.7", "payload": {"title": "Hi"}}));
@@ -1264,6 +1268,24 @@ Ggo="}}),
         assert!(matches!(&set[0], Incoming::Engine(v) if v["event"] == "sdSettings"));
         let get = incoming("com.example.sd", &dir, &json!({"event": "getSettings", "context": "keys.7"}));
         assert!(matches!(&get[0], Incoming::Reply(v) if v["payload"]["settings"]["b"] == 2));
+    }
+
+    #[test]
+    fn a_third_state_is_kept_and_drawn() {
+        let dir = std::env::temp_dir().join("com.example.sd.sdPlugin");
+        let _ = to_manifest(read(&manifest(), &dir).unwrap());
+        // Google Meet: 0 disconnected, 1 muted, 2 unmuted. Unmuted must not collapse to muted.
+        let set = incoming("com.example.sd", &dir, &json!({"event": "setState", "context": "keys.3", "payload": {"state": 2}}));
+        assert_eq!(set, vec![Incoming::Engine(json!({"event": "setState", "context": "keys.3", "state": 2}))]);
+        let down = outgoing(&json!({"event": "keyDown", "action": "com.example.sd.meet", "context": "keys.3", "settings": {}})).unwrap();
+        assert_eq!(down["payload"]["state"], 2, "the plugin hears the state it set");
+        let look = |n| state_look("com.example.sd/com.example.sd.meet", Some(n)).unwrap().1;
+        assert_eq!(look(0).as_deref(), Some("Disconnected"));
+        assert_eq!(look(1).as_deref(), Some("Muted"));
+        assert_eq!(look(2).as_deref(), Some("Live"));
+        // a two-state action still reports 0 and 1
+        let off = incoming("com.example.sd", &dir, &json!({"event": "setState", "context": "keys.7", "payload": {"state": 0}}));
+        assert_eq!(off[0], Incoming::Engine(json!({"event": "setState", "context": "keys.7", "state": 0})));
     }
 
     #[test]
