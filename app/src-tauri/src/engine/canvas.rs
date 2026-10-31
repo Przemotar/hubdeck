@@ -2445,7 +2445,7 @@ impl Effect for OnGpu {
         if let Cpu::Flip { start } = &mut self.cpu
             && old.len() == W * H * 4
         {
-            let packed: Vec<u32> = old.chunks_exact(4).map(|p| u32::from_le_bytes([p[0], p[1], p[2], 255])).collect();
+            let packed: Vec<u32> = old.as_chunks::<4>().0.iter().map(|p| u32::from_le_bytes([p[0], p[1], p[2], 255])).collect();
             self.layer.upload_state(0, &packed);
             *start = Some(self.t);
         }
@@ -3222,7 +3222,7 @@ impl Canvas {
     /// The icons alone of this picture (RGBA, premultiplied): their cover is kept ([`Inputs::icons`]).
     pub fn icons(&mut self, rgba: &[u8]) {
         self.icons.clear();
-        self.icons.extend(rgba.chunks_exact(4).map(|p| p[3]));
+        self.icons.extend(rgba.as_chunks::<4>().0.iter().map(|p| p[3]));
     }
 
     /// Moves every layer on to now (each by its own speed); true when a new picture is needed.
@@ -3277,7 +3277,7 @@ impl Canvas {
     /// kept as the mask the effects see.
     pub fn content(&mut self, rgba: &[u8]) {
         self.mask.clear();
-        self.mask.extend(rgba.chunks_exact(4).map(|p| p[3]));
+        self.mask.extend(rgba.as_chunks::<4>().0.iter().map(|p| p[3]));
     }
 
     pub fn press(&mut self, key: usize) {

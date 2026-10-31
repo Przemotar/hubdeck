@@ -435,7 +435,7 @@ async function windowStage() {
       for (const b of Object.values(full.controls ?? {})) if (/\.gif$/i.test(b.look?.image ?? "")) gifs.add(b.look.image);
     }
     const list = [...gifs];
-    const controls = { dial: { action: "core.pet", params: { name: "Mochi", press: "pet" }, look: { label: "Mochi" } }, "keys.0": { action: "core.saver", params: { effect: "rain" }, look: { label: "Saver" } } };
+    const controls = { dial: { action: "core.pet", params: { name: "Mochi", press: "pet" }, look: { label: "Mochi" } }, "keys.0": { action: "core.saver", params: { effect: "aurora" }, look: { label: "Saver" } } };
     for (let i = 1; i < 15 && list.length && show !== "saver"; i++) controls[`keys.${i}`] = { action: "", look: { label: "", image: list[i % list.length], fit: "fill" } };
     const made = await call("POST", "profiles", { name: "Release gate window", controls });
     await call("POST", `profiles/${made.profile.id}/activate`);

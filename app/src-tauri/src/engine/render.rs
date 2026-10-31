@@ -1201,7 +1201,7 @@ pub fn blit(dst: &mut tiny_skia::Pixmap, src: &tiny_skia::Pixmap, x: i32, y: i32
         let d_at = ((row * dw + x0) * 4) as usize;
         let s_row = &sdata[s_at..s_at + width * 4];
         let d_row = &mut ddata[d_at..d_at + width * 4];
-        for (s, d) in s_row.chunks_exact(4).zip(d_row.chunks_exact_mut(4)) {
+        for (s, d) in s_row.as_chunks::<4>().0.iter().zip(d_row.as_chunks_mut::<4>().0) {
             let sa = s[3];
             if sa == 255 {
                 d.copy_from_slice(s);
@@ -2990,7 +2990,7 @@ mod timing {
             seed
         };
         let mut src = tiny_skia::Pixmap::new(37, 29).unwrap();
-        for p in src.data_mut().chunks_exact_mut(4) {
+        for p in src.data_mut().as_chunks_mut::<4>().0 {
             let a = match rnd() % 3 {
                 0 => 0,
                 1 => 255,
@@ -3002,7 +3002,7 @@ mod timing {
             p[3] = a;
         }
         let mut base = tiny_skia::Pixmap::new(64, 48).unwrap();
-        for p in base.data_mut().chunks_exact_mut(4) {
+        for p in base.data_mut().as_chunks_mut::<4>().0 {
             p.copy_from_slice(&[(rnd() % 256) as u8, (rnd() % 256) as u8, (rnd() % 256) as u8, 255]);
         }
         for (x, y) in [(0, 0), (40, 30), (-10, -5), (13, 7)] {

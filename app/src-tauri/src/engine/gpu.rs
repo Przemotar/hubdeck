@@ -404,7 +404,7 @@ impl ShaderLayer {
     pub fn step(&mut self, input: &super::canvas::Inputs, steps: u32) {
         let Some(pipeline) = &self.step else { return };
         let q = &self.gpu.queue;
-        let presses: Vec<[f32; 4]> = self.presses.drain(..).collect();
+        let presses: Vec<[f32; 4]> = std::mem::take(&mut self.presses);
         self.write_keys(input);
         let mut pad = [[0f32; 4]; PRESSES];
         pad[..presses.len()].copy_from_slice(&presses);
