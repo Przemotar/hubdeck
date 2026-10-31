@@ -385,12 +385,14 @@ pub fn live_looks() -> serde_json::Value {
     serde_json::json!({"profile": profile, "looks": looks})
 }
 
-/// What a plugin or the local API put on a control: title, picture, on/off.
+/// What a plugin or the local API put on a control: title, picture, state.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginLook {
     pub title: Option<String>,
     pub image: Option<String>,
-    pub state: Option<bool>,
+    /// State index. Stream Deck `setState` uses the action's `States` (0, 1, 2, ...). Hubdeck's own
+    /// on/off is 0 or 1, and 1 is the "on" look.
+    pub state: Option<u8>,
     /// What a Stream Deck plugin shows for an encoder (`setFeedback`): value 0..1, big text, title.
     pub feedback: Option<(Option<f32>, String, String)>,
     /// A photo its layout shows (a song's cover), drawn behind the dial's text.
@@ -2395,9 +2397,9 @@ impl Worker {
             plugins::input(&binding.action, id, &binding.params, event, binding.swap_turns);
             // a Stream Deck two-state action flips on key-up, as Stream Deck does
             if event == InputEvent::Press(false)
-                && let Some(on) = sdplugins::toggle_after_key_up(&binding.action, id)
+                && let Some(state) = sdplugins::toggle_after_key_up(&binding.action, id)
             {
-                self.plugin_looks.entry(id.to_string()).or_default().state = Some(on);
+                self.plugin_looks.entry(id.to_string()).or_default().state = Some(state);
                 self.redraw_keys();
             }
             return;
@@ -2857,6 +2859,7 @@ impl Worker {
                                 .plugin_looks
                                 .get(&id)
                                 .and_then(|p| p.state)
+                                .map(|n| n == 1)
                                 .or_else(|| (b.action == actions::TOGGLE).then(|| self.toggle_on(&toggle_key(profile.as_ref().map(|p| p.id.as_str()), &id), b)))
                                 .or_else(|| self.state_of(b));
                             // a Stream Deck action's state picks its picture, it is not HubDeck's red "on"
@@ -3373,7 +3376,10 @@ impl Worker {
                 self.dial_dirty = true;
             }
             "setImage" => look.image = m["image"].as_str().filter(|i| images::safe_data_uri(i)).map(str::to_string),
-            "setState" => look.state = m["state"].as_bool(),
+            "setState" => {
+                // a number is a state index; true/false is Hubdeck's own on/off, stored as 1 and 0
+                look.state = m["state"].as_u64().map(|n| u8::try_from(n).unwrap_or(u8::MAX)).or_else(|| m["state"].as_bool().map(u8::from));
+            }
             "showFeedback" => {
                 let caption = m["caption"].as_str().unwrap_or("").to_string();
                 self.feedback = Some((Feedback { value: m["value"].as_f64().map(|v| v as f32), caption }, Instant::now()));
@@ -3480,7 +3486,8 @@ impl Worker {
     /// A Stream Deck action's look: what its plugin set, else its manifest's picture and title for
     /// the current state (the whole key, as on a Stream Deck).
     fn sd_look(&self, id: &str, binding: &Binding, look: Look) -> Look {
-        let Some((image, title)) = sdplugins::state_look(&binding.action, self.plugin_looks.get(id).and_then(|p| p.state)) else { return look };
+        let index = self.plugin_looks.get(id).and_then(|p| p.state);
+        let Some((image, title)) = sdplugins::state_look(&binding.action, index) else { return look };
         let set = self.plugin_looks.get(id);
         let image = set.and_then(|p| p.image.clone()).or(look.image.clone()).or(image);
         // a plugin that draws its own title (ShowTitle false) has the label in its picture already

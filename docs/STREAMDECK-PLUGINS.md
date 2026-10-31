@@ -32,7 +32,9 @@ is what was found before building it, and the plan.
 ### Commands the plugin sends
 
 `setTitle`, `setImage` (a file in the plugin folder or a base64 data URL, PNG/JPEG; SVG is used by
-plugins in practice), `setState`, `showOk`, `showAlert`, `setFeedback` (the dial's touch strip:
+plugins in practice), `setState` (`payload.state` is the index into that action's `States`; an
+action can have more than two — Google Meet's mic and camera toggles use disconnected, muted and
+unmuted), `showOk`, `showAlert`, `setFeedback` (the dial's touch strip:
 title, value, indicator bar, icon, per layout item), `setFeedbackLayout` (`$A0`, `$A1`, `$B1`,
 `$B2`, `$C1`, `$X1` or a custom JSON layout), `setTriggerDescription`, `openUrl`, `setSettings` /
 `getSettings`, `setGlobalSettings` / `getGlobalSettings`, `switchToProfile`,
