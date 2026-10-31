@@ -30,6 +30,74 @@ pub const COVER_REF: &str = "cover";
 
 pub fn set_cover(cover: Option<(&str, &[u8])>) {
     *COVER.lock().unwrap_or_else(|e| e.into_inner()) = cover.map(|(mime, bytes)| data_uri(mime, bytes));
+    *SMALL_COVER.lock().unwrap_or_else(|e| e.into_inner()) = cover.and_then(|(_, bytes)| small_cover(bytes));
+    COVER_VERSION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Changes with every new cover (the living deck redraws its cover layer and colours).
+static COVER_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// A cover at 64x64 and its three leading colours.
+type SmallCover = (Arc<Vec<u32>>, [[f32; 3]; 3]);
+
+/// The cover at 64x64 (RGBA packed in a u32 a pixel, little-endian) and its three leading
+/// colours, made once a cover.
+static SMALL_COVER: Mutex<Option<SmallCover>> = Mutex::new(None);
+
+pub fn cover_version() -> u64 {
+    COVER_VERSION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The cover playing now at 64x64 and its three leading colours (0..1), for the living deck.
+pub fn cover_small() -> Option<SmallCover> {
+    SMALL_COVER.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn small_cover(bytes: &[u8]) -> Option<SmallCover> {
+    let img = image::load_from_memory(bytes).ok()?.resize_exact(64, 64, image::imageops::FilterType::Triangle).to_rgba8();
+    let packed: Vec<u32> = img.pixels().map(|p| u32::from_le_bytes([p[0], p[1], p[2], 255])).collect();
+    Some((Arc::new(packed), leading_colours(&img)))
+}
+
+/// A picture's three leading colours as lights: its pixels in twelve hue buckets weighted by how
+/// colourful and bright they are, the three heaviest buckets' averages, lifted to at least 60 %
+/// brightness so they work as an effect's tint (a dark cover still gives a usable light).
+fn leading_colours(img: &image::RgbaImage) -> [[f32; 3]; 3] {
+    let mut buckets = [([0f32; 3], 0f32); 12];
+    for p in img.pixels() {
+        let [r, g, b] = [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0];
+        let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+        let sat = if max > 0.0 { (max - min) / max } else { 0.0 };
+        let weight = sat * max + 0.02;
+        let hue = if max == min {
+            0.0
+        } else if max == r {
+            ((g - b) / (max - min)).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) / (max - min) + 2.0
+        } else {
+            (r - g) / (max - min) + 4.0
+        };
+        let i = ((hue / 6.0 * 12.0) as usize).min(11);
+        buckets[i].0[0] += r * weight;
+        buckets[i].0[1] += g * weight;
+        buckets[i].0[2] += b * weight;
+        buckets[i].1 += weight;
+    }
+    let mut order: Vec<usize> = (0..12).collect();
+    order.sort_by(|a, b| buckets[*b].1.total_cmp(&buckets[*a].1));
+    let mut out = [[0.6f32; 3]; 3];
+    for (n, i) in order.iter().take(3).enumerate() {
+        let (sum, w) = buckets[*i];
+        if w <= 0.0 {
+            out[n] = out[0];
+            continue;
+        }
+        let c = [sum[0] / w, sum[1] / w, sum[2] / w];
+        let max = c[0].max(c[1]).max(c[2]).max(0.001);
+        let lift = (0.6 / max).max(1.0);
+        out[n] = c.map(|v| (v * lift).min(1.0));
+    }
+    out
 }
 static CACHE: Mutex<Option<HashMap<String, Arc<Picture>>>> = Mutex::new(None);
 

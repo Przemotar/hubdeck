@@ -212,6 +212,23 @@ pub fn module_leds(profile: Option<&Profile>, kind: &str, count: usize, levels: 
 }
 
 /// The base edge of a profile; None = the base's rainbow.
+/// The preset's colours for the lights while its switch is on: the edge's, then the knobs' and
+/// faders' (the edge's when it has one only).
+pub fn preset_colors(profile: Option<&Profile>) -> Option<(Rgb, Rgb)> {
+    let cs: Vec<Rgb> = profile?.effects.as_ref()?.lights.as_ref()?.iter().filter_map(|c| parse_hex(c)).collect();
+    let first = *cs.first()?;
+    Some((first, cs.get(1).copied().unwrap_or(first)))
+}
+
+/// The preset's colours for `part` (`edge` or `controls`) when its switch is on for that part.
+fn preset_for(profile: Option<&Profile>, part: &str) -> Option<(Rgb, Rgb)> {
+    let to = profile?.effects.as_ref()?.lights_to.as_ref();
+    if to.is_some_and(|t| !t.iter().any(|p| p == part)) {
+        return None;
+    }
+    preset_colors(profile)
+}
+
 pub fn edge(profile: Option<&Profile>) -> Option<Lights> {
     let p = profile?;
     let rgb = p.edge.as_deref().and_then(parse_hex);
@@ -257,6 +274,8 @@ fn is_mic(b: &super::profile::Binding) -> bool {
 fn style_rgb(profile: Option<&Profile>, cfg: &LightSettings) -> Option<Rgb> {
     match cfg.style.as_str() {
         "off" => Some([0, 0, 0]),
+        // the preset's colour for the knobs and faders (the edge takes its own in `edge`)
+        _ if preset_for(profile, "controls").is_some() => preset_for(profile, "controls").map(|(_, rest)| rest),
         "color" => Some(parse_hex(&cfg.color).unwrap_or([255, 255, 255])),
         "profile" | "music" => Some(profile.map(profile_color).unwrap_or([255, 255, 255])),
         _ => None,
@@ -278,6 +297,8 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
     let advanced = module_leds(profile, kind, count, levels);
     let style = style_rgb(profile, cfg);
     let binding = |i: usize| profile.and_then(|p| p.controls.get(&format!("{kind}.{i}")));
+    // a control's own colour wins over the preset's (the more particular setting; owner's "2 a",
+    // 2026-10-30): the window lists such controls in Deck look with "back to the preset"
     let own = |i: usize| binding(i).is_some_and(|b| b.look.led.as_deref().and_then(parse_hex).is_some() || b.look.led_effect.as_deref().is_some_and(|e| e != "static"));
     let mic_red = |i: usize| cfg.react.mic.on && live.mic_muted && binding(i).is_some_and(is_mic);
     let mut any = false;
@@ -326,6 +347,12 @@ pub fn edge_lights(profile: Option<&Profile>, cfg: &LightSettings, live: &Live) 
         if live.mic_muted { react(&cfg.react.mic, LedMode::Static, 50) } else { react(&cfg.react.call, LedMode::Static, 50) }
     } else if cfg.react.mic.on && live.mic_muted && !mic_shown_on_a_knob {
         react(&cfg.react.mic, LedMode::Static, 50)
+    } else if let Some((rgb, _)) = preset_for(profile, "edge").filter(|_| cfg.style != "off") {
+        // the preset's colour wins over the profile's own edge colour; the edge's effect stays
+        let p = profile.expect("a preset's colours come from a profile");
+        let effect = p.edge_effect.as_deref().filter(|e| *e != "static");
+        let led = if effect == Some("music") || (effect.is_none() && cfg.style == "music") { Led::music(rgb) } else { Led::new(rgb, effect_mode(effect)) };
+        Lights { leds: vec![led], speed: p.edge_speed.map(|s| s.min(100)) }
     } else if let Some(own) = edge(profile) {
         own
     } else if cfg.style == "music" {
@@ -363,6 +390,34 @@ mod tests {
         assert_eq!(view(&Lights { leds: vec![Led::music([1, 2, 3])], speed: None })[0].effect, "music");
         let v = view(&Lights { leds: vec![Led::new([255, 8, 0], LedMode::Breathing), Led::solid([0, 0, 0])], speed: None });
         assert_eq!(v, vec![LedView { color: "#ff0800".into(), effect: "breathing" }, LedView { color: "#000000".into(), effect: "static" }]);
+    }
+
+    #[test]
+    fn a_presets_colours_light_the_edge_and_the_knobs_its_effect_stays() {
+        let mut p = Profile::new("x");
+        p.edge_effect = Some("breathing".into());
+        p.effects = Some(crate::engine::profile::Effects { lights: Some(vec!["#ff3aa8".into(), "#2ad6ff".into()]), ..Default::default() });
+        let cfg = LightSettings { style: "rainbow".into(), brightness: 100, ..LightSettings::default() };
+        let edge = edge_lights(Some(&p), &cfg, &Live::default()).unwrap();
+        assert_eq!(edge.leds[0].rgb, [0xff, 0x3a, 0xa8]);
+        assert_eq!(edge.leds[0].mode, effect_mode(Some("breathing")));
+        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        assert!(knobs.leds.iter().all(|l| l.rgb == [0x2a, 0xd6, 0xff]));
+        // a knob with its own colour keeps it (the particular wins)
+        with_led(&mut p, "knobs.1", "#1db954", false);
+        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        assert_eq!((knobs.leds[0].rgb, knobs.leds[1].rgb), ([0x2a, 0xd6, 0xff], [0x1d, 0xb9, 0x54]));
+        // only the edge: the knobs go back to the style (here the rainbow), the edge keeps the preset
+        p.effects.as_mut().unwrap().lights_to = Some(vec!["edge".into()]);
+        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        assert_eq!(knobs.leds[0].mode, LedMode::Rainbow);
+        assert_eq!(edge_lights(Some(&p), &cfg, &Live::default()).unwrap().leds[0].rgb, [0xff, 0x3a, 0xa8]);
+        p.effects.as_mut().unwrap().lights_to = None;
+        // lights off: the preset lights nothing (a knob's own colour stays its own, as before presets)
+        let off = LightSettings { style: "off".into(), ..cfg.clone() };
+        let k = lights(Some(&p), "knobs", 3, &HashMap::new(), &off, &Live::default()).unwrap();
+        assert_eq!((k.leds[0].rgb, k.leds[2].rgb), ([0, 0, 0], [0, 0, 0]));
+        assert_eq!(k.leds[1].rgb, [0x1d, 0xb9, 0x54]);
     }
 
     #[test]

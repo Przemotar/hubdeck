@@ -24,5 +24,5 @@ knob" card after the tour) is off until you switch it on, stays on your computer
 off forgets it. The tour looks at your modules and the apps you use on this computer only; its
 sound for the volume part is a file inside HubDeck. On macOS, setting one app's own volume routes
 that app's sound through HubDeck to play it at the level you set (the system calls it System Audio
-Recording): nothing is recorded or saved, and the app plays straight again when HubDeck quits. Claude Code sessions on keys send only their state, the
+Recording): nothing is recorded or saved, and the app plays straight again when HubDeck quits. Spectrum and lights to the music read the sound your computer plays (Windows: loopback capture of the speakers; macOS 14.2 or newer: a Core Audio tap, which macOS asks you to allow once as System Audio Recording; no microphone), only while one of them is on; nothing is recorded, saved or sent. Claude Code sessions on keys send only their state, the
 project folder's name and the tool's name to HubDeck, never your prompts.

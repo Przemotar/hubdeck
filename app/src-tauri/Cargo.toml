@@ -34,6 +34,10 @@ resvg = "0.48"
 # JPEG for the deck's screens: SIMD, several times faster than image's encoder (2026-10-15: the
 # key panel spent 4 of its 7 ms encoding; the release gate's CPU was over 15 %)
 jpeg-encoder = { version = "0.6", features = ["simd"] }
+# the living deck's shader layers on the graphics card (engine/gpu.rs; owner's "1 a", 2026-10-26)
+wgpu = "25"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
 enigo = "0.6"
 active-win-pos-rs = "0.11"
 tauri-plugin-dialog = "2"

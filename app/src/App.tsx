@@ -1,3 +1,5 @@
+import { iconPacks } from "./iconpacks";
+import { KeyStudio } from "./components/KeyStudio";
 import { ConfirmHost } from "./components/ConfirmHost";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import "@fontsource/ibm-plex-sans/400.css";
@@ -13,7 +15,9 @@ import { DeckView } from "./components/DeckView";
 import { Inspector } from "./components/Inspector";
 import type { SettingsSection } from "./components/Panels";
 import { PluginsTab } from "./components/PluginsTab";
-import { ArrangePanel, Banner, ControlMenu, BaseTurnPicker, EdgePanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
+import { DeckLook } from "./components/DeckLook";
+import { WhatsNew } from "./components/WhatsNew";
+import { ArrangePanel, Banner, ControlMenu, BaseTurnPicker, EdgePanel, SaverPanel, MusicPanel, ShareArrangement, ForAppPanel, GalleryPanel, GamesPanel, LeftPanel, PageBar, PluginFileSheet, ProfilePanel, SettingsPanel, Sheet, TopBar } from "./components/Panels";
 import { listen } from "@tauri-apps/api/event";
 import { Builder } from "./components/Builder";
 import { Tour } from "./components/Tour";
@@ -47,6 +51,24 @@ export default function App() {
   const live = useDeck();
   const view = useEngine();
   const saverOn = !!useSaverShown();
+  // using the window is using HubDeck: it ends a screensaver and keeps the next one from starting
+  // (owner, 2026-10-30: the deck's screensaver ran on while he worked in the window, and Deck look
+  // then showed it instead of the preset he tried); a touch is sent at most every 20 s while none runs
+  const saverOnRef = useRef(saverOn);
+  saverOnRef.current = saverOn;
+  useEffect(() => {
+    let last = 0;
+    const touch = () => {
+      const now = Date.now();
+      if (saverOnRef.current || now - last > 20_000) {
+        last = now;
+        saverEnd();
+      }
+    };
+    window.addEventListener("pointerdown", touch, true);
+    window.addEventListener("keydown", touch, true);
+    return () => (window.removeEventListener("pointerdown", touch, true), window.removeEventListener("keydown", touch, true));
+  }, []);
   // less movement: the setting, taken from the system the first time
   const reducedMotion = view.state?.reducedMotion;
   useEffect(() => {
@@ -61,6 +83,8 @@ export default function App() {
   const [calibrating, setCalibrating] = useState(DEMO_PANEL === "calibrate");
   const [gamesOpen, setGamesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(DEMO_PANEL === "settings" || DEMO_PANEL === "plugins");
+  // the full key editor, on one key (owner's "2 a", 2026-10-25)
+  const [studio, setStudio] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(DEMO_PANEL === "plugins" ? "plugins" : "general");
   const [pluginsOpen, setPluginsOpen] = useState(DEMO_PANEL === "catalog");
   // "Use it" in the Plugins tab: the deck, with the library open at that plugin's actions
@@ -78,15 +102,30 @@ export default function App() {
   const [forAppOpen, setForAppOpen] = useState(DEMO_PANEL === "forapp");
   // "Edge" under the drawing: this profile's lights (owner's pick 3a, 2026-10-16)
   const [edgeOpen, setEdgeOpen] = useState(false);
+  const [livingOpen, setLivingOpen] = useState(false);
+  // "Screensaver" under the deck, beside the living deck (owner, 2026-10-26)
+  const [saverOpen, setSaverOpen] = useState(false);
+  // "Music" under the deck, beside the screensaver (owner's "3 a", 2026-10-30)
+  const [musicOpen, setMusicOpen] = useState(false);
+  useEffect(() => {
+    const open = () => (setSettingsOpen(false), setLivingOpen(false), setSaverOpen(false), setSelected(null), setMusicOpen(true));
+    window.addEventListener("hubdeck:open-music", open);
+    return () => window.removeEventListener("hubdeck:open-music", open);
+  }, []);
+  useEffect(() => {
+    const open = () => (setSettingsOpen(false), setLivingOpen(false), setSelected(null), setSaverOpen(true));
+    window.addEventListener("hubdeck:open-saver", open);
+    return () => window.removeEventListener("hubdeck:open-saver", open);
+  }, []);
   // a profile just made for an app: the inspector suggests next steps until something is picked
   const [fresh, setFresh] = useState<string | null>(DEMO_PANEL === "fresh" ? "demo-obs" : null);
   const { saved, save } = usePlacements();
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
-  const notify = useCallback((text: string) => {
+  const notify = useCallback((text: string, ms = 2500) => {
     setToast(text);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2500);
+    toastTimer.current = window.setTimeout(() => setToast(null), ms);
   }, []);
   const { dropAction, moveKey, openControl, copy, paste, pasteLook, clear, isSet, canPaste, opensPage } = useEditing(view, selected, notify);
   // a ready-made profile tried and left without Add (Back, or another profile picked) is thrown away
@@ -104,6 +143,8 @@ export default function App() {
   const [ctlMenu, setCtlMenu] = useState<{ c: ControlRef; x: number; y: number } | null>(null);
   // a control picked in the window is to be edited: whatever covers the inspector goes away
   const showInspector = () => {
+    setLivingOpen(false);
+    setSaverOpen(false);
     setProfileOpen(false);
     setSettingsOpen(false);
     setGamesOpen(false);
@@ -141,12 +182,21 @@ export default function App() {
   const [dropping, setDropping] = useState(false);
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
-    const add = (files: string[]) => files.length > 0 && setPluginFiles((now) => [...now, ...files.filter((f) => !now.includes(f))]);
+    // a Stream Deck icon pack (double click, Open with, dropped) goes in at once: pictures only
+    const isPack = (p: string) => /\.streamdeckiconpack$/i.test(p);
+    const addPacks = (files: string[]) => {
+      for (const f of files.filter(isPack)) iconPacks.install(f).then((p) => notify(t("icons.packAdded", { name: p.name }), 6000), (e) => notify(String(e)));
+    };
+    const add = (all: string[]) => {
+      addPacks(all);
+      const files = all.filter((f) => !isPack(f));
+      if (files.length > 0) setPluginFiles((now) => [...now, ...files.filter((f) => !now.includes(f))]);
+    };
     const take = () => api.sdOpened().then(add, () => {});
     take();
     const none = () => () => {};
     const offOpened = listen("engine://plugin-file", take).catch(none);
-    const isPlugin = (p: string) => /\.(streamdeckplugin|zip)$/i.test(p);
+    const isPlugin = (p: string) => /\.(streamdeckplugin|streamdeckiconpack|zip)$/i.test(p);
     // a plugin file dropped on the window, through the window's own drag and drop: the system's
     // (Tauri's dragDropEnabled) stops actions being dragged onto keys on Windows (owner found it,
     // 2026-10-18), so the file's bytes go to the engine, which keeps them in a temp file
@@ -285,6 +335,20 @@ export default function App() {
         <main className="workspace">
           <PluginsTab onClose={() => setPluginsOpen(false)} onInstalled={() => {}} onUse={(id) => (setPluginsOpen(false), setSelected(null), setFocusPlugin({ id, at: Date.now() }))} />
         </main>
+      ) : studio ? (
+        <main className="workspace">
+          <KeyStudio view={view} control={studio} onClose={() => setStudio(null)} />
+        </main>
+      ) : livingOpen && !calibrating && !arranging ? (
+        // the Deck look view over the whole window (owner, 2026-10-28: "edycja może powinna być w dedykowanym oknie")
+        <main className="workspace">
+          <DeckLook
+            view={view}
+            keysModule={live.deck.modules.find((m) => m.kind === "keys")?.id}
+            keysTurn={(placeModules(live.deck.modules, saved).find((p) => p.module.kind === "keys")?.rotation ?? 0) + live.deck.turn}
+            onClose={() => setLivingOpen(false)}
+          />
+        </main>
       ) : settingsOpen && !calibrating ? (
         <main className="workspace">
           <SettingsPanel live={live} view={view} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsOpen(false)} onCalibrate={() => (setCalibrating(true), setSettingsOpen(false))} onTour={() => (setTourOpen(true), setSettingsOpen(false))} onBuild={() => (setBuilderOpen(true), setSettingsOpen(false))} onBrowsePlugins={() => (setPluginsOpen(true), setSettingsOpen(false))} />
@@ -349,6 +413,9 @@ export default function App() {
             onPlace={save}
             arranging={arranging}
             onEdge={() => setEdgeOpen(true)}
+            onLiving={() => (setSelected(null), setSaverOpen(false), setMusicOpen(false), setLivingOpen(true))}
+            onSaver={() => (setSelected(null), setLivingOpen(false), setMusicOpen(false), setSaverOpen(true))}
+            onMusic={() => (setSelected(null), setLivingOpen(false), setSaverOpen(false), setMusicOpen(true))}
             onDeselect={() => setSelected(null)}
             profile={view.profile}
             page={view.state?.page ?? null}
@@ -395,8 +462,12 @@ export default function App() {
           <CalibrationPanel onClose={() => setCalibrating(false)} />
         ) : arranging ? (
           <ArrangePanel onDone={toggleArrange} live={live} saved={saved} onPlace={save} />
+        ) : saverOpen ? (
+          <SaverPanel view={view} onClose={() => setSaverOpen(false)} />
+        ) : musicOpen ? (
+          <MusicPanel onClose={() => setMusicOpen(false)} />
         ) : (
-          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} onOpenPlugins={() => (setPluginsOpen(true), setSettingsOpen(false), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} focusPlugin={focusPlugin} />
+          <Inspector live={live} selected={selected} view={view} fresh={!!fresh && fresh === view.state?.active} onDismissFresh={() => setFresh(null)} onOpenPlugins={() => (setPluginsOpen(true), setSettingsOpen(false), setGamesOpen(false), setGalleryOpen(false), setForAppOpen(false))} focusPlugin={focusPlugin} onOpenStudio={setStudio} />
         )}
       </main>
       )}
@@ -417,6 +488,7 @@ export default function App() {
         </Sheet>
       )}
       {guideOpen && !tourShown && <Guide onClose={() => setGuideOpen(false)} />}
+      {!tourShown && <WhatsNew onboarded={view.state?.onboarded} onOpenLook={() => (setSelected(null), setSaverOpen(false), setMusicOpen(false), setSettingsOpen(false), setLivingOpen(true))} />}
       <ConfirmHost />
       {pluginFiles.length > 0 && <PluginFileSheet key={pluginFiles[0]} path={pluginFiles[0]} onClose={() => setPluginFiles((now) => now.slice(1))} />}
       {dropping && (

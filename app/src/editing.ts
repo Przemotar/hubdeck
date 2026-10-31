@@ -1,3 +1,4 @@
+import { withTemplate } from "./lookTemplates";
 import { useEffect, useRef } from "react";
 import type { ControlRef } from "./deck";
 import { actionName, t } from "./i18n";
@@ -6,9 +7,10 @@ import { actionFits, api, controlId, newBinding, type Binding, type EngineView, 
 const GESTURES: Gesture[] = ["tap", "hold", "double"];
 const HISTORY = 50;
 
-/** What "Paste look" carries: colors, the LED and its effect, the key's style; not the label,
- * icon or picture (issue #10, killa8boll: "Copy Color" / "Paste Color"; owner's pick 1a). */
-const LOOK_FIELDS = ["bg", "fg", "iconColor", "led", "ledLevel", "ledEffect", "ledSpeed", "style"] as const;
+/** What "Paste look" carries: colors, the LED and its effect, the key's style and the icon
+ * editor's background, finish, label effect, frame and badge color; not the label, icon, picture
+ * or badge text (issue #10, killa8boll: "Copy Color" / "Paste Color"; owner's pick 1a). */
+const LOOK_FIELDS = ["bg", "fg", "iconColor", "led", "ledLevel", "ledEffect", "ledSpeed", "style", "bg2", "angle", "gloss", "labelEffect", "ring", "badgeColor", "pattern", "patternOpacity", "motion", "font"] as const;
 
 /** `to` with the look fields of `from` (a field `from` leaves unset is unset on the result too). */
 export function withLook(to: Look, from: Look): Look {
@@ -54,7 +56,10 @@ export function useEditing(view: EngineView, selected: ControlRef | null, notify
     const def = view.catalog?.actions.find((a) => a.id === actionId);
     if (!def || !view.profile) return;
     if (!actionFits(def, c.kind)) return notify(t("edit.notOn", { action: actionName(def), control: t(`on.${c.kind}`) }));
-    api.setBinding(view.profile.id, controlId(c.kind, c.index, page), newBinding(def)).catch((e) => notify(String(e)));
+    const fresh = newBinding(def);
+    // a key starts in the profile's own style, when it has one (the full key editor sets it)
+    if (c.kind === "keys" && view.profile.keyStyle) fresh.look = withTemplate(fresh.look, view.profile.keyStyle);
+    api.setBinding(view.profile.id, controlId(c.kind, c.index, page), fresh).catch((e) => notify(String(e)));
   };
 
   // the key handler reads what is selected and shown at the moment of the key press: a handler

@@ -169,6 +169,17 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
         ("POST", ["assistant", "permission"]) => body_json(body).and_then(|b| super::assistant::api_permission(app, &b).map_err(bad)),
         ("GET", ["assistant", "permission", id]) => id.parse().map(super::assistant::api_permission_answer).map_err(|_| bad("not an id")),
         ("POST", ["assistant", "remember"]) => body_json(body).and_then(|b| super::assistant::api_remember(app, &b).map_err(bad)),
+        // the living deck's reaction as at a press of key 0..15 (apps' events, films, walks)
+        // the key panel's last picture (made while a window is open): what the deck shows
+        ("GET", ["deck", "keys"]) => super::keys_shown().ok_or_else(|| bad("no key picture yet (it is made while a window is open)")),
+        ("POST", ["effects", "press"]) => engine().and_then(|e| {
+            let b = body_json(body)?;
+            let key = b.get("key").and_then(Value::as_u64).filter(|k| *k < 15).ok_or_else(|| bad("key is 0 to 14"))?;
+            // "like": true answers as a Like does (the heart), for films and walks
+            let like = b.get("like").and_then(Value::as_bool) == Some(true);
+            let _ = e.sender().send(super::Msg::CanvasPress(key as usize, like));
+            Ok(json!({"ok": true}))
+        }),
         ("POST", ["preview"]) => engine().and_then(|e| preview(&e, &body_json(body)?)),
         ("POST", ["notify"]) => engine().and_then(|e| notify(&e, &body_json(body)?)),
         ("POST", ["status"]) => engine().and_then(|e| status(&e, &body_json(body)?)),
@@ -379,7 +390,44 @@ pub fn check_binding(id: &str, b: &Binding, pages: &[super::profile::Page], erro
         if look.icon_size.as_deref().is_some_and(|z| z != "small" && z != "large") {
             errors.push(format!("{id}: look.iconSize is small or large"));
         }
-        for (field, value) in [("bg", &look.bg), ("fg", &look.fg), ("iconColor", &look.icon_color), ("led", &look.led)] {
+        if look.angle.is_some_and(|a| a > 359) {
+            errors.push(format!("{id}: look.angle is 0 to 359 degrees"));
+        }
+        if look.gloss.as_deref().is_some_and(|g| g != "glass" && g != "matte") {
+            errors.push(format!("{id}: look.gloss is glass or matte"));
+        }
+        if look.label_effect.as_deref().is_some_and(|e| !matches!(e, "shadow" | "outline" | "plain")) {
+            errors.push(format!("{id}: look.labelEffect is shadow, outline or plain"));
+        }
+        if look.pattern.as_deref().is_some_and(|p| !super::render::PATTERNS.contains(&p)) {
+            errors.push(format!("{id}: look.pattern is one of {:?}", super::render::PATTERNS));
+        }
+        for (field, v) in [("iconDx", look.icon_dx), ("iconDy", look.icon_dy), ("labelDx", look.label_dx), ("labelDy", look.label_dy)] {
+            if !(-36..=36).contains(&v) {
+                errors.push(format!("{id}: look.{field} is -36 to 36 key pixels"));
+            }
+        }
+        if look.font.as_deref().is_some_and(|f| !super::render::has_font(f)) {
+            errors.push(format!("{id}: look.font is not a font on this computer (see the deck fonts)"));
+        }
+        for (n, rule) in look.rules.iter().enumerate() {
+            if let Some(p) = rule.when.problem() {
+                errors.push(format!("{id}: look.rules[{n}]: {p}"));
+            }
+        }
+        if look.motion.as_deref().is_some_and(|m| !super::render::MOTIONS.contains(&m)) {
+            errors.push(format!("{id}: look.motion is one of {:?}", super::render::MOTIONS));
+        }
+        if look.skin.as_deref().is_some_and(|k| !super::render::SKINS.contains(&k)) {
+            errors.push(format!("{id}: look.skin is one of {:?}", super::render::SKINS));
+        }
+        if look.pattern_opacity.is_some_and(|o| !(5..=100).contains(&o)) {
+            errors.push(format!("{id}: look.patternOpacity is 5 to 100"));
+        }
+        if look.badge.as_deref().is_some_and(|b| b.chars().count() > 3) {
+            errors.push(format!("{id}: look.badge is at most 3 characters"));
+        }
+        for (field, value) in [("bg", &look.bg), ("fg", &look.fg), ("iconColor", &look.icon_color), ("led", &look.led), ("bg2", &look.bg2), ("badgeColor", &look.badge_color), ("ring", &look.ring)] {
             if let Some(v) = value.as_deref().filter(|v| !is_hex(v)) {
                 errors.push(format!("{id}: look.{field} {v:?} is not a #rrggbb color"));
             }
@@ -420,6 +468,33 @@ pub fn check_profile(p: &Profile) -> (Vec<String>, Vec<String>) {
     if let Some(effect) = p.edge_effect.as_deref().filter(|e| !super::leds::EFFECTS.iter().any(|(n, _)| n == e)) {
         errors.push(format!("edgeEffect {effect:?} is not a known effect"));
     }
+    if let Some(fx) = &p.effects {
+        use super::canvas::{CANVASES, INHABITANTS, REACTIONS};
+        for (field, value, known) in [("canvas", &fx.canvas, CANVASES), ("reaction", &fx.reaction, REACTIONS), ("inhabitant", &fx.inhabitant, INHABITANTS)] {
+            if let Some(v) = value.as_deref().filter(|v| !known.contains(v)) {
+                errors.push(format!("effects.{field} {v:?} is one of {known:?}"));
+            }
+        }
+        if let Some(v) = fx.tint.as_deref().filter(|v| !is_hex(v)) {
+            errors.push(format!("effects.tint {v:?} is not a #rrggbb color"));
+        }
+        for (i, l) in fx.layers.iter().enumerate() {
+            if !super::canvas::KINDS.contains(&l.kind.as_str()) {
+                errors.push(format!("effects.layers[{i}].kind {:?} is one of {:?}", l.kind, super::canvas::KINDS));
+            }
+            if let Some(v) = l.tint.as_deref().filter(|v| !is_hex(v)) {
+                errors.push(format!("effects.layers[{i}].tint {v:?} is not a #rrggbb color"));
+            }
+            for (name, v) in [("strength", l.strength), ("speed", l.speed), ("density", l.density)] {
+                if v.is_some_and(|v| v > 100) {
+                    errors.push(format!("effects.layers[{i}].{name} is 0 to 100"));
+                }
+            }
+            if l.wind.is_some_and(|w| !(-100..=100).contains(&w)) {
+                errors.push(format!("effects.layers[{i}].wind is -100 to 100"));
+            }
+        }
+    }
     for page in &p.pages {
         if page.id.is_empty() || page.id.contains(['/', ':', '.']) {
             errors.push(format!("page id {:?}: use a short word without / : .", page.id));
@@ -432,7 +507,7 @@ pub fn check_profile(p: &Profile) -> (Vec<String>, Vec<String>) {
 }
 
 /// Fields of a profile an assistant may set besides its controls.
-const PROFILE_FIELDS: [&str; 9] = ["name", "apps", "controls", "pages", "edge", "edgeEffect", "edgeSpeed", "panel", "color"];
+const PROFILE_FIELDS: [&str; 10] = ["name", "apps", "controls", "pages", "edge", "edgeEffect", "edgeSpeed", "panel", "color", "effects"];
 
 /// Overlay `fields` of `body` on `base` (a profile as JSON) and read it back as a profile.
 fn merged(base: Value, body: &Value, fields: &[&str]) -> Result<Profile, (u16, String)> {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { confirmed, open } from "../confirm";
-import type { EngineView } from "../engine";
+import { api, type EngineView } from "../engine";
 import { iconPacks, type PackIcon, type PackInfo } from "../iconpacks";
 import { t, useLanguage } from "../i18n";
 import { Icon } from "./Icon";
@@ -16,7 +16,10 @@ function loadGameIcons() {
   return gameIcons;
 }
 
-type Category = "interface" | "emoji" | "games" | `pack:${string}`;
+type Category = "recent" | "interface" | "emoji" | "games" | `pack:${string}`;
+
+/** Elgato's icon packs (Stream Deck's Marketplace); a pack downloaded there opens in HubDeck. */
+const MARKETPLACE_ICONS = "https://marketplace.elgato.com/stream-deck/icons";
 
 /** Emoji for a key, drawn in the system's color emoji font; looks name them `emoji:<emoji>`. A
  * list, not a typed field (owner's rule, 2026-10-16); the names are for the search. */
@@ -39,6 +42,24 @@ const EMOJI = EMOJI_LIST.filter(([e], i) => EMOJI_LIST.findIndex(([x]) => x === 
 export function IconPicker({ value, onChange, onPicture, view }: { value?: string; onChange: (v?: string) => void; onPicture: (image: string) => void; view: EngineView }) {
   useLanguage();
   const [category, setCategory] = useState<Category>(value?.startsWith("game:") ? "games" : value?.startsWith("emoji:") ? "emoji" : ((demoParam("icons") as Category | null) ?? "interface"));
+  // the icons picked lately (as Stream Deck's and the official app's "Frequently used"): the
+  // first tab, opened first when there are some and the key has no game or emoji icon
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => {
+    api.recentIcons().then(
+      (list) => {
+        const l = Array.isArray(list) ? list : [];
+        setRecent(l);
+        if (l.length && !value?.startsWith("game:") && !value?.startsWith("emoji:") && !demoParam("icons")) setCategory("recent");
+      },
+      () => {},
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const pick = (icon?: string) => {
+    onChange(icon);
+    if (icon) api.recentIconAdd(icon).then((l) => Array.isArray(l) && setRecent(l), () => {});
+  };
   const [query, setQuery] = useState("");
   const [games, setGames] = useState<{ name: string; svg: string }[] | null>(null);
   const [packs, setPacks] = useState<PackInfo[]>([]);
@@ -58,8 +79,13 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
   };
   // game icons are loaded when their tab opens or a search may need them
   useEffect(() => {
-    if ((category === "games" || q) && !games) loadGameIcons().then(setGames);
-  }, [category, q, games]);
+    if ((category === "games" || q || (category === "recent" && recent.some((r) => r.startsWith("game:")))) && !games) loadGameIcons().then(setGames);
+  }, [category, q, games, recent]);
+  // a search looks in every installed pack too: their icons are loaded once a search starts
+  useEffect(() => {
+    if (!q) return;
+    for (const p of packs) if (!packIcons[p.id]) iconPacks.icons(p.id).then((icons) => setPackIcons((all) => ({ ...all, [p.id]: icons })), () => {});
+  }, [q, packs, packIcons]);
   useEffect(() => {
     if (!category.startsWith("pack:")) return;
     const id = category.slice(5);
@@ -76,8 +102,12 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
   const pack = category.startsWith("pack:") ? category.slice(5) : null;
   const shownPack = pack ? (packIcons[pack] ?? []).filter((i) => matches(i.name, i.tags)) : [];
   const shownEmoji = category === "emoji" || q ? EMOJI.filter(([, name]) => matches(name)) : [];
+  // pack icons that match a search, from every pack (at most 60 shown)
+  const foundInPacks = q ? packs.flatMap((p) => (packIcons[p.id] ?? []).filter((i) => matches(i.name, i.tags)).map((i) => ({ pack: p.id, icon: i }))).slice(0, 60) : [];
+  const svgOf = (name: string) => view.icons.find((i) => i.name === name)?.svg ?? games?.find((g) => g.name === name)?.svg;
 
   const tabs: [Category, string][] = [
+    ...(recent.length ? [["recent", t("icons.recent")] as [Category, string]] : []),
     ["interface", t("icons.interface")],
     ["emoji", t("icons.emoji")],
     ["games", t("icons.games")],
@@ -101,7 +131,21 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
           </button>
         </div>
       )}
-      {pack && !q ? (
+      {category === "recent" && !q ? (
+        <div className="icon-grid" role="listbox" aria-label={t("icons.recent")}>
+          {recent.map((name) =>
+            name.startsWith("emoji:") ? (
+              <button key={name} className={`icon-cell emoji${value === name ? " is-active" : ""}`} onClick={() => pick(name)} title={name.slice(6)} aria-label={EMOJI.find(([e]) => e === name.slice(6))?.[1] ?? name.slice(6)}>
+                {name.slice(6)}
+              </button>
+            ) : svgOf(name) ? (
+              <button key={name} className={`icon-cell${name.startsWith("game:") ? " game" : ""}${value === name ? " is-active" : ""}`} onClick={() => pick(name)} title={name.replace(/^game:/, "")} aria-label={name.replace(/^game:/, "")}>
+                <span dangerouslySetInnerHTML={{ __html: svgOf(name)! }} />
+              </button>
+            ) : null,
+          )}
+        </div>
+      ) : pack && !q ? (
         <div className="icon-grid pack" role="listbox" aria-label={t("look.icon")}>
           {shownPack.map((i) => (
             <button
@@ -118,24 +162,36 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
       ) : (
         <div className="icon-grid" role="listbox" aria-label={t("look.icon")}>
           {!q && category === "interface" && (
-            <button className={`icon-cell${!value ? " is-active" : ""}`} onClick={() => onChange(undefined)} aria-label={t("look.noIcon")}>
+            <button className={`icon-cell${!value ? " is-active" : ""}`} onClick={() => pick(undefined)} aria-label={t("look.noIcon")}>
               –
             </button>
           )}
           {(category === "emoji" || q) &&
             shownEmoji.map(([e, name]) => (
-              <button key={e} className={`icon-cell emoji${value === `emoji:${e}` ? " is-active" : ""}`} onClick={() => onChange(`emoji:${e}`)} title={name} aria-label={name}>
+              <button key={e} className={`icon-cell emoji${value === `emoji:${e}` ? " is-active" : ""}`} onClick={() => pick(`emoji:${e}`)} title={name} aria-label={name}>
                 {e}
               </button>
             ))}
           {shownIcons.map((i) => (
-            <button key={i.name} className={`icon-cell${i.name.startsWith("game:") ? " game" : ""}${value === i.name ? " is-active" : ""}`} onClick={() => onChange(i.name)} title={i.name.replace(/^game:/, "")} aria-label={i.name.replace(/^game:/, "")}>
+            <button key={i.name} className={`icon-cell${i.name.startsWith("game:") ? " game" : ""}${value === i.name ? " is-active" : ""}`} onClick={() => pick(i.name)} title={i.name.replace(/^game:/, "")} aria-label={i.name.replace(/^game:/, "")}>
               <span dangerouslySetInnerHTML={{ __html: i.svg }} />
             </button>
           ))}
           {(category === "games" || q) && !games && <span className="help">{t("icons.loading")}</span>}
-          {q && shownIcons.length === 0 && shownEmoji.length === 0 && <span className="help">{t("icons.none")}</span>}
+          {q && shownIcons.length === 0 && shownEmoji.length === 0 && foundInPacks.length === 0 && <span className="help">{t("icons.none")}</span>}
         </div>
+      )}
+      {q && foundInPacks.length > 0 && (
+        <>
+          <span className="label">{t("icons.inPacks")}</span>
+          <div className="icon-grid pack" role="listbox" aria-label={t("icons.inPacks")}>
+            {foundInPacks.map(({ pack: p, icon: i }) => (
+              <button key={`${p}/${i.file}`} className="icon-cell picture" title={i.name} aria-label={i.name} onClick={() => iconPacks.use(p, i.file).then(onPicture, (e) => setError(String(e)))}>
+                <img src={i.uri} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </>
       )}
       {category === "games" && !q && <p className="help">{t("icons.gamesCredit")}</p>}
       {pack && !q && (
@@ -157,6 +213,11 @@ export function IconPicker({ value, onChange, onPicture, view }: { value?: strin
       {category === "interface" && !q && (
         <button className="link-btn align-start" title={t("icons.packHelp")} onClick={() => install(true)}>
           {t("icons.addFolder")}
+        </button>
+      )}
+      {!q && (
+        <button className="link-btn align-start" title={t("icons.moreHelp")} onClick={() => api.openLink(MARKETPLACE_ICONS)}>
+          {t("icons.more")}
         </button>
       )}
       {error && <p className="help">{error}</p>}

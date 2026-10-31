@@ -2,10 +2,9 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type R
 import "../deck.css";
 import { controlKey, type ControlRef, type LiveState, type ModuleInfo, type ModuleKind } from "../deck";
 import { FADER_COLORS, KNOB_COLORS } from "../identify";
-import { api, controlId, useDialFrame, useKeysFrame, useLeds, useLiveLooks, usePreview, useSaverShown, useTicker, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
+import { api, themeTitle, controlId, FX_TINT, fxName, layersOf, WEBKIT_WINDOW, SAVER_SCENES, SAVER_FROM_LOOK, saverPreset, saverOf, useLightSettings, useScreens, useDialFrame, useKeysFrame, useLeds, useLiveLooks, usePreview, useSaverShown, type Binding, type LedsShown, type LedView, type Look, type Profile } from "../engine";
 import { localizeError, t, useLanguage, type Key } from "../i18n";
 import { clampToGrid, detachedKinds, detachedModule, FOOTPRINT, GRID_COLS, GRID_ROWS, keysOfKind, MODULE_KINDS, ownedKey, placeModules, placementKey, rotatedSize, type Placed, type Placement, type Rotation } from "../layout";
-import { saverBody } from "../saver";
 
 /*
  * The live deck, drawn as the hardware seen from above (look variant B, chosen 2026-10-11):
@@ -397,7 +396,7 @@ function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; m
           {/* a new <use> for each frame: WebKit (the macOS window) does not repaint a <use> whose
               image changed its address, the old action stayed on the key until another profile
               and back (issue #9, 2026-10-23) */}
-          <use key={mirror.frame} href={mirror.src} />
+          <use key={WEBKIT_WINDOW ? mirror.frame : undefined} href={mirror.src} />
         </svg>
       </g>
     );
@@ -429,36 +428,14 @@ function KeyFace({ ctx, i, look, mirror }: { ctx: Ctx; i: number; look?: Look; m
   );
 }
 
-/** Off: the screensaver drawn here through <use> grew WebView2 by 45 MB a minute (window stage,
- * 2026-10-16); the keys show the deck's pictures of it until a canvas version measures well. */
-const SAVER_IN_WINDOW = false;
-
-/** The screensaver's panel, 15 frames a second, for the keys to show their windows of it. */
-function SaverPanel({ id, effect, color }: { id: string; effect: string; color: string }) {
-  const t = useTicker(true, 15);
-  return (
-    <defs>
-      <svg id={id} viewBox="0 0 480 272" width="480" height="272">
-        <rect width="480" height="272" fill="#000" />
-        <g dangerouslySetInnerHTML={{ __html: saverBody(effect, t, color) ?? "" }} />
-      </svg>
-    </defs>
-  );
-}
-
 function Keys({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, page, arranging, id } = ctx;
   // what the hardware shows right now, while this profile and page are on the deck
   const frame = useKeysFrame(profile?.id, page, m.id);
-  // the screensaver is drawn here, from the same effects as the deck's; its frames change only
-  // SaverPanel, the keys show it through <use> (a tick that redrew the whole panel of keys took
-  // WebView2 to 850 MB, 2026-10-16)
   const shown = useSaverShown();
-  const saver = SAVER_IN_WINDOW ? shown : null;
   return (
     <>
       <ModuleBody ctx={ctx} w={400} h={300} />
-      {saver && <SaverPanel id={id("ksaver")} effect={saver.effect} color={saver.color} />}
       {/* the panel picture the hardware got, once: each key shows its window of it (fifteen
           copies of each frame made WebKit decode and repaint it fifteen times) */}
       {frame && (
@@ -501,13 +478,10 @@ function Keys({ ctx }: { ctx: Ctx }) {
                   i={i}
                   look={look}
                   mirror={
-                    saver
-                      ? { src: `#${id("ksaver")}`, rect: frame?.rects[i] ?? [(i % 5) * 96, Math.floor(i / 5) * 90.67, 96, 90.67], saver: true }
-                      : // while the deck shows its screensaver, the window shows what the keys do
-                        // (owner's pick 1a, 2026-10-18), not the screensaver's frames
-                        !shown && frame && frame.rects[i]
-                        ? { src: `#${id("kpanel")}`, rect: frame.rects[i], frame: frame.src }
-                        : null
+                    // while the deck shows its screensaver, the window shows what the keys do
+                    // (owner's pick 1a, 2026-10-18), not the screensaver's frames; a preview he
+                    // asked for shows as the deck shows it (2026-10-27)
+                    (!shown || shown.preview) && frame && frame.rects[i] ? { src: `#${id("kpanel")}`, rect: frame.rects[i], frame: frame.src } : null
                   }
                 />
               )}
@@ -938,6 +912,11 @@ interface DeckViewProps extends Props {
   /** The Edge chip under the deck, and the base's rim in the drawing, open the lights' settings
    * (owner's pick 5a; 2026-10-16 he tried to click the rim itself). */
   onEdge?: () => void;
+  /** Opens the living deck's panel (effects across the keys, key styles). */
+  onLiving?: () => void;
+  /** Opens the screensaver's panel. */
+  onSaver?: () => void;
+  onMusic?: () => void;
   /** A click on the drawing away from every control: nothing selected, as in Stream Deck. */
   onDeselect?: () => void;
 }
@@ -1210,7 +1189,7 @@ export function DeckView(props: DeckViewProps) {
           </g>
         </svg>
       </div>
-      {!arranging && <LedStrip live={live} profile={profile} leds={leds} edge={edgeLit} placed={placed} selected={selected} onSelect={onSelect} onEdge={props.onEdge} />}
+      {!arranging && <LedStrip live={live} profile={profile} leds={leds} edge={edgeLit} placed={placed} selected={selected} onSelect={onSelect} onEdge={props.onEdge} onLiving={props.onLiving} onSaver={props.onSaver} onMusic={props.onMusic} />}
       {shelf}
     </div>
   );
@@ -1220,15 +1199,57 @@ export function DeckView(props: DeckViewProps) {
 const SHOW_CONTROL_CHIPS = false;
 
 /** Chips under the deck: the edge light (and, switched off, every knob and fader with its LED and value). */
-function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdge }: { live: LiveState; profile?: Profile | null; leds: LedsShown | null; edge: Lit | null | undefined; placed: Placed[]; selected: ControlRef | null; onSelect: (c: ControlRef) => void; onEdge?: () => void }) {
+function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdge, onLiving, onSaver, onMusic }: { live: LiveState; profile?: Profile | null; leds: LedsShown | null; edge: Lit | null | undefined; placed: Placed[]; selected: ControlRef | null; onSelect: (c: ControlRef) => void; onEdge?: () => void; onLiving?: () => void; onSaver?: () => void; onMusic?: () => void }) {
+  const lights = useLightSettings();
+  const screens = useScreens();
+  const saver = saverOf(profile, screens);
   const EdgeChip = onEdge ? "button" : "span";
+  const shown = layersOf(profile?.effects).filter((l) => l.on !== false);
+  const fxNames = shown.map((l) => fxName(l.kind));
+  const fx = { tint: shown[0]?.tint ?? (shown[0] ? FX_TINT[shown[0].kind] : undefined) };
   const chips: ReactNode[] = [
     <EdgeChip key="edge" data-guide={onEdge ? "edge" : undefined} className={`dk-chip${onEdge ? "" : " is-static"}`} onClick={onEdge} title={onEdge ? t("deck.edgeOpen") : undefined}>
       <i className={edge ? `dk-fx-${edge.effect}` : undefined} style={{ background: edge === null ? "var(--tx3, #6c6b7b)" : edge?.color ?? `conic-gradient(${RAINBOW.join(",")}, ${RAINBOW[0]})` }} />
       {t("deck.edge")}
-      <b>{edge === null ? t("deck.off") : edge && edge.effect !== "hub" ? edge.color.toUpperCase() : t("deck.rainbow")}</b>
+      <b>{edge === null ? t("deck.off") : profile?.effects?.lights && (!profile.effects.lightsTo || profile.effects.lightsTo.includes("edge")) ? t("deck.fromPreset") : edge && edge.effect !== "hub" ? edge.color.toUpperCase() : t("deck.rainbow")}</b>
     </EdgeChip>,
   ];
+  if (onLiving)
+    chips.push(
+      <button key="living" data-guide="living" className="dk-chip" onClick={onLiving} title={t("deck.livingOpen")}>
+        <i style={{ background: fxNames.length ? fx?.tint ?? "#8fd3ff" : "var(--tx3, #6c6b7b)", color: fxNames.length ? fx?.tint ?? "#8fd3ff" : "transparent" }} />
+        {t("effects.title")}
+        {/* a theme by its name, else two layers and how many more: the whole list ran out of the
+            chip (Halloween's seven layers, 2026-10-27) */}
+        <b>{profile?.effects?.theme ? themeTitle(profile.effects.theme) : fxNames.length > 2 ? `${fxNames.slice(0, 2).join(", ")} +${fxNames.length - 2}` : fxNames.length ? fxNames.join(", ") : t("deck.off")}</b>
+      </button>,
+    );
+  if (onSaver) {
+    const tint = SAVER_SCENES.find((s) => s.id === saver.effect)?.color || "#c4b5fd";
+    const preset = saverPreset(saver.effect);
+    const name = !saver.effect ? t("deck.off") : saver.effect === SAVER_FROM_LOOK ? t("saver.fromLook") : preset ? themeTitle(preset) : SAVER_SCENES.some((s) => s.id === saver.effect) ? t(`saver.scene.${saver.effect}` as Key) : t("saver.scene.aurora");
+    chips.push(
+      <button key="saver" data-guide="saver" className="dk-chip" onClick={onSaver} title={t("deck.saverOpen")}>
+        <i style={{ background: saver.effect ? tint : "var(--tx3, #6c6b7b)", color: saver.effect ? tint : "transparent" }} />
+        {t("saver.title")}
+        <b>{saver.effect ? `${name} · ${t("screens.minutes", { count: saver.afterMinutes })}` : name}</b>
+      </button>,
+    );
+  }
+  // lights to the music beside the living deck and the screensaver (owner's "3 a", 2026-10-30): on for
+  // every profile, or this profile's edge alone
+  if (onMusic && lights) {
+    const all = lights.style === "music";
+    const edgeOnly = !all && profile?.edgeEffect === "music";
+    const parts = all ? [t("music.edge"), ...(lights.musicKnobs ? [t("music.knobs")] : []), ...(lights.musicFaders ? [t("music.faders")] : [])] : [];
+    chips.push(
+      <button key="music" data-guide="music" className="dk-chip" onClick={onMusic} title={t("music.open")}>
+        <i style={{ background: all || edgeOnly ? "#c4b5fd" : "var(--tx3, #6c6b7b)", color: all || edgeOnly ? "#c4b5fd" : "transparent" }} />
+        {t("music.chip")}
+        <b>{all ? parts.join(" + ") : edgeOnly ? t("music.thisEdge") : t("deck.off")}</b>
+      </button>,
+    );
+  }
   const chip = (c: ControlRef, led: Lit | null, value?: string) => {
     const color = led?.color;
     const look = profile?.controls[controlId(c.kind, c.index)]?.look;

@@ -15,6 +15,7 @@ mod brightness;
 pub mod builder;
 pub mod call;
 pub mod calls;
+pub mod canvas;
 pub mod check;
 pub mod cli;
 pub mod commands;
@@ -28,6 +29,7 @@ pub mod gallery;
 pub mod game_icons;
 pub mod games;
 mod gestures;
+pub mod gpu;
 pub mod guard;
 pub mod homeassistant;
 pub(crate) mod hotkey;
@@ -59,12 +61,14 @@ pub mod presses;
 pub mod profile;
 pub mod recorder;
 pub mod render;
+pub mod rules;
 mod saver;
 pub mod sdcatalog;
 pub mod sdlocal;
 pub mod sdplugins;
 pub mod secrets;
 mod seek;
+pub mod shaders;
 pub mod share;
 pub mod shortcuts;
 pub mod showcase;
@@ -87,6 +91,14 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+/// What keys' rules read for one drawing: the last sample, the track (title, artist, playing),
+/// whether the mic is muted, the app in front.
+type RulesNow = (Option<monitor::Sample>, Option<(String, String, bool)>, bool, String);
+
+/// The clock of keys' built-in motion (`Look::motion`), and whether it stands still (reduced motion).
+static MOTION_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+static MOTION_STILL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use mh_protocol::report;
@@ -124,8 +136,9 @@ const STATE_POLL: Duration = Duration::from_millis(1000);
 const DIAL_FRAME: Duration = Duration::from_millis(36);
 /// A moving key panel is drawn at most this often (20 a second; the GIFs run at 14-25).
 const KEYS_MOVING_EVERY: Duration = Duration::from_millis(50);
-/// JPEG quality of the key panel while it moves (GIFs, the screensaver); 98 at rest.
-const MOVING_QUALITY: u8 = 80;
+/// The living deck's pictures at most this often: 24 a second, what the key screen shows at most
+/// (counted on film, 2026-10-26; owner: "ja bym powalczył o te 24 fps").
+const CANVAS_EVERY: Duration = Duration::from_micros(41_667);
 /// Mochi's resting frames kept as JPEG: one loop and a little (420 frames, ~6 KB each).
 const PET_FRAMES_KEPT: usize = 480;
 
@@ -158,6 +171,11 @@ pub enum Msg {
     WindowTouched,
     /// A profile or the active one changed: redraw everything.
     ProfilesChanged,
+    /// The living deck reacts as if key `0..15` were pressed (an app's event, a walk, a film).
+    CanvasPress(usize, bool),
+    /// A key's call over the network came back (it runs beside the deck): the key's place, and
+    /// what to show on the deck or why it failed.
+    CallDone(String, Result<Option<String>, String>),
     /// The app in front (exe file name) and its window title.
     Foreground {
         exe: String,
@@ -221,6 +239,10 @@ pub enum Msg {
 static DIAL_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value>>> = std::sync::LazyLock::new(Default::default);
 /// At most this often to the window (the hardware gets every frame).
 const DIAL_MIRROR_EVERY: Duration = Duration::from_millis(125);
+/// The key panel's pictures to the window as often as the living deck draws them (owner,
+/// 2026-10-26: "wolno renderuje to co się dzieje na urządzeniu": at 125 ms the window showed 7.2
+/// of the deck's 22.5 a second).
+const KEYS_MIRROR_EVERY: Duration = Duration::from_millis(40);
 
 /// The window plays GIF keys itself (src/components/DeckView.tsx, the same switch there): smooth,
 /// WebView2 440-600 MB instead of ~320 with the deck's pictures (window stage, 2026-10-16); off
@@ -244,8 +266,81 @@ pub fn saver_end(engine: tauri::State<'_, Engine>) {
     let _ = engine.sender().send(Msg::WindowTouched);
 }
 
+/// Try a look on the deck without saving it (the Deck look view: a preset clicked, an element under
+/// the mouse): the active profile's effects are drawn as `effects` for 30 s, renewed by each call,
+/// with the keys bare (no icons or labels) when `bare`; None goes back to the profile's own.
+#[tauri::command]
+pub fn effects_try(engine: tauri::State<'_, Engine>, effects: Option<profile::Effects>, bare: Option<bool>) -> Result<(), String> {
+    let trying = effects.is_some();
+    {
+        let mut s = engine.lock();
+        s.effects_trial = match effects {
+            Some(fx) => Some((s.active.clone().ok_or("no active profile")?, fx, Instant::now() + Duration::from_secs(30), bare.unwrap_or(false))),
+            None => None,
+        };
+        // a look tried is not a screensaver's preview (owner, 2026-10-30: Deck look showed the
+        // screensaver instead of the preset he clicked)
+        if s.effects_trial.is_some() {
+            s.saver_preview = None;
+        }
+    }
+    if trying {
+        let _ = engine.sender().send(Msg::WindowTouched);
+    }
+    let _ = engine.sender().send(Msg::ProfilesChanged);
+    Ok(())
+}
+
+/// A press on a key of the Deck look view's preview: the living deck answers as at a press of that
+/// key (its reaction plays), nothing else happens.
+#[tauri::command]
+pub fn effects_press(engine: tauri::State<'_, Engine>, key: usize) -> Result<(), String> {
+    if key >= 15 {
+        return Err("key is 0 to 14".into());
+    }
+    let _ = engine.sender().send(Msg::CanvasPress(key, false));
+    Ok(())
+}
+
+/// The user's own looks, saved from the Deck look view ("Moje"): a list kept in `looks.json`.
+#[tauri::command]
+pub fn looks_list(engine: tauri::State<'_, Engine>) -> serde_json::Value {
+    std::fs::read(engine.data_dir().join("looks.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| serde_json::json!([]))
+}
+
+#[tauri::command]
+pub fn looks_save(engine: tauri::State<'_, Engine>, looks: serde_json::Value) -> Result<(), String> {
+    if !looks.is_array() {
+        return Err("looks: a list".into());
+    }
+    let bytes = serde_json::to_vec_pretty(&looks).map_err(|e| e.to_string())?;
+    profile::write_atomic(&engine.data_dir().join("looks.json"), &bytes).map_err(|e| e.to_string())
+}
+
+/// Show a screensaver on the deck now for 20 s (its panel's "Preview on the deck"): the first
+/// touch ends it, as any screensaver.
+#[tauri::command]
+pub fn saver_try(engine: tauri::State<'_, Engine>, effect: String, layers: Option<Vec<profile::Layer>>) -> Result<(), String> {
+    if !saver::known(&effect) {
+        return Err(format!("no screensaver {effect}"));
+    }
+    {
+        let mut s = engine.lock();
+        s.saver_preview_layers = layers.filter(|_| saver::preset(&effect).is_some());
+        s.saver_preview = Some((effect, Instant::now() + Duration::from_secs(20)));
+    }
+    let _ = engine.sender().send(Msg::ProfilesChanged);
+    Ok(())
+}
+
 /// The key panel's last picture, the same way (keys with live values showed only their icon).
 static KEYS_SHOWN: std::sync::LazyLock<std::sync::Mutex<Option<serde_json::Value>>> = std::sync::LazyLock::new(Default::default);
+
+/// The last key panel picture the engine made for the window (`jpeg` in base64, its profile,
+/// page and the key squares): walks and films read what the deck is shown (`GET /api/deck/keys`).
+pub fn keys_shown() -> Option<serde_json::Value> {
+    KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 
 /// The window's pages that take the pictures: (`"keys"` or `"dial"`, its channel). Through
 /// channels, not events: Tauri's events "are not designed for high throughput" (its docs), and as
@@ -430,6 +525,13 @@ pub(crate) struct Shared {
     pub draft_compare: Option<(Vec<String>, usize)>,
     /// A screensaver shown on request for a moment (the tour's finale): its effect and until when.
     pub saver_preview: Option<(String, Instant)>,
+    /// A preset's layers for that preview (`saver::preset`).
+    pub saver_preview_layers: Option<Vec<profile::Layer>>,
+    /// A look tried on the deck from the Deck look view, not saved (a preset clicked, an element
+    /// under the mouse): its profile, its effects and until when (the view renews it while open,
+    /// so a closed window cannot leave it on), and whether the keys go bare meanwhile (the owner,
+    /// 2026-10-28: icons off on the preview and on the deck while the view is open).
+    pub effects_trial: Option<(String, profile::Effects, Instant, bool)>,
     /// The tour is on (`tour.rs`): actions that would go live, record or leave a call only say so.
     pub tour_dry_run: bool,
     /// A control the tour points at on the hardware (`keys.5`, `knobs.2`, `dial`): it blinks (holds
@@ -481,6 +583,31 @@ pub struct DeckStatus {
 impl Shared {
     fn active_profile(&self) -> Option<&Profile> {
         self.active.as_ref().and_then(|id| self.store.profiles.get(id))
+    }
+
+    /// The layers of screensaver `effect`: a scene's, or a preset's (the profile's own look, or the
+    /// layers that came with the preset: a preview's, the profile's own saver's, the shared one's),
+    /// without answering presses.
+    pub fn saver_effects(&self, effect: &str) -> Option<profile::Effects> {
+        if let Some(fx) = saver::scene(effect) {
+            return Some(fx);
+        }
+        let preset = saver::preset(effect)?;
+        if preset.is_empty() {
+            return self.active_profile().and_then(|p| p.effects.as_ref()).filter(|e| e.active()).map(saver::still);
+        }
+        let previewing = self.saver_preview.as_ref().is_some_and(|(e, until)| e == effect && *until > Instant::now());
+        let own = self.active_profile().and_then(|p| p.saver.as_ref()).filter(|o| o.effect == effect).and_then(|o| o.layers.clone());
+        let layers = if previewing { self.saver_preview_layers.clone() } else { own.or_else(|| self.store.settings.saver_layers.clone()) }?;
+        Some(saver::still(&profile::Effects { layers, ..profile::Effects::default() })).filter(|e| e.active())
+    }
+
+    /// The effects the deck shows for `p`: a look being tried on it, else its own.
+    pub fn shown_effects<'a>(&'a self, p: &'a Profile) -> Option<&'a profile::Effects> {
+        match &self.effects_trial {
+            Some((id, fx, until, _)) if *id == p.id && *until > Instant::now() => Some(fx),
+            _ => p.effects.as_ref(),
+        }
     }
 
     pub fn state(&self) -> EngineState {
@@ -605,6 +732,8 @@ impl Engine {
             trying: None,
             draft_compare: None,
             saver_preview: None,
+            saver_preview_layers: None,
+            effects_trial: None,
             tour_dry_run: false,
             highlight: None,
             ringing: Vec::new(),
@@ -648,11 +777,13 @@ impl Engine {
             weather_view: HashMap::new(),
             pet: pet::Pet::load(data_dir),
             pet_frame: Instant::now(),
+            pet_next: None,
             pet_jpegs: HashMap::new(),
             dial_mirror_at: Instant::now(),
             keys_mirror_at: Instant::now(),
             dial_mirror_due: false,
             keys_mirror_due: false,
+            keys_mirror_pixmap: None,
             keys_mirror_slow: false,
             saver_published: None,
             monitor_pick: HashMap::new(),
@@ -673,8 +804,9 @@ impl Engine {
             fleet: agents::Fleet::default(),
             fleet_pulse: Instant::now(),
             saver_on: false,
-            saver_frame: Instant::now(),
             saver_next: 0,
+            saver_dial_shown: String::new(),
+            saver_running: String::new(),
             keys_waiting: false,
             keys_moved: Instant::now(),
             perf: Perf::new(),
@@ -693,6 +825,10 @@ impl Engine {
             last_blank_check: Instant::now(),
             highlight_shown: None,
             press_flash: None,
+            canvas: None,
+            canvas_frame: 0,
+            canvas_page: None,
+            sent_panels: HashMap::new(),
             failed_keys: HashMap::new(),
         };
         std::thread::Builder::new().name("engine".into()).spawn(move || worker.run(rx)).expect("spawn engine thread");
@@ -1186,14 +1322,126 @@ impl PictureSender {
         wake.notify_one();
     }
 
-    fn busy(&self) -> bool {
-        self.busy.load(std::sync::atomic::Ordering::SeqCst)
+    /// A picture waits to go out (the one going out now does not count): the next may be drawn
+    /// while one goes out, never while another waits (a waiting one replaced would never be seen,
+    /// and the keys sent one by one are cut against the picture before).
+    fn waiting(&self) -> bool {
+        self.slot.0.lock().unwrap_or_else(|e| e.into_inner()).is_some()
     }
 }
 
 /// Pictures sent and the time they took, per screen: (count, microseconds), read by `Perf`.
 static PICTURES_SENT: [(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64); 2] =
     [(std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)), (std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0))];
+/// Bytes of the pictures sent, per screen as above: the log names a picture's size, which decides
+/// its send time once the deck's ~2 MB a second is reached (2026-10-30, Tokyo Rain on the Mac).
+static PICTURES_BYTES: [std::sync::atomic::AtomicU64; 2] = [std::sync::atomic::AtomicU64::new(0), std::sync::atomic::AtomicU64::new(0)];
+
+/// Key panel pictures sent since start (the Living deck panel's live rate, `deck_rate`).
+static KEYS_SENT_TOTAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Where the key panel's frames spend their time since the window last asked ([`frame_cost`]):
+/// the frame cost debugger in the Living deck panel (owner, 2026-10-27: "debugger który pokaże
+/// mi ile każdy z efektów/laerów dodane ms na obliczenia i co sklada sie na te \"ciężkie
+/// obliczenia\""; his "ok" to the sketch the same night).
+#[derive(Default)]
+struct FrameCost {
+    frames: u32,
+    /// Each layer's time by kind, in the engine's drawing order (the halo last).
+    layers: Vec<(String, Duration)>,
+    /// Painting the panel: the keys' tiles and the layers' drawing.
+    paint: Duration,
+    /// After painting: finding the keys that changed, their JPEGs, the window's copy.
+    encode: Duration,
+    /// Pictures sent to the deck and the time they took on the USB thread.
+    sent: u32,
+    send: Duration,
+}
+
+static FRAME_COST: Mutex<Option<FrameCost>> = Mutex::new(None);
+
+fn frame_cost_note(layers: Vec<(String, Duration)>, paint: Duration, encode: Duration) {
+    let mut c = FRAME_COST.lock().unwrap_or_else(|e| e.into_inner());
+    let c = c.get_or_insert_with(FrameCost::default);
+    c.frames += 1;
+    c.paint += paint;
+    c.encode += encode;
+    for (kind, d) in layers {
+        match c.layers.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, t)) => *t += d,
+            None => c.layers.push((kind, d)),
+        }
+    }
+}
+
+fn frame_cost_sent(d: Duration) {
+    let mut c = FRAME_COST.lock().unwrap_or_else(|e| e.into_inner());
+    let c = c.get_or_insert_with(FrameCost::default);
+    c.sent += 1;
+    c.send += d;
+}
+
+/// The key panel's frame cost since the last call, in ms a frame: each layer (its step and
+/// drawing, the GPU's upload and read-back), the layers together, the keys' own painting (the
+/// panel's painting less the layers), the JPEGs, and the USB send of one picture (on its own
+/// thread, so it costs the frame rate rather than the engine's time). Zeros when nothing was drawn.
+pub fn frame_cost() -> serde_json::Value {
+    let c = FRAME_COST.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_default();
+    let per = |d: Duration| if c.frames == 0 { 0.0 } else { d.as_secs_f64() * 1000.0 / c.frames as f64 };
+    let layers: Vec<serde_json::Value> = c.layers.iter().map(|(k, d)| serde_json::json!({ "kind": k, "ms": per(*d) })).collect();
+    let layers_ms: f64 = c.layers.iter().map(|(_, d)| per(*d)).sum();
+    let keys_ms = (per(c.paint) - layers_ms).max(0.0);
+    serde_json::json!({
+        "frames": c.frames,
+        "layers": layers,
+        "layersMs": layers_ms,
+        "keysMs": keys_ms,
+        "encodeMs": per(c.encode),
+        "sendMs": if c.sent == 0 { 0.0 } else { c.send.as_secs_f64() * 1000.0 / c.sent as f64 },
+    })
+}
+
+/// The key screen's pictures a second and HubDeck's CPU (% of one core) since the last call
+/// (owner, 2026-10-26: "Da się zrobić żeby mi jakoś framerate pokazywało jaki mi to wszystko
+/// generuje na decku?"). The first call gives zeros; the window asks once a second.
+pub fn deck_rate() -> (f32, Option<f32>) {
+    static LAST: Mutex<Option<(Instant, u64, Option<u64>)>> = Mutex::new(None);
+    let now = Instant::now();
+    let sent = KEYS_SENT_TOTAL.load(std::sync::atomic::Ordering::Relaxed);
+    let cpu = process_cpu_100ns();
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let rate = match *last {
+        Some((at, n, c)) if now > at => {
+            let secs = now.duration_since(at).as_secs_f64();
+            let fps = (sent.saturating_sub(n)) as f64 / secs;
+            let cpu = match (c, cpu) {
+                (Some(a), Some(b)) => Some(((b.saturating_sub(a)) as f64 / 1e7 / secs * 100.0) as f32),
+                _ => None,
+            };
+            (fps as f32, cpu)
+        }
+        _ => (0.0, None),
+    };
+    *last = Some((now, sent, cpu));
+    rate
+}
+
+/// This process's CPU time so far, in 100 ns (Windows); None elsewhere.
+#[cfg(windows)]
+fn process_cpu_100ns() -> Option<u64> {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let (mut a, mut b, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+    // SAFETY: the current process's pseudo handle and four valid out-pointers.
+    unsafe { GetProcessTimes(GetCurrentProcess(), &mut a, &mut b, &mut kernel, &mut user) }.ok()?;
+    let ticks = |f: FILETIME| ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64;
+    Some(ticks(kernel) + ticks(user))
+}
+
+#[cfg(not(windows))]
+fn process_cpu_100ns() -> Option<u64> {
+    None
+}
 
 fn picture_failed() -> &'static Mutex<HashSet<String>> {
     static FAILED: std::sync::OnceLock<Mutex<HashSet<String>>> = std::sync::OnceLock::new();
@@ -1237,6 +1485,12 @@ fn picture_sender(screen: Screen) -> &'static PictureSender {
                     Ok(()) => {
                         let (n, us) = &PICTURES_SENT[i];
                         n.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let bytes: usize = reports.iter().map(|r| if let report::Report::Output(b) = r { b.len() } else { 0 }).sum();
+                        PICTURES_BYTES[i].fetch_add(bytes as u64, std::sync::atomic::Ordering::Relaxed);
+                        if i == 0 {
+                            KEYS_SENT_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            frame_cost_sent(started.elapsed());
+                        }
                         us.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
                     }
                     Err(e) => {
@@ -1265,6 +1519,9 @@ struct Perf {
     since: Instant,
     panel: u32,
     panel_time: Duration,
+    /// Of `panel_time`: painting the panel (the keys' tiles and the living deck's layers); the
+    /// rest is finding what changed and making the JPEGs (session 33, for the CPU budget).
+    paint_time: Duration,
     dial: u32,
     dial_time: Duration,
     leds: u32,
@@ -1273,7 +1530,7 @@ struct Perf {
 
 impl Perf {
     fn new() -> Self {
-        Self { since: Instant::now(), panel: 0, panel_time: Duration::ZERO, dial: 0, dial_time: Duration::ZERO, leds: 0, busy: Duration::ZERO }
+        Self { since: Instant::now(), panel: 0, panel_time: Duration::ZERO, paint_time: Duration::ZERO, dial: 0, dial_time: Duration::ZERO, leds: 0, busy: Duration::ZERO }
     }
 
     fn note(&mut self) {
@@ -1287,16 +1544,20 @@ impl Perf {
             (n.swap(0, std::sync::atomic::Ordering::Relaxed), us.swap(0, std::sync::atomic::Ordering::Relaxed))
         };
         let (keys_sent, keys_us) = sent(0);
+        let keys_kb = PICTURES_BYTES[0].swap(0, std::sync::atomic::Ordering::Relaxed) as f32 / 1024.0 / keys_sent.max(1) as f32;
+        PICTURES_BYTES[1].store(0, std::sync::atomic::Ordering::Relaxed);
         let (dial_sent, dial_us) = sent(1);
         if self.panel + self.dial >= 30 {
             let ms = |d: Duration, n: u32| if n == 0 { 0.0 } else { d.as_secs_f32() * 1000.0 / n as f32 };
             let send_ms = |us: u64, n: u64| if n == 0 { 0.0 } else { us as f32 / 1000.0 / n as f32 };
             log::info!(
-                "deck: keys {:.1}/s sent of {:.1} drawn ({:.1} ms to draw, {:.1} to send), dial {:.1}/s of {:.1} ({:.1} ms, {:.1}), LEDs {:.1}/s, engine busy {:.0} %",
+                "deck: keys {:.1}/s sent of {:.1} drawn ({:.1} ms to draw, of it {:.1} painting; {:.1} to send, {:.0} KB each), dial {:.1}/s of {:.1} ({:.1} ms, {:.1}), LEDs {:.1}/s, engine busy {:.0} %",
                 keys_sent as f32 / secs,
                 self.panel as f32 / secs,
                 ms(self.panel_time, self.panel),
+                ms(self.paint_time, self.panel),
                 send_ms(keys_us, keys_sent),
+                keys_kb,
                 dial_sent as f32 / secs,
                 self.dial as f32 / secs,
                 ms(self.dial_time, self.dial),
@@ -1566,6 +1827,8 @@ struct Worker {
     pet: pet::Pet,
     /// When Mochi was last drawn while resting.
     pet_frame: Instant,
+    /// When Mochi's next resting frame is due (the engine wakes for it); None without Mochi.
+    pet_next: Option<Instant>,
     /// Mochi's resting frames as sent, by the hash of their picture: its rest is a loop
     /// (`pet::LOOP`), so after one round the dial only sends (at most `PET_FRAMES_KEPT`).
     pet_jpegs: HashMap<u64, Vec<u8>>,
@@ -1577,11 +1840,15 @@ struct Worker {
     dial_mirror_due: bool,
     /// A newer key panel picture waits for the window.
     keys_mirror_due: bool,
+    /// That picture before its JPEG: made only when it goes (the deck draws more than the window
+    /// takes), with its profile, page, module and the keys' windows in it.
+    #[allow(clippy::type_complexity)]
+    keys_mirror_pixmap: Option<(resvg::tiny_skia::Pixmap, Option<String>, Option<String>, String, Vec<[f32; 4]>)>,
     /// Only animations move on the keys (GIFs, the screensaver), which the window plays itself:
     /// the key panel goes to it once a second, for what else changes (clocks, values).
     keys_mirror_slow: bool,
     /// The screensaver the window was last told about (effect, color).
-    saver_published: Option<(String, String)>,
+    saver_published: Option<(String, String, bool)>,
     /// The metric a system monitor was turned to, by control.
     monitor_pick: HashMap<String, monitor::Metric>,
     /// The texts of the clocks and timers on screen, so they redraw only when one changes.
@@ -1615,9 +1882,12 @@ struct Worker {
     fleet_pulse: Instant,
     /// The screensaver runs (idle minutes passed; the first touch ends it).
     saver_on: bool,
-    saver_frame: Instant,
     /// The next effect a "Screensaver: Next" key shows.
     saver_next: usize,
+    /// The time the dial's screensaver clock shows.
+    saver_dial_shown: String,
+    /// The screensaver running now (its effect), to notice another one taking its place.
+    saver_running: String,
     /// A moving key panel has a frame not drawn yet (USB was busy or it came too soon).
     keys_waiting: bool,
     keys_moved: Instant,
@@ -1650,17 +1920,31 @@ struct Worker {
     highlight_shown: Option<(String, bool)>,
     /// A key just pressed (index, since when): its frame shows the press arrived.
     press_flash: Option<(usize, Instant)>,
+    /// The living deck's effects of the profile on screen (`canvas.rs`), kept between frames.
+    canvas: Option<canvas::Canvas>,
+    /// Pictures the canvas drew (each one is new, so it always goes out).
+    canvas_frame: u64,
+    /// The profile and page the canvas last drew: a new page of the same profile turns the cards.
+    canvas_page: Option<(String, Option<String>)>,
+    /// The key panel's pixels as the deck has them now, per module: what changed goes out alone.
+    sent_panels: HashMap<String, Vec<u8>>,
     /// Keys whose last press failed, by `profile|control id` without the gesture, and why.
     failed_keys: HashMap<String, String>,
 }
 
 impl Worker {
+    /// How far apart moving key pictures go: the living deck's pace while its canvas runs.
+    fn keys_every(&self) -> Duration {
+        if self.canvas.is_some() { CANVAS_EVERY } else { KEYS_MOVING_EVERY }
+    }
+
     fn lock(&self) -> MutexGuard<'_, Shared> {
         self.shared.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn run(mut self, rx: Receiver<Msg>) {
         volume::init_thread();
+        canvas::warm_up();
         let mut last_dial = Instant::now() - DIAL_FRAME;
         let mut busy_from: Option<Instant> = None;
         loop {
@@ -1672,6 +1956,7 @@ impl Worker {
             if !failed.is_empty() {
                 for id in &failed {
                     self.sent.remove(id);
+                    self.sent_panels.remove(id);
                 }
                 self.redraw_keys();
                 self.dial_dirty = true;
@@ -1685,15 +1970,21 @@ impl Worker {
             // frame every 80 ms, 12.5-14.5 a second (owner's pick, 2026-10-16: GIFs want 15)
             // lights to the music: the next step on time, not at the next tick
             let wait = if self.music_running { wait.min(MUSIC_STEP) } else { wait };
-            // the screensaver's next frame on time too: on the tick it ran at 11 a second (2026-10-19)
-            let wait = if self.saver_on { wait.min((self.saver_frame + Duration::from_millis(saver::FRAME_MS)).saturating_duration_since(now).max(Duration::from_millis(2))) } else { wait };
-            let wait = if self.keys_waiting {
-                let gap = (self.keys_moved + KEYS_MOVING_EVERY).saturating_duration_since(now);
-                let poll = if picture_sender(Screen::Keys).busy() { Duration::from_millis(4) } else { gap };
+            // a frame that waits, or the living deck moving: wake when the next may go (on the
+            // 40 ms tick a 41.7 ms pace ran at 17.5 a second, 2026-10-26)
+            let pacing = self.keys_waiting || self.canvas.as_ref().is_some_and(|c| c.busy());
+            let wait = if pacing {
+                let gap = (self.keys_moved + self.keys_every()).saturating_duration_since(now);
+                let poll = if picture_sender(Screen::Keys).waiting() { Duration::from_millis(4) } else { gap };
                 wait.min(gap.max(poll)).max(Duration::from_millis(2))
             } else {
                 wait
             };
+            // Mochi's next frame on time, not at the next tick
+            let wait = self.pet_next.map_or(wait, |at| wait.min(at.saturating_duration_since(now).max(Duration::from_millis(2))));
+            // a dial picture held back by DIAL_FRAME goes when it may, not at the next wake
+            let dial_frame = if self.arcade.is_some() { Duration::from_millis(33) } else { DIAL_FRAME };
+            let wait = if self.dial_dirty { wait.min(dial_frame.saturating_sub(last_dial.elapsed()).max(Duration::from_millis(2))) } else { wait };
             let first = rx.recv_timeout(wait);
             busy_from = Some(Instant::now());
             let first = match first {
@@ -1713,7 +2004,9 @@ impl Worker {
                         if let Some(a) = self.arcade.as_mut() {
                             a.set_modules(self.deck.snapshot().modules.iter().map(|m| m.kind.to_string()).collect());
                         }
-                        self.sent.clear(); // modules may have been re-attached with blank screens
+                        self.sent.clear();
+                        self.sent_panels.clear(); // modules may have been re-attached with blank screens
+                        self.sent_panels.clear();
                         self.leds_sent.clear();
                         // only modules that came back get their backlight again: each set is a feature
                         // report the keys and dial sometimes never answer on macOS (2026-10-14: a turn of
@@ -1723,6 +2016,35 @@ impl Worker {
                         self.redraw_keys();
                         self.update_leds();
                         self.dial_dirty = true;
+                    }
+                    Msg::CallDone(place, result) => {
+                        let was_failed = self.failed_keys.contains_key(&place);
+                        match result {
+                            Ok(caption) => {
+                                self.failed_keys.remove(&place);
+                                if let Some(caption) = caption {
+                                    self.feedback = Some((Feedback { value: None, caption }, Instant::now()));
+                                }
+                            }
+                            Err(message) => {
+                                log::warn!("{place}: {message}");
+                                if place.rsplit(['/', '|']).next().is_some_and(|c| c.starts_with("keys.")) {
+                                    self.failed_keys.insert(place.clone(), message);
+                                }
+                            }
+                        }
+                        if was_failed != self.failed_keys.contains_key(&place) {
+                            self.redraw_keys();
+                        }
+                    }
+                    Msg::CanvasPress(key, like) => {
+                        if let Some(c) = &mut self.canvas {
+                            c.press(key);
+                            if like {
+                                c.like(key);
+                            }
+                            self.redraw_keys();
+                        }
                     }
                     Msg::WindowTouched => {
                         self.last_deck_input = Instant::now();
@@ -1911,6 +2233,9 @@ impl Worker {
         // a key shows at once that its press arrived (owner's pick 1a, 2026-10-16)
         if let (Some(index), InputEvent::Press(true)) = (control.strip_prefix("keys.").and_then(|i| i.parse::<usize>().ok()), event) {
             self.press_flash = Some((index, Instant::now()));
+            if let Some(c) = &mut self.canvas {
+                c.press(index);
+            }
             self.redraw_keys();
         }
         // what is touched while a draft is tried (for the assistant), and, if the user allowed
@@ -1966,6 +2291,14 @@ impl Worker {
             let s = self.lock();
             control_id(s.page.as_deref(), control)
         };
+        // a Like (Spotify's): the living deck's heart
+        if let (Some(index), InputEvent::Press(true)) = (control.strip_prefix("keys.").and_then(|i| i.parse::<usize>().ok()), event) {
+            let like = self.lock().active_profile().and_then(|p| p.controls.get(&id)).is_some_and(|b| b.action.ends_with(".like"));
+            if like && let Some(c) = &mut self.canvas {
+                c.like(index);
+                self.redraw_keys();
+            }
+        }
         // scripts on the local API hear every control
         let (kind, value) = match event {
             InputEvent::Press(down) => (if down { "down" } else { "up" }, serde_json::Value::Null),
@@ -2151,6 +2484,27 @@ impl Worker {
         // is not part of the key's place)
         let active = self.lock().active.clone().unwrap_or_default();
         let key_place = format!("{active}|{}", id.split(':').next().unwrap_or(id));
+        // a call over the network (an HTTP key, an app's state key) runs beside the deck: a server
+        // that did not answer held every picture until it gave up, up to 5 s (owner, 2026-10-28:
+        // "jak naciskam przycisk kosza … zawiesza mi na chwilę deck"; Windows tries a refused
+        // local port for about 2 s)
+        let state_call = binding.action == states::ACTION && !actions::param_str(&binding.params, "url").trim().is_empty();
+        if matches!(event, InputEvent::Press(true)) && (binding.action == actions::HTTP || state_call) {
+            let (params, tx, place) = (binding.params.clone(), self.app.state::<Engine>().sender(), key_place);
+            std::thread::spawn(move || {
+                let result = if state_call {
+                    states::press(&params)
+                } else {
+                    let p = &params;
+                    exec::http_request(actions::param_str(p, "method"), actions::param_str(p, "url"), actions::param_str(p, "body"), actions::param_str(p, "headers")).map(|(code, text)| {
+                        let short: String = text.trim().chars().take(40).collect();
+                        Some(if short.is_empty() { format!("{code}") } else { format!("{code} {short}") })
+                    })
+                };
+                let _ = tx.send(Msg::CallDone(place, result));
+            });
+            return;
+        }
         let result = self.executor.run(binding, event);
         let was_failed = self.failed_keys.contains_key(&key_place);
         match &result {
@@ -2231,10 +2585,11 @@ impl Worker {
                     self.toggle_pet_dial(id.split(':').next().unwrap_or(id));
                 }
                 if let Some(effect) = out.saver {
-                    let effect = if saver::EFFECTS.contains(&effect.as_str()) {
+                    let effect = if saver::known(&effect) {
                         effect
                     } else {
-                        let next = saver::EFFECTS[self.saver_next % saver::EFFECTS.len()];
+                        let all: Vec<&str> = saver::SCENES.iter().map(|(id, _)| *id).filter(|id| !saver::HIDDEN.contains(id)).collect();
+                        let next = all[self.saver_next % all.len()];
                         self.saver_next += 1;
                         next.to_string()
                     };
@@ -2482,6 +2837,8 @@ impl Worker {
                 None => (s.store.settings.panel, false, s.compare),
             }
         };
+        // what keys' rules and label values read, once for this drawing (the lock is free here)
+        let ruled = self.rules_now();
         for m in snapshot.modules.iter().filter(|m| m.kind == "keys") {
             // a test copy's virtual keys have no module: their picture is drawn for the window only
             let module = self.deck.module(&m.id);
@@ -2538,6 +2895,18 @@ impl Worker {
                             }
                         })
                         .unwrap_or(Look { bg: Some("#000000".into()), ..Look::default() });
+                    // looks by conditions and the values in the label
+                    if !look.rules.is_empty() || look.label.as_deref().is_some_and(|l| l.contains('{')) {
+                        let (sample, track, mic_muted, foreground) = &ruled;
+                        let now = rules::Now {
+                            sample: sample.as_ref(),
+                            track: track.as_ref().map(|(t, a, p)| (t.as_str(), a.as_str(), *p)),
+                            mic_muted: *mic_muted,
+                            foreground,
+                            clock: chrono::Local::now().naive_local(),
+                        };
+                        look = rules::apply(look, &now).0;
+                    }
                     self.current_frame(&mut look);
                     look
                 })
@@ -2550,6 +2919,13 @@ impl Worker {
                         None => Look { bg: Some("#000000".into()), ..Look::default() },
                     })
                     .collect();
+            }
+            // the Deck look view hides the icons for a look at the scene alone
+            let bare = profile.as_ref().is_some_and(|p| self.lock().effects_trial.as_ref().is_some_and(|(id, _, until, bare)| *bare && *id == p.id && *until > Instant::now()));
+            if bare {
+                for look in looks.iter_mut() {
+                    *look = Look::default();
+                }
             }
             // a press just arrived, and the keys whose last press failed
             if let Some((i, _)) = self.press_flash
@@ -2566,18 +2942,13 @@ impl Worker {
                 *look = Look { bg: Some(HIGHLIGHT.into()), fg: Some("#111018".into()), icon_color: None, style: None, image: None, ..look.clone() };
             }
             let game_screen = self.arcade.as_ref().map(|a| a.screen(Instant::now()));
-            // the screensaver: one frame of its effect, in the deck's light color
-            let game_panel = game_screen.as_ref().and_then(|g| g.panel.clone()).or_else(|| {
-                self.saver_on
-                    .then(|| {
-                        let s = self.lock();
-                        let effect = s.saver_preview.as_ref().filter(|(_, until)| *until > Instant::now()).map_or(s.store.settings.saver.as_str(), |(e, _)| e.as_str());
-                        saver::body(effect, saver::clock(), &s.store.settings.lights.color)
-                    })
-                    .flatten()
-            });
+            // the screensaver: the living deck's layers of its scene on black keys
+            let saver_effect = if self.saver_on && game_screen.is_none() { Some(self.saver_pick().0) } else { None };
+            let saver_scene = saver_effect.as_deref().and_then(|e| self.lock().saver_effects(e));
+            let game_panel = game_screen.as_ref().and_then(|g| g.panel.clone());
             let looks = match game_screen {
                 Some(g) => g.keys,
+                None if saver_scene.is_some() => vec![Look { bg: Some("#000000".into()), ..Look::default() }; 15],
                 None => looks,
             };
             // screens off: black keys (the backlight is never set to 0, see apply_screens)
@@ -2585,7 +2956,8 @@ impl Worker {
             let game_panel = game_panel.filter(|_| !self.blanked);
             // a plugin's panel picture wins over the profile's
             let plugin_panel = self.plugin_panel.clone().filter(|_| self.arcade.is_none()).map(|image| profile::PanelContent::Picture { image });
-            let panel_content = plugin_panel.or_else(|| profile.as_ref().filter(|_| self.arcade.is_none()).and_then(|p| p.panel.clone())).filter(|_| !self.blanked).map(|c| match c {
+            let panel_content = if saver_scene.is_some() { None } else { plugin_panel.or_else(|| profile.as_ref().filter(|_| self.arcade.is_none()).and_then(|p| p.panel.clone())) };
+            let panel_content = panel_content.filter(|_| !self.blanked).map(|c| match c {
                 profile::PanelContent::Picture { image } => {
                     let mut look = Look { image: Some(image), ..Look::default() };
                     self.current_frame(&mut look);
@@ -2604,14 +2976,15 @@ impl Worker {
                 self.sent.remove(&m.id);
                 continue;
             }
-            // moving pictures (GIF frames, the screensaver) go lighter: a panel at quality 98 was
-            // ~60 KB and took ~60 ms to send on Windows, so the Fun page ran at 7 pictures a second
-            // (measured 2026-10-14); at rest the keys keep the full quality
-            let moving = self.saver_on || looks.iter().any(|l| l.image.as_deref().is_some_and(|i| i.contains('#')));
-            // the window plays GIFs itself; the screensaver it still takes from here (drawn in the
-            // window it grew WebView2 by 45 MB a minute, 2026-10-16)
-            self.keys_mirror_slow = WINDOW_PLAYS_GIFS && moving && !self.saver_on;
-            let quality = (compare == Some(CompareVariant::C)).then_some(100).or(moving.then_some(MOVING_QUALITY));
+            // moving pictures keep the full quality too (owner, 2026-10-26: "nie możemy pogarszać
+            // jakości"; at 80 the encoder halved the colour and Firefox's icon showed it); speed
+            // comes from drawing less and tighter Huffman tables, never from a worse picture
+            let gifs = looks.iter().any(|l| l.image.as_deref().is_some_and(|i| i.contains('#')));
+            let motion = looks.iter().any(|l| l.t > 0.0);
+            // the window plays GIFs itself; the screensaver and built-in motion it takes from here
+            // (the screensaver drawn in the window grew WebView2 by 45 MB a minute, 2026-10-16)
+            self.keys_mirror_slow = WINDOW_PLAYS_GIFS && gifs && !motion && !self.saver_on;
+            let quality = (compare == Some(CompareVariant::C)).then_some(100);
             // one full-panel image: ~11 ms over USB and all keys change at once
             let mut tiles: Option<Vec<render::Tile>> = None;
             let svg = match (&panel_content, calibrating) {
@@ -2627,8 +3000,60 @@ impl Worker {
                 }
                 // the keys as tiles: a key that did not change is not drawn again
                 (None, false) => {
+                    // with the living deck's effects every key is drawn in its layers, so the
+                    // canvas goes between its background and its content
+                    let trial = profile.as_ref().and_then(|p| self.lock().shown_effects(p).cloned());
+                    let fx = saver_scene.as_ref().or(trial.as_ref()).filter(|e| e.active() && !self.blanked && game_panel.is_none());
+                    if let Some(fx) = fx {
+                        match &mut self.canvas {
+                            // the same layers: their options may have moved (a slider), live
+                            Some(c) if c.is_for(fx) => c.update(fx),
+                            _ => self.canvas = canvas::Canvas::new(fx),
+                        }
+                        // another page of the same profile: the page-turn layer gets the old picture
+                        let here = (profile.as_ref().map(|p| p.id.clone()).unwrap_or_default(), page.clone());
+                        if self.canvas_page.as_ref().is_some_and(|(p, pg)| *p == here.0 && *pg != here.1)
+                            && let Some(c) = &mut self.canvas
+                        {
+                            c.page_turned();
+                        }
+                        // how rarely each key of this page is pressed (the owner's counts): eyes and
+                        // the spider like the keys he never touches
+                        if self.canvas_page.as_ref() != Some(&here) || self.canvas.as_ref().is_some_and(|c| c.fresh()) {
+                            let counts = presses::counts(&here.0);
+                            let mut rare = [1.0f32; 15];
+                            for (i, r) in rare.iter_mut().enumerate() {
+                                let id = control_id(page.as_deref(), &format!("keys.{i}"));
+                                let n = counts.iter().find(|(c, _)| *c == id).map_or(0, |(_, n)| n.count);
+                                *r = 1.0 / (1.0 + n as f32 / 8.0);
+                            }
+                            if let Some(c) = &mut self.canvas {
+                                c.set_rare(rare);
+                            }
+                        }
+                        self.canvas_page = Some(here);
+                    } else {
+                        self.canvas = None;
+                    }
+                    let mut looks = looks;
+                    if self.canvas.is_some() {
+                        for l in &mut looks {
+                            l.t = l.t.max(0.0001);
+                        }
+                    }
                     let t = render::panel_tiles(&looks, rotation, &geometry);
-                    let sig = t.iter().map(|t| t.svg.as_str()).collect::<String>();
+                    let mut sig = t.iter().map(|t| t.svg.as_str()).collect::<String>();
+                    if let Some(c) = &mut self.canvas {
+                        let places: Vec<canvas::KeyPlace> = (0..15)
+                            .map(|i| {
+                                let (x, y, w, h) = geometry.key_rect(i);
+                                canvas::KeyPlace { x, y, w, h }
+                            })
+                            .collect();
+                        c.step(&places, canvas::down_for(rotation));
+                        self.canvas_frame += 1;
+                        sig += &format!("<!--canvas {}-->", self.canvas_frame);
+                    }
                     tiles = Some(t);
                     sig
                 }
@@ -2638,10 +3063,67 @@ impl Worker {
                 continue;
             }
             let drawing = Instant::now();
-            let jpeg = match &tiles {
-                Some(t) => self.renderer.panel_jpeg(t, quality),
-                None => self.renderer.jpeg_with(&svg, quality),
-            };
+            // the keys' tiles: only the keys that changed go out, each cut from the same panel
+            // picture at the square the deck shows a key image in, at the full quality (2026-10-26:
+            // the whole panel at 98 took 55-58 ms to send and 22.7 % of a core)
+            if let Some(t) = &tiles {
+                let painted = self.renderer.panel_pixmap_with(t, self.canvas.as_mut());
+                let paint = drawing.elapsed();
+                self.perf.paint_time += paint;
+                let layer_costs = self.canvas.as_mut().map(|c| c.costs()).unwrap_or_default();
+                match painted {
+                    Ok(pixmap) => {
+                        let keys = self.sent_panels.get(&m.id).and_then(|old| render::changed_keys(old, pixmap.data(), &geometry));
+                        let window = !crate::tray::main_hidden() && self.app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false));
+                        let result = match (keys, &module) {
+                            (Some(keys), Some(module)) if quality.is_none() => {
+                                let mut reports = Vec::new();
+                                for i in &keys {
+                                    match render::key_slot_jpeg(&pixmap, *i) {
+                                        Ok(jpeg) => reports.extend(report::key_image(*i as u8, &jpeg, module.output_len)),
+                                        Err(e) => log::warn!("draw key {i}: {e}"),
+                                    }
+                                }
+                                if !reports.is_empty() {
+                                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), reports);
+                                }
+                                if let Some(old) = self.sent_panels.get_mut(&m.id) {
+                                    render::copy_key_slots(old, pixmap.data(), &keys);
+                                }
+                                // the window's mirror needs the whole picture, only while it is open;
+                                // its JPEG is made when it goes to the window
+                                if window {
+                                    self.mirror_keys_pixmap(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &pixmap, &geometry);
+                                }
+                                Ok(None)
+                            }
+                            _ => render::encode_jpeg(&pixmap, quality.unwrap_or(render::KEY_QUALITY)).map(|jpeg| {
+                                if let Some(module) = &module {
+                                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
+                                }
+                                self.sent_panels.insert(m.id.clone(), pixmap.data().to_vec());
+                                Some(jpeg)
+                            }),
+                        };
+                        self.perf.panel += 1;
+                        self.perf.panel_time += drawing.elapsed();
+                        frame_cost_note(layer_costs, paint, drawing.elapsed().saturating_sub(paint));
+                        match result {
+                            Ok(jpeg) => {
+                                self.sent.insert(m.id.clone(), svg);
+                                if let Some(jpeg) = jpeg {
+                                    self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
+                                }
+                            }
+                            Err(e) => log::warn!("draw keys: {e}"),
+                        }
+                    }
+                    Err(e) => log::warn!("draw keys: {e}"),
+                }
+                continue;
+            }
+            self.sent_panels.remove(&m.id);
+            let jpeg = self.renderer.jpeg_with(&svg, quality);
             self.perf.panel += 1;
             self.perf.panel_time += drawing.elapsed();
             match jpeg {
@@ -2972,6 +3454,21 @@ impl Worker {
                 let look = self.sd_look(id, b, self.plugin_look(id, b.look_for(None)));
                 now.insert(id.clone(), look);
             }
+            // keys whose look follows conditions or shows values (`rules.rs`): as the deck shows them
+            let ruled = p.controls.iter().filter(|(_, b)| !b.look.rules.is_empty() || b.look.label.as_deref().is_some_and(|l| l.contains('{'))).collect::<Vec<_>>();
+            if !ruled.is_empty() {
+                let (sample, track, mic_muted, foreground) = self.rules_now();
+                let at = rules::Now {
+                    sample: sample.as_ref(),
+                    track: track.as_ref().map(|(t, a, p)| (t.as_str(), a.as_str(), *p)),
+                    mic_muted,
+                    foreground: &foreground,
+                    clock: chrono::Local::now().naive_local(),
+                };
+                for (id, b) in ruled {
+                    now.insert(id.clone(), rules::apply(b.look_for(None), &at).0);
+                }
+            }
         }
         let mut sent = LIVE_LOOKS.lock().unwrap_or_else(|e| e.into_inner());
         if sent.0 != id || sent.1 != now {
@@ -3266,13 +3763,31 @@ impl Worker {
         let blank = self.arcade.is_none() && idle::should_blank(self.locked, settings.blank_when_locked, idle, settings.blank_after_minutes);
         // the screensaver: after its idle minutes, unless the screens are off or a game runs
         let preview = self.lock().saver_preview.as_ref().is_some_and(|(_, until)| *until > Instant::now());
-        let saver = !blank
-            && self.arcade.is_none()
-            && (preview || (!settings.saver.is_empty() && self.lock().trying.is_none() && deck_idle >= Duration::from_secs(u64::from(settings.saver_after_minutes.max(1)) * 60)));
+        let (effect, minutes) = self.saver_pick();
+        let saver = !blank && self.arcade.is_none() && (preview || (!effect.is_empty() && self.lock().trying.is_none() && deck_idle >= Duration::from_secs(u64::from(minutes.max(1)) * 60)));
+        // another screensaver while one runs (a preview, his profile's own): the dial and the lights
+        // take its colour, the keys its scene
+        if saver && self.saver_on && effect != self.saver_running {
+            log::info!("screensaver now ({effect})");
+            self.saver_running = effect.clone();
+            self.redraw_keys();
+            self.dial_dirty = true;
+            self.leds_sent.clear();
+            self.update_leds();
+        }
         if saver != self.saver_on {
             self.saver_on = saver;
-            log::info!("screensaver {}", if saver { "on" } else { "off" });
+            self.saver_running = if saver { effect.clone() } else { String::new() };
+            if saver {
+                log::info!("screensaver on ({effect})");
+            } else {
+                log::info!("screensaver off");
+            }
             self.redraw_keys();
+            // the dial and the lights take its look, and give it back
+            self.dial_dirty = true;
+            self.leds_sent.clear();
+            self.update_leds();
         }
         if blank != self.blanked {
             self.blanked = blank;
@@ -3349,13 +3864,7 @@ impl Worker {
             self.redraw_keys();
         }
         let still = self.lock().store.settings.reduced_motion == Some(true);
-        // with reduced motion the screensaver changes once a minute
-        let saver_every = if still { Duration::from_secs(60) } else { Duration::from_millis(saver::FRAME_MS) };
-        if self.saver_on && now.duration_since(self.saver_frame) >= saver_every {
-            // a steady beat: a frame that came late does not push the next ones back (13 a second)
-            self.saver_frame = if now.duration_since(self.saver_frame) < saver_every * 2 { self.saver_frame + saver_every } else { now };
-            self.redraw_keys();
-        }
+        MOTION_STILL.store(still, std::sync::atomic::Ordering::Relaxed);
         if now.duration_since(self.fleet_sweep) >= Duration::from_secs(60) && self.fleet.forget_stale(now) {
             self.redraw_keys();
             self.dial_dirty = true;
@@ -3366,8 +3875,13 @@ impl Worker {
             // nothing that moves (pictures, clocks, timers): no copy of the profile every tick
             let moving = s.active_profile().is_some_and(|p| {
                 p.panel.is_some()
+                    || s.shown_effects(p).is_some_and(|e| e.active())
                     || p.controls.values().any(|b| {
                         b.look.image.is_some()
+                            || !b.look.rules.is_empty()
+                            || b.look.label.as_deref().is_some_and(|l| l.contains('{'))
+                            || b.look.motion.is_some()
+                            || b.look_on.as_ref().is_some_and(|l| l.motion.is_some())
                             || b.action == actions::CLOCK
                             || b.action == actions::TIMER
                             || b.action == actions::POMODORO
@@ -3404,29 +3918,63 @@ impl Worker {
                 keys_due = true;
             }
         }
+        // keys with built-in motion on this page: a new picture at the moving keys' pace
+        if !still
+            && profile.panel.is_none()
+            && (0..15)
+                .any(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.look.motion.is_some() || b.look_on.as_ref().is_some_and(|l| l.motion.is_some())))
+        {
+            keys_due = true;
+        }
         if matches!(profile.panel, Some(profile::PanelContent::Clock)) && self.clock_shown != clock_now() {
             keys_due = true;
         }
-        // moving keys: at most KEYS_MOVING_EVERY apart and never while the last picture is still
-        // going out (2026-10-14: 31.8 drawn a second, 21 sent, a third of the drawing thrown away)
+        // the living deck's canvas: a new picture while it moves (at rest, a ripple that died out,
+        // nothing is drawn); still with reduced motion
+        if !still && profile.panel.is_none() && self.lock().shown_effects(&profile).is_some_and(|e| e.active()) && self.canvas.as_ref().is_none_or(|c| c.busy()) {
+            keys_due = true;
+        }
+        // the screensaver's scene moves as the living deck does, the dial's clock with the minute
+        if self.saver_on && self.arcade.is_none() {
+            let effect = self.saver_pick().0;
+            if !still && self.lock().saver_effects(&effect).is_some() && self.canvas.as_ref().is_none_or(|c| c.busy()) {
+                keys_due = true;
+            }
+            if self.saver_dial().0 == "clock" && self.saver_dial_shown != clock_now() {
+                self.dial_dirty = true;
+            }
+        }
+        // moving keys: at most KEYS_MOVING_EVERY apart (the living deck's CANVAS_EVERY), the next
+        // drawn while the last goes out but never while another waits (2026-10-14: 31.8 drawn a
+        // second, 21 sent, a third of the drawing thrown away; 2026-10-26: drawing only after the
+        // send held a 38 ms send and a 6.5 ms drawing to 16.5 a second)
         if keys_due || self.keys_waiting {
-            if picture_sender(Screen::Keys).busy() || now.duration_since(self.keys_moved) < KEYS_MOVING_EVERY {
+            if picture_sender(Screen::Keys).waiting() || now.duration_since(self.keys_moved) < self.keys_every() {
                 keys_due = false;
                 self.keys_waiting = true;
             } else {
                 keys_due = true;
                 self.keys_waiting = false;
-                self.keys_moved = now;
+                // on the pace's own beat, not from the moment this woke: a few ms late each time
+                // added up to 20.6-21.5 a second against the living deck's 24 (2026-10-30 on the
+                // Mac); after a longer stop (a still deck, a slow send) the beat starts again here
+                let beat = self.keys_moved + self.keys_every();
+                self.keys_moved = if now < beat + self.keys_every() { beat } else { now };
             }
         }
         // Mochi: a dial frame every tick, ~25 a second (owner, 2026-10-14: 12 was too few, without
         // doubling the CPU): the moments are drawn live, the resting loop once (`pet_jpegs`)
         if profile.controls.get("dial").is_some_and(|b| b.action == pet::ACTION) {
             let moving = self.pet.moment.is_some_and(|(_, at)| now.duration_since(at) < Duration::from_millis(2400));
-            if moving || now.duration_since(self.pet_frame) >= Duration::from_millis(30) {
+            // resting: each step of the loop's grid once, woken for it (on the 40 ms tick a few ms
+            // late each time held it to 23.4 a second, 2026-10-30)
+            if moving || now >= pet::next_step(self.pet_frame) {
                 self.pet_frame = now;
                 dial_due = true;
             }
+            self.pet_next = Some(pet::next_step(self.pet_frame));
+        } else {
+            self.pet_next = None;
         }
         // clocks and timers on keys and the dial: redraw when a shown text changes; looked at four
         // times a second (their texts change once a second), not on every engine tick
@@ -3449,8 +3997,23 @@ impl Worker {
         let mut sig = String::new();
         let mut dial_live = false;
         let mut finished: Vec<(String, String)> = Vec::new();
+        let ruled = self.rules_now();
         for (i, control) in (0..15).map(|i| (Some(i), control_id(page.as_deref(), &format!("keys.{i}")))).chain(std::iter::once((None, "dial".to_string()))) {
             let Some(b) = profile.controls.get(&control) else { continue };
+            if i.is_some() && (!b.look.rules.is_empty() || b.look.label.as_deref().is_some_and(|l| l.contains('{'))) {
+                let (sample, track, mic_muted, foreground) = &ruled;
+                let at = rules::Now {
+                    sample: sample.as_ref(),
+                    track: track.as_ref().map(|(t, a, p)| (t.as_str(), a.as_str(), *p)),
+                    mic_muted: *mic_muted,
+                    foreground,
+                    clock: chrono::Local::now().naive_local(),
+                };
+                sig.push_str(&control);
+                sig.push('~');
+                sig.push_str(&rules::apply(b.look.clone(), &at).1);
+                sig.push(';');
+            }
             if let Some(face) = self.live_face(&control, b, now) {
                 sig.push_str(&control);
                 sig.push('=');
@@ -3557,8 +4120,21 @@ impl Worker {
         self.publish_ringing(Instant::now());
     }
 
-    /// The image reference to draw for a look: an animated GIF's current frame (`name#3`).
+    /// What a key's rules and the values in its label read now (`rules.rs`).
+    fn rules_now(&self) -> RulesNow {
+        let foreground = self.lock().foreground.clone();
+        (self.samples.back().copied(), self.now_playing.clone(), self.states.get("mic").copied().unwrap_or(false), foreground)
+    }
+
+    /// The image reference to draw for a look: an animated GIF's current frame (`name#3`); a look
+    /// with built-in motion gets the time it is drawn at.
     fn current_frame(&self, look: &mut Look) {
+        if look.motion.is_some() && !MOTION_STILL.load(std::sync::atomic::Ordering::Relaxed) {
+            // in steps of 1/16 s: every motion's cycle is a whole number of steps, so its pictures
+            // repeat and come from the tile cache instead of being drawn again
+            let steps = (MOTION_START.get_or_init(Instant::now).elapsed().as_secs_f32() * 16.0).floor() % 57600.0;
+            look.t = steps / 16.0 + 0.001;
+        }
         if let Some(name) = look.image.clone()
             && let Some((frame, _)) = self.frames.get(&name)
         {
@@ -3599,6 +4175,12 @@ impl Worker {
         };
         let game = self.arcade.as_ref().map(|a| a.screen(Instant::now()));
         let blanked = self.blanked;
+        // the screensaver's lights: breathing in its colour, or dark
+        let saver_lights = self.saver_on.then(|| self.saver_dial()).and_then(|(_, lights, color)| match lights.as_str() {
+            "scene" => Some(leds::Led::new(leds::scale(leds::parse_hex(&color).unwrap_or([255, 255, 255]), f32::from(light_cfg.brightness.min(100)) / 100.0), LedMode::Breathing)),
+            "off" => Some(leds::Led::solid([0, 0, 0])),
+            _ => None,
+        });
         let mut shown = Vec::new();
         let mut out = Vec::new();
         let mut rainbow_now = false;
@@ -3616,6 +4198,7 @@ impl Worker {
             };
             let wanted: Option<leds::Lights> = match (m.kind, &game) {
                 (_, _) if blanked => Some(leds::Lights::solid(vec![[0, 0, 0]; count])),
+                (_, None) if saver_lights.is_some() => Some(leds::Lights { leds: vec![saver_lights.expect("checked"); count], speed: None }),
                 ("knobs", Some(g)) => g.knob_leds.clone().map(leds::Lights::solid),
                 ("faders", Some(g)) => g.fader_leds.clone().map(leds::Lights::solid),
                 (kind, None) if self.lighting.contains_key(kind) => self.lighting.get(kind).map(|o| o.lights(count)),
@@ -3968,7 +4551,17 @@ impl Worker {
         use base64::Engine as _;
         let rects: Vec<[f32; 4]> = (0..15).map(|i| geometry.key_rect(i)).map(|(x, y, w, h)| [x, y, w, h]).collect();
         let frame = serde_json::json!({"profile": profile, "page": page, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg), "rects": rects});
+        self.keys_mirror_pixmap = None;
         *KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+        self.keys_mirror_due = true;
+        self.send_mirrors();
+    }
+
+    /// The key panel's picture to the window like [`Self::mirror_keys`], its JPEG made only when
+    /// it goes ([`Self::send_mirrors`]).
+    fn mirror_keys_pixmap(&mut self, profile: Option<&str>, page: Option<&str>, module: &str, pixmap: &resvg::tiny_skia::Pixmap, geometry: &render::PanelGeometry) {
+        let rects: Vec<[f32; 4]> = (0..15).map(|i| geometry.key_rect(i)).map(|(x, y, w, h)| [x, y, w, h]).collect();
+        self.keys_mirror_pixmap = Some((pixmap.clone(), profile.map(str::to_string), page.map(str::to_string), module.to_string(), rects));
         self.keys_mirror_due = true;
         self.send_mirrors();
     }
@@ -3977,15 +4570,42 @@ impl Worker {
     /// [`DIAL_MIRROR_EVERY`]. A frame that comes sooner waits and goes on the engine's next turn:
     /// dropping it left the window on the screensaver's last frame once the keys stood still
     /// (owner, 2026-10-15).
+    /// The screensaver now: a preview's, the active profile's own (owner's "1a", 2026-10-26) or
+    /// the one all profiles share, and after how many idle minutes; an empty effect = none.
+    fn saver_pick(&self) -> (String, u32) {
+        let s = self.lock();
+        if let Some((effect, _)) = s.saver_preview.as_ref().filter(|(_, until)| *until > Instant::now()) {
+            return (saver::current(effect), s.store.settings.saver_after_minutes);
+        }
+        // a saved one that was taken out runs as the scene that replaced it
+        let shared = (Some(saver::current(&s.store.settings.saver)).filter(|e| saver::known(e)).unwrap_or_default(), s.store.settings.saver_after_minutes);
+        match s.active_profile().and_then(|p| p.saver.as_ref()) {
+            Some(own) => (Some(saver::current(&own.effect)).filter(|e| saver::known(e)).unwrap_or_default(), own.after_minutes.unwrap_or(shared.1)),
+            None => shared,
+        }
+    }
+
+    /// What the dial and the lights do while the screensaver runs (`clock`/`same`/`off`,
+    /// `scene`/`same`/`off`), and its colour for them.
+    fn saver_dial(&self) -> (String, String, String) {
+        let effect = self.saver_pick().0;
+        let s = self.lock();
+        let color = saver::color(&effect).map_or_else(|| s.store.settings.lights.color.clone(), str::to_string);
+        (s.store.settings.saver_dial.clone().unwrap_or_else(|| "clock".into()), s.store.settings.saver_lights.clone().unwrap_or_else(|| "scene".into()), color)
+    }
+
     /// Tells the window when the screensaver starts, changes or ends, so it draws it itself.
     fn publish_saver(&mut self) {
+        // a preview (its panel, a key) shows in the window too; one that started by itself does not
+        // (owner's pick 1a, 2026-10-18; 2026-10-27: "Jak klikam screensavet to chciałym mieć podląd
+        // screensavera też w apce")
         let shown = (self.saver_on && !self.blanked).then(|| {
-            let s = self.lock();
-            let effect = s.saver_preview.as_ref().filter(|(_, until)| *until > Instant::now()).map_or(s.store.settings.saver.clone(), |(e, _)| e.clone());
-            (effect, s.store.settings.lights.color.clone())
+            let effect = self.saver_pick().0;
+            let preview = self.lock().saver_preview.as_ref().is_some_and(|(_, until)| *until > Instant::now());
+            (effect, self.lock().store.settings.lights.color.clone(), preview)
         });
         if shown != self.saver_published {
-            let value = shown.as_ref().map(|(effect, color)| serde_json::json!({"effect": effect, "color": color}));
+            let value = shown.as_ref().map(|(effect, color, preview)| serde_json::json!({"effect": effect, "color": color, "preview": preview}));
             *SAVER_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
             let _ = self.app.emit("engine://saver", value);
             self.saver_published = shown;
@@ -4005,10 +4625,20 @@ impl Worker {
                 send_mirror("dial", &frame);
             }
         }
-        let keys_every = if self.keys_mirror_slow { KEYS_MIRROR_SLOW } else { DIAL_MIRROR_EVERY };
+        let keys_every = if self.keys_mirror_slow { KEYS_MIRROR_SLOW } else { KEYS_MIRROR_EVERY };
         if self.keys_mirror_due && self.keys_mirror_at.elapsed() >= keys_every {
             self.keys_mirror_due = false;
             self.keys_mirror_at = Instant::now();
+            if let Some((pixmap, profile, page, module, rects)) = self.keys_mirror_pixmap.take() {
+                use base64::Engine as _;
+                match render::encode_jpeg(&pixmap, render::KEY_QUALITY) {
+                    Ok(jpeg) => {
+                        let frame = serde_json::json!({"profile": profile, "page": page, "module": module, "jpeg": base64::engine::general_purpose::STANDARD.encode(jpeg), "rects": rects});
+                        *KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()) = Some(frame);
+                    }
+                    Err(e) => log::warn!("keys to the window: {e}"),
+                }
+            }
             if open && let Some(frame) = KEYS_SHOWN.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                 send_mirror("keys", &frame);
             }
@@ -4159,6 +4789,16 @@ impl Worker {
                 None => svg,
             };
             // screens off: the dial shows black (its backlight is never set to 0, see apply_screens)
+            // the screensaver: a clock in its colour on black, or the dial dark
+            let svg = match self.saver_on.then(|| self.saver_dial()) {
+                Some((dial, _, color)) if dial == "clock" => {
+                    self.saver_dial_shown = clock_now();
+                    let date = chrono::Local::now().format("%d.%m").to_string();
+                    render::time_dial_svg(&Look { bg: Some("#000000".into()), fg: Some(color), ..Look::default() }, &self.saver_dial_shown, Some(&date), None, rotation)
+                }
+                Some((dial, _, _)) if dial == "off" => render::dial_body_svg(r##"<rect width="240" height="240" fill="#000"/>"##, 0),
+                _ => svg,
+            };
             let svg = if self.blanked { render::dial_body_svg(r##"<rect width="240" height="240" fill="#000"/>"##, 0) } else { svg };
             if self.sent.get(&m.id) == Some(&svg) {
                 continue;

@@ -457,19 +457,26 @@ pub async fn sd_catalog_install(app: tauri::AppHandle, id: String) -> Result<Str
 fn check_one(entry: &Entry, scratch: &std::path::Path) -> Result<String, String> {
     let bytes = file_url(entry).and_then(|url| super::share::download_big(&url, MAX_PLUGIN))?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
-    let id = super::sdplugins::install(&bytes, scratch)?;
+    // install refuses a plugin made for other systems only from its manifest, before `runs_here`
+    let id = super::sdplugins::install(&bytes, scratch).map_err(|e| if e.starts_with("this plugin is made for") { format!("{OTHER_SYSTEM}{e}") } else { e })?;
     let dir = scratch.join(format!("{id}.sdPlugin"));
     let v: Value = std::fs::read(dir.join("manifest.json")).ok().and_then(|b| serde_json::from_slice(super::sdplugins::without_bom(&b)).ok()).ok_or("no manifest")?;
     let sd = super::sdplugins::read(&v, &dir)?;
-    super::sdplugins::runs_here(&sd)?;
+    super::sdplugins::runs_here(&sd).map_err(|e| format!("{OTHER_SYSTEM}{e}"))?;
     // Windows starts `name` as `name.exe` (Audio Mixer, Color Picker, 2026-10-23)
     let program = |rel: &str| super::sdplugins::inside(&dir, rel).filter(|p| p.is_file());
     program(&sd.code_path).or_else(|| program(&format!("{}.exe", sd.code_path)).filter(|_| cfg!(windows))).ok_or_else(|| format!("its program {} is not in the file", sd.code_path))?;
     Ok(format!("{} KB, {}{}", bytes.len() / 1024, sd.code_path, if sd.node { " (Node.js)" } else { "" }))
 }
 
+/// Marks `check_one`'s error for a plugin made for another system: Install refuses it with that
+/// reason, as it should, so the check lists it apart and does not fail on it (2026-10-30 on the
+/// Mac: six Windows-only plugins of the top 20 failed the gate).
+const OTHER_SYSTEM: &str = "other system: ";
+
 /// `hubdeck --catalog-check [N]`: the N most popular catalog plugins (Elgato's order, then stars)
-/// checked as above, a few at a time; a line each and the exit code 1 when one fails. The release
+/// checked as above, a few at a time; a line each and the exit code 1 when one fails (a plugin made
+/// for another system only is listed as such, not counted as failed). The release
 /// gate's stage "catalog" on both systems (owner's pick 1a, 2026-10-23: on the Mac VTube Studio
 /// would not install, the catalog had been tried on Windows only; it runs beside the soak, as he
 /// wants no longer gates).
@@ -487,6 +494,7 @@ pub fn check(n: usize) -> i32 {
     let _ = std::fs::remove_dir_all(&scratch);
     let next = std::sync::atomic::AtomicUsize::new(0);
     let failed = std::sync::atomic::AtomicUsize::new(0);
+    let elsewhere = std::sync::atomic::AtomicUsize::new(0);
     std::thread::scope(|s| {
         for _ in 0..4 {
             s.spawn(|| {
@@ -495,6 +503,10 @@ pub fn check(n: usize) -> i32 {
                     let Some(entry) = list.get(i) else { break };
                     match check_one(entry, &scratch.join(i.to_string())) {
                         Ok(what) => println!("ok   {} ({}): {what}", entry.name, entry.id),
+                        Err(e) if e.starts_with(OTHER_SYSTEM) => {
+                            elsewhere.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            println!("not here {} ({}): {}", entry.name, entry.id, &e[OTHER_SYSTEM.len()..]);
+                        }
                         Err(e) => {
                             failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             println!("FAIL {} ({}): {e}", entry.name, entry.id);
@@ -505,8 +517,9 @@ pub fn check(n: usize) -> i32 {
         }
     });
     let _ = std::fs::remove_dir_all(&scratch);
-    let failed = failed.into_inner();
-    println!("catalog: {} of {} install and run here", list.len() - failed, list.len());
+    let (failed, elsewhere) = (failed.into_inner(), elsewhere.into_inner());
+    let mine = list.len() - elsewhere;
+    println!("catalog: {} of {mine} install and run here ({elsewhere} more made for another system only)", mine - failed);
     i32::from(failed > 0)
 }
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ModuleKind } from "./deck";
-import { actionName } from "./i18n";
+import { actionName, t, type Key } from "./i18n";
 
 /** Mirrors src-tauri/src/engine/profile.rs. */
 export interface Look {
@@ -35,6 +35,50 @@ export interface Look {
   labelSize?: number;
   /** A key icon's size; absent = as the label leaves room for. */
   iconSize?: "small" | "large";
+  /** A gradient key's second color; absent = shades of `bg`. */
+  bg2?: string;
+  /** A gradient's direction in degrees as in CSS (0 toward the top); absent = 180. */
+  angle?: number;
+  /** A finish over a key's background. */
+  gloss?: "glass" | "matte";
+  /** A key label's effect; absent = plain, with a dark edge only over an icon. */
+  labelEffect?: "shadow" | "outline" | "plain";
+  /** A badge at a key's top right, up to 3 characters. */
+  badge?: string;
+  /** The badge's color; absent = red. */
+  badgeColor?: string;
+  /** A frame inside a key's edge in this color. */
+  ring?: string;
+  /** A pattern over a key's background in the label's color. */
+  pattern?: "stripes" | "dots" | "grid" | "noise" | "waves" | "hex";
+  /** How strongly the pattern shows, 5..100 (%); absent = 18. */
+  patternOpacity?: number;
+  /** Built-in motion of a key; in the look while on it moves only then. */
+  motion?: "slide" | "pulse" | "shine" | "glow" | "sweep" | "sparkle" | "flow" | "film" | "glitch" | "flicker" | "sparks";
+  /** The label's own font, a family on this computer; absent = the deck's font. */
+  font?: string;
+  /** A whole style for the key (one of `SKINS`): background, texture, light, icon and label together. */
+  skin?: Skin;
+  /** The icon and the label moved by hand in the full editor, key pixels (-36..36). */
+  iconDx?: number;
+  iconDy?: number;
+  labelDx?: number;
+  labelDy?: number;
+  /** Looks by conditions, in order: while one holds, its look's fields win (`rules.rs`). */
+  rules?: LookRule[];
+}
+
+/** What a look rule waits for (`rules.rs` `Condition`). */
+export type RuleCondition =
+  | { kind: "metric"; metric: string; above: number }
+  | { kind: "playing" }
+  | { kind: "micMuted" }
+  | { kind: "appFront"; app: string }
+  | { kind: "time"; from: string; to: string };
+
+export interface LookRule {
+  when: RuleCondition;
+  look: Look;
 }
 
 /** One picture or a clock across all 15 keys. */
@@ -99,6 +143,8 @@ export interface Moved {
 export type Imported = Profile & { moved: Moved[]; runs?: string[] };
 
 export interface Profile {
+  /** The style new keys of this profile start in (a template's look), set in the full key editor. */
+  keyStyle?: Look;
   version: number;
   id: string;
   name: string;
@@ -118,7 +164,547 @@ export interface Profile {
   color?: string;
   /** Shown as a tab in the top bar; absent = shown when the profile has no apps. */
   inBar?: boolean;
+  /** The living deck's effects on this profile's keys (`canvas.rs`). */
+  effects?: DeckEffects;
+  /** The profile's own screensaver; absent = the one all profiles share (`saver.rs`). A preset
+   * ("preset:<id>") carries its layers, as the engine does not know the presets. */
+  saver?: { effect: string; afterMinutes?: number; layers?: FxLayer[] };
 }
+
+/** A profile's living-deck effects; mirrors `Effects` in src-tauri/src/engine/profile.rs. */
+export interface DeckEffects {
+  /** Across the key screen (one of `CANVAS_EFFECTS`). */
+  canvas?: string;
+  /** What a press does (one of `PRESS_EFFECTS`). */
+  reaction?: string;
+  /** What lives on the deck now and then (one of `INHABITANTS`). */
+  inhabitant?: string;
+  /** The effects' colour, `#rrggbb`; absent = each effect's own. */
+  tint?: string;
+  /** How strong, 0..100; absent = 60. */
+  strength?: number;
+  /** The layers in drawing order, each with its own options; when present the fields above are not used. */
+  layers?: FxLayer[];
+  /** The preset's colours on the lights (the edge, then the knobs and faders) while "Lights in the
+   * preset's colours" is on; absent = off. The lights' style and the edge's effect stay the user's. */
+  lights?: string[];
+  /** Which lights take them: "edge", "controls" (knobs and faders); absent = both. A knob or fader with its
+   * own colour keeps it (the more particular setting wins). */
+  lightsTo?: ("edge" | "controls")[];
+  /** The theme the layers came from (shown as picked). */
+  theme?: string;
+}
+
+/** One layer of the living deck (`profile.rs` `Layer`). Options absent = the layer's own default. */
+export interface FxLayer {
+  kind: FxKind;
+  /** Shown; absent = yes. */
+  on?: boolean;
+  /** Its colour, `#rrggbb`. */
+  tint?: string;
+  /** 0..100; absent = 60. */
+  strength?: number;
+  /** 0..100, 50 = its own pace. */
+  speed?: number;
+  /** 0..100, 50 = its own amount. */
+  density?: number;
+  /** -100..100: sideways (negative to the left). */
+  wind?: number;
+  /** It answers presses (koi gather, snow shakes off); absent = yes. */
+  react?: boolean;
+  /** It wanders (the lamp); absent = it stays at its angle. */
+  moving?: boolean;
+  /** The side it keeps to (jack-o'-lanterns, cobwebs); absent = right. */
+  side?: "left" | "right";
+}
+
+/** The scenes with an upright copy, `<kind>-up` (`canvas::UPRIGHT`): composed for the deck standing
+ * upright as well as lying (owner, 2026-10-29: copies, the originals kept). */
+export const UPRIGHT = ["goldlight", "mist", "mushrooms", "leaves", "woodland", "fuji", "sakura", "koi", "matrix", "synthwave", "circuit", "nebula", "spectrum"] as const;
+/** Mirrors `canvas::KINDS`. */
+export type FxKind = BaseKind | `${(typeof UPRIGHT)[number]}-up`;
+/** The kind a layer behaves as: an upright copy as its original. */
+export const baseKind = (kind: FxKind): BaseKind => (kind.endsWith("-up") && (UPRIGHT as readonly string[]).includes(kind.slice(0, -3)) ? (kind.slice(0, -3) as BaseKind) : (kind as BaseKind));
+/** A table of the kinds with the upright copies given their original's entry. */
+export const withUpright = <T,>(table: Record<BaseKind, T>): Record<FxKind, T> =>
+  ({ ...table, ...Object.fromEntries(UPRIGHT.map((k) => [`${k}-up`, table[k]])) }) as Record<FxKind, T>;
+type BaseKind =
+  | "fog"
+  | "rain"
+  | "snow"
+  | "fireflies"
+  | "embers"
+  | "ripple"
+  | "burst"
+  | "bats"
+  | "water"
+  | "light"
+  | "scene"
+  | "finish"
+  | "fire"
+  | "aurora"
+  | "aquarium"
+  | "cover"
+  | "lava"
+  | "glass"
+  | "frames"
+  | "liquid"
+  | "frost"
+  | "springs"
+  | "heart"
+  | "flip"
+  | "hop"
+  | "holo"
+  | "relief"
+  | "gold"
+  | "chrome"
+  | "crystal"
+  | "mist"
+  | "neonrain"
+  | "caustics"
+  | "pumpkins"
+  | "eyes"
+  | "ghost"
+  | "spider"
+  | "webs"
+  | "batburst"
+  | "ghostrise"
+  | "domino"
+  | "chain"
+  | "firework"
+  | "shockwave"
+  | "magnet"
+  | "bloom"
+  | "haunt"
+  | "candle"
+  | "carved"
+  | "stone"
+  | "slime"
+  | "spectral"
+  | "leaves"
+  | "storks"
+  | "goldlight"
+  | "sakura"
+  | "lanterns"
+  | "ukiyo"
+  | "koi"
+  | "mushrooms"
+  | "woodland"
+  | "fuji"
+  | "matrix"
+  | "code"
+  | "synthwave"
+  | "ink"
+  | "nebula"
+  | "spectrum"
+  | "circuit"
+  | "orbit"
+  | "vinyl"
+  | "impasto"
+  | "hollowhill"
+  | "lanternhollow"
+  | "tokyorain";
+/** Where the key panel's frames spend their time, in ms a frame (`engine::frame_cost`). */
+/** A look the user saved from the Deck look view ("Moje"). */
+export interface MyLook {
+  name: string;
+  icon: string;
+  base: string;
+  effects: DeckEffects;
+  skin?: string;
+}
+export interface FrameCost {
+  frames: number;
+  layers: { kind: string; ms: number }[];
+  layersMs: number;
+  keysMs: number;
+  encodeMs: number;
+  sendMs: number;
+}
+/** Layers drawn on the graphics card (`canvas::GPU_KINDS`). */
+export const GPU_KINDS: FxKind[] = ["water", "light", "scene", "finish", "fire", "aurora", "aquarium", "cover", "lava", "glass", "frames", "liquid", "frost", "springs", "heart", "flip", "hop", "holo", "relief", "gold", "chrome", "crystal", "mist", "neonrain", "caustics", "pumpkins", "eyes", "ghost", "spider", "webs", "batburst", "ghostrise", "domino", "chain", "firework", "shockwave", "magnet", "bloom", "haunt", "candle", "carved", "stone", "slime", "spectral", "leaves", "storks", "goldlight", "sakura", "lanterns", "ukiyo", "koi", "mushrooms", "woodland", "fuji", "matrix", "code", "synthwave", "ink", "nebula", "spectrum", "circuit", "orbit", "vinyl", "impasto", "hollowhill", "lanternhollow", "tokyorain"];
+/**
+ * The layer kinds by what they do, as the panel offers them; "blocks" are built on the keys being
+ * windows onto one screen (owner, 2026-10-26: "wykorzystać to że te przyciski są takimi bloczkami").
+ */
+export const FX_GROUPS: { group: "canvas" | "reaction" | "page" | "inhabitant" | "scene" | "blocks" | "light" | "finish"; kinds: FxKind[] }[] = [
+  { group: "canvas", kinds: ["fog", "mist", "rain", "neonrain", "snow", "fireflies", "embers", "fire", "leaves", "sakura"] },
+  { group: "reaction", kinds: ["ripple", "water", "burst", "springs", "heart", "domino", "chain", "firework", "shockwave", "magnet", "bloom", "batburst", "ghostrise"] },
+  { group: "page", kinds: ["flip"] },
+  { group: "inhabitant", kinds: ["bats", "hop", "eyes", "ghost", "spider", "storks"] },
+  { group: "scene", kinds: ["scene", "aurora", "aquarium", "cover", "lava", "caustics", "haunt", "goldlight", "woodland", "fuji", "ukiyo", "lanterns", "koi", "matrix", "code", "synthwave", "ink", "nebula", "spectrum", "circuit", "orbit", "vinyl", "impasto", "hollowhill", "lanternhollow", "tokyorain"] },
+  { group: "blocks", kinds: ["glass", "frames", "liquid", "frost", "pumpkins", "webs", "carved", "stone", "slime", "mushrooms"] },
+  { group: "light", kinds: ["light", "holo", "relief", "gold", "chrome", "crystal", "candle", "spectral"] },
+  { group: "finish", kinds: ["finish"] },
+];
+/**
+ * Kinds being made anew (owner, 2026-10-26: "Fog wygląda słabo - wywaliłbym go albo napisał od
+ * zera"): the panel shows their tile only to a profile that has them on, so it can be switched off.
+ */
+export const FX_RETIRED: FxKind[] = ["fog"];
+/**
+ * Kinds built but not yet offered (shown, like the retired ones, only to a profile that has them
+ * on). The new fog waited here for the owner's verdict on its film; his "2 a" (2026-10-26) let it in.
+ */
+export const FX_PENDING: FxKind[] = ["storks"];
+/** The options each kind listens to (`canvas.rs`). */
+export const FX_OPTIONS: Record<FxKind, ("strength" | "speed" | "density" | "wind" | "tint" | "react" | "moving" | "side")[]> = withUpright({
+  fog: ["strength", "speed", "density", "wind", "tint"],
+  rain: ["strength", "speed", "density", "wind"],
+  snow: ["strength", "speed", "density", "wind"],
+  fireflies: ["strength", "speed", "density", "tint"],
+  embers: ["strength", "speed", "density", "wind", "tint"],
+  ripple: ["strength", "speed", "tint"],
+  burst: ["strength", "density", "tint"],
+  bats: ["speed", "density", "tint"],
+  water: ["strength", "speed", "tint"],
+  light: ["strength", "wind", "moving", "speed", "tint"],
+  scene: ["strength", "speed", "density", "tint"],
+  finish: ["strength", "density", "tint"],
+  fire: ["strength", "speed", "density", "wind", "tint"],
+  aurora: ["strength", "speed", "tint"],
+  aquarium: ["strength", "speed", "tint"],
+  cover: ["strength", "speed"],
+  lava: ["strength", "speed", "tint"],
+  glass: ["strength"],
+  frames: ["strength", "speed", "tint"],
+  liquid: ["strength", "density", "tint"],
+  frost: ["strength", "density"],
+  springs: ["strength"],
+  heart: ["strength", "tint"],
+  flip: ["strength", "speed"],
+  hop: ["strength", "speed", "tint"],
+  holo: ["strength", "speed"],
+  relief: ["strength"],
+  gold: ["strength"],
+  chrome: ["strength"],
+  crystal: ["strength"],
+  mist: ["strength", "speed", "density", "wind", "tint"],
+  neonrain: ["strength", "speed", "density", "wind", "tint"],
+  caustics: ["strength", "speed", "tint"],
+  pumpkins: ["strength", "side", "react"],
+  eyes: ["strength", "speed", "react"],
+  ghost: ["strength", "speed"],
+  spider: ["strength", "speed", "react"],
+  webs: ["strength", "side"],
+  batburst: ["strength"],
+  ghostrise: ["strength"],
+  domino: ["strength"],
+  chain: ["strength", "tint"],
+  firework: ["strength", "tint"],
+  shockwave: ["strength", "tint"],
+  magnet: ["strength"],
+  bloom: ["strength"],
+  haunt: ["strength"],
+  candle: ["strength"],
+  carved: ["strength"],
+  stone: ["strength"],
+  slime: ["strength"],
+  spectral: ["strength"],
+  leaves: ["strength", "speed", "density", "wind", "react"],
+  storks: ["strength", "speed", "density"],
+  goldlight: ["strength", "speed"],
+  sakura: ["strength", "speed", "density", "wind", "tint", "react"],
+  lanterns: ["strength", "speed", "wind"],
+  ukiyo: ["strength", "speed"],
+  koi: ["strength", "speed", "react"],
+  mushrooms: ["strength", "react"],
+  woodland: ["strength", "speed"],
+  fuji: ["strength", "speed"],
+  matrix: ["strength", "speed", "react"],
+  code: ["strength", "speed", "react"],
+  synthwave: ["strength", "speed", "react"],
+  ink: ["strength", "speed", "react"],
+  nebula: ["strength", "speed", "react"],
+  spectrum: ["strength", "speed", "react"],
+  circuit: ["strength", "speed", "react"],
+  orbit: ["strength", "speed", "react"],
+  vinyl: ["strength", "speed", "react"],
+  impasto: ["strength", "speed", "react"],
+  hollowhill: [],
+  lanternhollow: [],
+  tokyorain: [],
+});
+/** Each kind's own colour (`canvas.rs` `default_tint`). */
+export const FX_TINT: Record<FxKind, string> = withUpright({
+  fog: "#7a4fc0",
+  rain: "#8fd8ff",
+  snow: "#8fd8ff",
+  fireflies: "#c8f060",
+  embers: "#ff7a1a",
+  ripple: "#8fd8ff",
+  burst: "#ff7a1a",
+  bats: "#8fd8ff",
+  water: "#8fd8ff",
+  light: "#fff1d6",
+  scene: "#3a4a8a",
+  finish: "#ffb070",
+  fire: "#ff7a1a",
+  aurora: "#9a60ff",
+  aquarium: "#2a8fb0",
+  cover: "#ffffff",
+  lava: "#ff5030",
+  glass: "#ffffff",
+  frames: "#ffe2b0",
+  liquid: "#38b6ff",
+  frost: "#ffffff",
+  springs: "#ffffff",
+  heart: "#ff4f8b",
+  flip: "#ffffff",
+  hop: "#ffd36b",
+  holo: "#ffffff",
+  relief: "#ffffff",
+  gold: "#ffffff",
+  chrome: "#ffffff",
+  crystal: "#ffffff",
+  mist: "#9fb4ff",
+  neonrain: "#ff3cac",
+  caustics: "#7fe8ff",
+  pumpkins: "#ff8a1a",
+  eyes: "#d8ff40",
+  ghost: "#bcd8ff",
+  spider: "#e0e0ee",
+  webs: "#e0e0ee",
+  batburst: "#7a4fc0",
+  ghostrise: "#bcd8ff",
+  domino: "#ffffff",
+  chain: "#b48cff",
+  firework: "#ffffff",
+  shockwave: "#ffffff",
+  magnet: "#ffffff",
+  bloom: "#ffffff",
+  haunt: "#ffffff",
+  candle: "#ff8a2a",
+  carved: "#ff8a2a",
+  stone: "#ffffff",
+  slime: "#6cff8a",
+  spectral: "#6cff8a",
+  leaves: "#ffb43c",
+  storks: "#ffffff",
+  goldlight: "#ffb43c",
+  sakura: "#ffb7cf",
+  lanterns: "#ff6a3a",
+  ukiyo: "#f4ecd2",
+  koi: "#ff7a2a",
+  mushrooms: "#c87a3a",
+  woodland: "#ffd27a",
+  fuji: "#ff5a3a",
+  matrix: "#3cff7a",
+  code: "#7fb4ff",
+  synthwave: "#ff3cd2",
+  ink: "#4a7aff",
+  nebula: "#8f7aff",
+  spectrum: "#3cff9a",
+  circuit: "#3ce8ff",
+  orbit: "#6aa8ff",
+  vinyl: "#ff4a6a",
+  impasto: "#f2c440",
+  hollowhill: "#ff8a2a",
+  lanternhollow: "#ffa03a",
+  tokyorain: "#ff3c9a",
+});
+/**
+ * Themes: one click puts their layers on the deck with their palette (owner, 2026-10-26: "1 a, tak
+ * super pomysł"); the key styles stay. The layers show as switched-on tiles and stay adjustable.
+ */
+export const THEMES: { id: string; layers: FxLayer[] }[] = [
+  // Halloween for 0.2.0, each one scene made by the skill's agents (owner, 2026-10-29: "Z halloween
+  // zostaje R2 X2a i R4 C+"; 2026-10-30 "2 a": the three below hidden)
+  {
+    id: "halloween-hill",
+    layers: [{ kind: "hollowhill" }],
+  },
+  {
+    id: "halloween-hollow",
+    layers: [{ kind: "lanternhollow" }],
+  },
+  // A: a haunted landscape through the fifteen windows, the moon, bats, fog, pumpkins below
+  {
+    id: "halloween-night",
+    layers: [
+      { kind: "scene", tint: "#6a3aa0", density: 45 },
+      { kind: "haunt" },
+      { kind: "mist", tint: "#9a7ae0", strength: 50, density: 30, wind: 15 },
+      { kind: "pumpkins" },
+      { kind: "bats" },
+      { kind: "ghost" },
+      { kind: "burst" },
+    ],
+  },
+  // B: every key a lantern: candle light from below, carved glowing edges, pumpkins, a big web
+  {
+    id: "halloween-lanterns",
+    layers: [
+      { kind: "scene", tint: "#2a1640", density: 25 },
+      { kind: "pumpkins" },
+      { kind: "webs" },
+      { kind: "candle" },
+      { kind: "carved" },
+      { kind: "spider" },
+      { kind: "batburst" },
+    ],
+  },
+  // C: every key spooky: stone frames, oozing slime, spectral icons, eyes, ghosts out of the keys
+  {
+    id: "halloween-spooky",
+    layers: [
+      { kind: "mist", tint: "#5fd27a", strength: 45, density: 30, wind: -10 },
+      { kind: "eyes" },
+      { kind: "webs" },
+      { kind: "spectral" },
+      { kind: "stone" },
+      { kind: "slime" },
+      { kind: "ghostrise" },
+    ],
+  },
+  // Poland A: golden autumn: low golden light over a line of autumn trees, leaves tumbling down,
+  // settling on the icons, a press blowing them away (owner, 2026-10-26: "Zacznik polskiej złotej
+  // jesieni i japonii")
+  {
+    id: "poland-autumn",
+    layers: [
+      { kind: "goldlight" },
+      { kind: "mist", tint: "#f2c98a", strength: 20, density: 20, wind: 10 },
+      { kind: "mushrooms" },
+      { kind: "leaves" },
+    ],
+  },
+  // Poland B: a mushroom hunt inside an old forest in the morning: trunks through all three rows,
+  // shafts of sun, ground fog, ferns, mushrooms on the floor, a few leaves (session 35)
+  {
+    id: "poland-hunt",
+    layers: [{ kind: "woodland" }, { kind: "mushrooms" }, { kind: "leaves", density: 20 }],
+  },
+  // Japan A after the owner's reference picture (2026-10-26, "to jest japoński klimat"): a day with
+  // Fuji, the red sun, cherry branches, a torii in the lake, petals falling
+  {
+    id: "japan-sakura",
+    layers: [{ kind: "fuji" }, { kind: "sakura", density: 30 }],
+  },
+  // Japan B: a koi pond: koi under the icons gathering at a pressed key, petals drifting over it
+  {
+    id: "japan-koi",
+    layers: [{ kind: "koi" }, { kind: "sakura", density: 35 }],
+  },
+  // Tokyo Rain: a night street of neon boards seen through wet glass, a press lights a sign over the key
+  // (owner, 2026-10-30: from its trial slot into 0.2.0, "bo jest spoko")
+  {
+    id: "japan-tokyo-rain",
+    layers: [{ kind: "tokyorain" }],
+  },
+  // for developers, gamers, creators, sim players and musicians (owner's "1 a", 2026-10-26), each
+  // pair side by side
+  {
+    id: "matrix-rain",
+    layers: [{ kind: "matrix" }],
+  },
+  {
+    id: "dev-editor",
+    layers: [{ kind: "code" }],
+  },
+  {
+    id: "neon-synthwave",
+    layers: [{ kind: "synthwave" }],
+  },
+  {
+    id: "neon-circuit",
+    layers: [{ kind: "circuit" }],
+  },
+  {
+    id: "studio-ink",
+    layers: [{ kind: "ink" }],
+  },
+  {
+    id: "studio-impasto",
+    layers: [{ kind: "impasto" }],
+  },
+  {
+    id: "space-nebula",
+    layers: [{ kind: "nebula" }],
+  },
+  {
+    id: "space-orbit",
+    layers: [{ kind: "orbit" }],
+  },
+  {
+    id: "music-spectrum",
+    layers: [{ kind: "spectrum" }],
+  },
+  {
+    id: "music-vinyl",
+    layers: [{ kind: "vinyl" }],
+  },
+];
+/** The presets kept (owner, 2026-10-29: "wszystkie pozostałe presety (które zdecydowaliśmy się
+ * zostawić)") each get an upright copy, `<id>-up`: the same layers, the scenes with an upright copy
+ * swapped for it; the originals stay as they are. */
+const UPRIGHT_THEMES = ["poland-autumn", "poland-hunt", "japan-sakura", "japan-koi", "matrix-rain", "neon-synthwave", "neon-circuit", "space-nebula", "music-spectrum"];
+/** The upright copies whose scene draws its own falling things (Fuji's petals off its branches, the
+ * mushroom hunt's leaves off its canopy; the koi pond has none, owner 2026-10-29): that layer is left
+ * out of the copy. Fuji keeps the falling petals: its own stay by the branches at the edges, so a press in
+ * the middle did nothing (owner, 2026-10-30: "na fuji upright nie działają liście"). */
+const OWN_FALL: Record<string, FxKind> = { "japan-koi": "sakura" };
+for (const id of UPRIGHT_THEMES) {
+  // right after its original, so the two stand side by side
+  const at = THEMES.findIndex((x) => x.id === id);
+  if (at >= 0) {
+    const layers = THEMES[at].layers.filter((l) => l.kind !== OWN_FALL[id]);
+    THEMES.splice(at + 1, 0, { id: `${id}-up`, layers: layers.map((l) => ((UPRIGHT as readonly string[]).includes(l.kind) ? { ...l, kind: `${l.kind}-up` as FxKind } : l)) });
+  }
+}
+/** The upright copies drawn anew as one picture for both turns (`canvas.rs` `REDRAWN`): they replace their
+ * originals in the list and carry the original's name, without "(upright)" (owner, 2026-10-30, "2/ b"). */
+export const REDRAWN_THEMES = ["poland-hunt", "japan-sakura", "japan-koi"];
+/** A name without its group ("Japan: koi pond" -> "Koi pond"; owner, 2026-10-30, "1. a": the names were too
+ * long; Elgato's screensavers have short names of their own). */
+const bare = (name: string) => {
+  const s = name.replace(/^[^:：]+[:：]\s*/, "");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+/** A preset's name: an upright copy is its original's, with "(upright)" unless it was drawn anew. */
+export const themeTitle = (id: string): string => {
+  const base = id.endsWith("-up") && UPRIGHT_THEMES.includes(id.slice(0, -3)) ? id.slice(0, -3) : null;
+  if (!base) return bare(t(`effects.theme.${id}` as Key));
+  const name = bare(t(`effects.theme.${base}` as Key));
+  return REDRAWN_THEMES.includes(base) ? name : t("effects.upright", { name });
+};
+/** The kinds named by `effects.kind.<kind>` (the ones added in session 33). */
+const NAMED_KINDS: FxKind[] = ["fire", "aurora", "aquarium", "cover", "lava", "glass", "frames", "liquid", "frost", "springs", "heart", "flip", "hop", "holo", "relief", "gold", "chrome", "crystal", "mist", "neonrain", "caustics", "pumpkins", "eyes", "ghost", "spider", "webs", "batburst", "ghostrise", "domino", "chain", "firework", "shockwave", "magnet", "bloom", "haunt", "candle", "carved", "stone", "slime", "spectral", "leaves", "storks", "goldlight", "sakura", "lanterns", "ukiyo", "koi", "mushrooms", "woodland", "fuji", "matrix", "code", "synthwave", "ink", "nebula", "spectrum", "circuit", "orbit", "vinyl", "impasto", "hollowhill", "lanternhollow", "tokyorain"];
+export const fxGroup = (kind: FxKind) => FX_GROUPS.find((g) => g.kinds.includes(baseKind(kind)))?.group ?? "canvas";
+
+/** A layer kind's name as the window shows it. */
+export const fxName = (kind: FxKind): string =>
+  baseKind(kind) !== kind ? t("effects.upright", { name: fxName(baseKind(kind)) }) :
+  NAMED_KINDS.includes(kind) ? t(`effects.kind.${kind}` as Key) :
+  t((kind === "ripple" || kind === "water" ? `effects.reaction.${kind}` : kind === "burst" ? "effects.reaction.embers" : kind === "bats" ? "effects.inhabitant.bats" : kind === "light" || kind === "scene" || kind === "finish" ? `effects.${kind}.${kind}` : `effects.canvas.${kind}`) as Key);
+
+/** A profile's layers: its own list, or the three fixed places of before as layers. */
+export function layersOf(fx?: DeckEffects | null): FxLayer[] {
+  if (!fx) return [];
+  if (fx.layers?.length) return fx.layers;
+  const common = { tint: fx.tint, strength: fx.strength };
+  const out: FxLayer[] = [];
+  // the water first, as the engine drew it: the other layers lie on the bent picture
+  if (fx.reaction === "ripple") out.push({ kind: "ripple", ...common });
+  if (fx.canvas && (FX_GROUPS[0].kinds as string[]).includes(fx.canvas)) out.push({ kind: fx.canvas as FxKind, ...common });
+  if (fx.inhabitant === "bats") out.push({ kind: "bats", ...common });
+  if (fx.reaction === "embers") out.push({ kind: "burst", ...common });
+  return out;
+}
+
+/** Mirror `canvas::CANVASES`, `REACTIONS` and `INHABITANTS` in src-tauri/src/engine/canvas.rs. */
+export const CANVAS_EFFECTS = ["fog", "rain", "snow", "fireflies", "embers"] as const;
+export const PRESS_EFFECTS = ["ripple", "embers"] as const;
+export const INHABITANTS = ["bats"] as const;
+/** Canvas effects that flash now and then (the window warns of them): rain's lightning. */
+export const FLASHING_EFFECTS = ["rain", "chain"];
+
+/** Mirrors `render::SKINS`; each with the motion it was made with (`render.rs` `key_motion`). */
+export const SKINS = ["film", "glitch", "neon", "glass", "pumpkin"] as const;
+export type Skin = (typeof SKINS)[number];
+export const SKIN_MOTION: Record<Skin, Look["motion"]> = { film: "film", glitch: "glitch", neon: "flicker", glass: "shine", pumpkin: undefined };
+/** Key motions that flicker or flash (the window warns of them). */
+export const FLASHING_MOTIONS = ["glitch", "flicker"];
 
 /** One reaction of the lights. */
 export interface Reaction {
@@ -383,9 +969,101 @@ export interface Screens {
   appIcons?: "icon" | "fill" | "fillLabel";
   /** The font for text on the deck, a family on this computer ("" = HubDeck's own). */
   deckFont?: string;
-  /** The screensaver's effect ("" = none) and after how many idle minutes it starts. */
+  /** The screensaver all profiles share ("" = none) and after how many idle minutes it starts. */
   saver?: string;
   saverAfterMinutes?: number;
+  /** A preset's layers when `saver` is one ("preset:<id>"). */
+  saverLayers?: FxLayer[];
+  /** The dial and the lights while it runs. */
+  saverDial?: "clock" | "same" | "off";
+  saverLights?: "scene" | "same" | "off";
+}
+
+/** The screensavers (`saver.rs`): drawn from the clock, and scenes of the living deck's layers
+ * across all 15 keys (owner, 2026-10-26: "jakieś wow, takie bardzo wysokiej jakości wygaszacza"),
+ * with the colour the dial and the lights take. */
+// `hidden`: kept for its season, not offered (owner, 2026-10-30: "snowy night schowaj - przywrócimy na zimę")
+export const SAVER_SCENES: { id: string; color: string; gpu: boolean; hidden?: boolean }[] = [
+  { id: "aurora", color: "#3ee6a8", gpu: true },
+  { id: "aquarium", color: "#2aa8e0", gpu: true },
+  { id: "lava", color: "#ff5a2a", gpu: true },
+  { id: "fire", color: "#ff8a1e", gpu: true },
+  { id: "snowfall", color: "#b8d4ff", gpu: true, hidden: true },
+  { id: "fireflies", color: "#d8e860", gpu: true },
+  { id: "neon", color: "#ff3aa8", gpu: true },
+  { id: "haunted", color: "#9a6ae0", gpu: true },
+];
+
+/** A screensaver that is a preset (owner, 2026-10-30: "presety dorzucamy jako screensavery"): "preset" follows
+ * the profile's own look from Deck look, "preset:<id>" is that preset; drawn without answering presses (the
+ * first touch only wakes the deck). */
+export const SAVER_FROM_LOOK = "preset";
+export const saverPreset = (effect: string) => (effect.startsWith("preset:") ? effect.slice(7) : null);
+/** HubDeck's Discord server, through the project site's one address (`site/discord/`). */
+export const DISCORD = "https://przemotar.github.io/hubdeck/discord";
+
+/** The presets Deck look offers (the rest are kept for profiles that still wear them). */
+export const PRESETS_HIDDEN = new Set(["halloween-night", "halloween-lanterns", "halloween-spooky", "poland-hunt", "japan-sakura", "japan-koi", "poland-autumn-up", "matrix-rain-up", "neon-synthwave-up", "neon-circuit-up", "space-nebula-up", "music-spectrum-up", "dev-editor", "studio-ink", "studio-impasto", "space-orbit", "music-vinyl"]);
+/** A preset's thumbnail id: an upright copy lying draws what its original draws; one drawn anew has its own. */
+export const presetThumb = (id: string) => (REDRAWN_THEMES.includes(id.replace(/-up$/, "")) ? id : id.replace(/-up$/, ""));
+
+/** Each preset's colours for the lights (owner's "1 a", 2026-10-30): the edge's, then the knobs' and faders'.
+ * Measured from its moving thumbnail, not picked by eye: the most present saturated hues, weighted by
+ * saturation and brightness, a second one only when it covers a fair share. Keyed by the preset without "-up". */
+export const PRESET_LIGHTS: Record<string, string[]> = {
+  "halloween-hill": ["#ff7726", "#4626ff"],
+  "halloween-hollow": ["#ff7826"],
+  "poland-autumn": ["#ffa026"],
+  "poland-hunt": ["#ffb326"],
+  "japan-sakura": ["#267cff", "#ff4326"],
+  "japan-koi": ["#6bff26", "#ff4c26"],
+  "japan-tokyo-rain": ["#ff26a8", "#26b4ff"],
+  "matrix-rain": ["#26ff78"],
+  "neon-synthwave": ["#a726ff", "#ff7e26"],
+  "neon-circuit": ["#26ffe4", "#ff26e0"],
+  "space-nebula": ["#a126ff", "#ff7c26"],
+  "music-spectrum": ["#26ff9e"],
+};
+export const presetLights = (id: string | null | undefined) => (id ? PRESET_LIGHTS[id.replace(/-up$/, "")] : undefined);
+
+/** The screensaver a profile shows: its own or the shared one, and after how many minutes. */
+export function saverOf(profile: Profile | null | undefined, shared: Screens | null): { effect: string; afterMinutes: number; own: boolean } {
+  const all = { effect: shared?.saver ?? "", afterMinutes: shared?.saverAfterMinutes ?? 5 };
+  if (!profile?.saver) return { ...all, own: false };
+  return { effect: profile.saver.effect, afterMinutes: profile.saver.afterMinutes ?? all.afterMinutes, own: true };
+}
+
+/** The lights' settings, kept fresh for the Music chip under the deck. */
+const lightsListeners = new Set<(l: LightSettings) => void>();
+export const lightsChanged = (l: LightSettings) => lightsListeners.forEach((f) => f(l));
+export function useLightSettings(): LightSettings | null {
+  const [l, setL] = useState<LightSettings | null>(null);
+  useEffect(() => {
+    if (!inTauri()) return;
+    api.lights().then(setL, () => {});
+    lightsListeners.add(setL);
+    return () => void lightsListeners.delete(setL);
+  }, []);
+  return l;
+}
+
+/** The shared screen settings, kept fresh for the chip under the deck. */
+const screensListeners = new Set<(s: Screens) => void>();
+// the last ones read, so a panel opened later starts with them instead of an empty first frame
+// (owner, 2026-10-30: the Screensaver panel "miga na chwile": the window had no right panel while
+// it read them)
+let lastScreens: Screens | null = null;
+export const knownScreens = () => lastScreens;
+export const screensChanged = (s: Screens) => ((lastScreens = s), screensListeners.forEach((l) => l(s)));
+export function useScreens(): Screens | null {
+  const [s, setS] = useState<Screens | null>(lastScreens);
+  useEffect(() => {
+    if (!inTauri()) return;
+    api.screens().then((v) => ((lastScreens = v), setS(v)), () => {});
+    screensListeners.add(setS);
+    return () => void screensListeners.delete(setS);
+  }, []);
+  return s;
 }
 
 export type TourFocus = "games" | "streaming" | "calls" | "music" | "mixed";
@@ -669,7 +1347,7 @@ export function newBinding(action: ActionDef): Binding {
   return { action: action.id, params, look: { label: actionName(action).split(" ")[0], icon: action.icon } };
 }
 
-const inTauri = () => "__TAURI_INTERNALS__" in window;
+export const inTauri = () => "__TAURI_INTERNALS__" in window;
 
 /** One LED as the deck shows it now: `#rrggbb` and its effect (`static`, `breathing`, ..., `off`). */
 export interface LedView {
@@ -689,11 +1367,22 @@ export interface CrashReport {
 }
 
 export const api = {
+  /** The key screen's pictures a second and HubDeck's CPU since the last call. */
+  deckRate: () => invoke<{ fps: number; cpu: number | null }>("deck_rate"),
+  frameCost: () => invoke<FrameCost>("frame_cost"),
+  livingGpu: () => invoke<boolean>("living_gpu"),
+  livingTrials: () => invoke<[string, string][]>("living_trials"),
+  saverTry: (effect: string, layers?: FxLayer[]) => invoke("saver_try", { effect, layers: layers ?? null }),
+  /** Try a look on the deck without saving it (the Deck look view); null goes back. */
+  effectsTry: (effects: DeckEffects | null, bare = false) => invoke("effects_try", { effects, bare }),
+  effectsPress: (key: number) => invoke("effects_press", { key }),
+  looksList: () => invoke<MyLook[]>("looks_list"),
+  looksSave: (looks: MyLook[]) => invoke("looks_save", { looks }),
   state: () => invoke<EngineState>("engine_state"),
   leds: () => invoke<LedsShown>("leds_get"),
   redraw: () => invoke("engine_redraw"),
   profile: (id: string) => invoke<Profile>("profile_get", { id }),
-  saveProfile: (profile: Profile) => invoke("profile_save", { profile }),
+  saveProfile: (profile: Profile) => edited(invoke("profile_save", { profile })),
   createProfile: (name: string, from?: string) => invoke<Profile>("profile_create", { name, from: from ?? null }),
   deleteProfile: (id: string) => invoke("profile_delete", { id }),
   activate: (id: string) => invoke("profile_activate", { id }),
@@ -721,12 +1410,18 @@ export const api = {
   profileFill: (profile: string, page: string | null) => invoke<number>("profile_fill", { profile, page }),
   autoSet: (on: boolean) => invoke("auto_set", { on }),
   settings: (s: { autoSwitch?: boolean; fallback?: string }) => invoke("settings_set", { autoSwitch: s.autoSwitch ?? null, fallback: s.fallback ?? null }),
-  setBinding: (profile: string, control: string, binding: Binding | null) => invoke("binding_set", { profile, control, binding }),
+  setBinding: (profile: string, control: string, binding: Binding | null) => edited(invoke("binding_set", { profile, control, binding })),
   /** Several controls at once, changed on the engine's copy of the profile (null clears one). */
-  setBindings: (profile: string, bindings: Record<string, Binding | null>) => invoke("bindings_set", { profile, bindings }),
+  setBindings: (profile: string, bindings: Record<string, Binding | null>) => edited(invoke("bindings_set", { profile, bindings })),
+  lookTemplates: () => invoke<{ name: string; look: Look }[]>("look_templates_get"),
+  recentIcons: () => invoke<string[]>("recent_icons"),
+  keyPngSave: (look: Look, path: string) => invoke("key_png_save", { look, path }),
+  exportKeysPack: (profile: string, page: string | null, path: string) => invoke<number>("keys_export_pack", { profile, page, path }),
+  recentIconAdd: (icon: string) => invoke<string[]>("recent_icon_add", { icon }),
+  setLookTemplates: (templates: { name: string; look: Look }[]) => invoke("look_templates_set", { templates }),
   catalog: () => invoke<Catalog>("actions_list"),
   icons: () => invoke<IconDef[]>("icons_list"),
-  preview: (screen: "key" | "dial", look: Look) => invoke<string>("preview_svg", { screen, look }),
+  preview: (screen: "key" | "dial", look: Look, t?: number) => invoke<string>("preview_svg", { screen, look, t: t ?? null }),
   exportProfile: (id: string, path: string) => invoke("profile_export", { id, path }),
   /** Import a file as a new profile, adapted to the user's modules; `moved` says what was copied where. */
   importProfile: (path: string) => invoke<Imported>("profile_import", { path }),
@@ -745,7 +1440,7 @@ export const api = {
   profileForApp: (exe: string, name: string, target: string, picture: string | null, kinds?: string[]) =>
     invoke<Profile>("profile_for_app", { exe, name, target, picture, kinds: kinds && kinds.length ? kinds : null }),
   checkProfile: (id: string) => invoke<{ control: string; message: string }[]>("profile_check", { id }),
-  setLights: (lights: LightSettings) => invoke("lights_set", { lights }),
+  setLights: (lights: LightSettings) => invoke("lights_set", { lights }).then(() => lightsChanged(lights)),
   apps: () => invoke<AppInfo[]>("apps_list"),
   presets: () => invoke<PresetSummary[]>("presets_list"),
   /** `kinds`: the module kinds the user has (attached and owned); the preset is adapted to them. */
@@ -847,7 +1542,7 @@ export const api = {
   profilesDir: () => invoke<[string, boolean]>("profiles_dir_get"),
   setProfilesDir: (dir: string | null) => invoke("profiles_dir_set", { dir }),
   screens: () => invoke<Screens>("screens_get"),
-  setScreens: (screens: Screens) => invoke("screens_set", { screens }),
+  setScreens: (screens: Screens) => invoke("screens_set", { screens }).then(() => screensChanged(screens)),
   deckFonts: () => invoke<string[]>("deck_fonts"),
   restoreBackup: (id: string) => invoke("backup_restore", { id }),
   playGames: (on: boolean) => invoke("games_play", { on }),
@@ -1004,8 +1699,19 @@ export function deckTouched() {
  * gate, 2026-10-16): there nothing waits, or the screensaver and GIFs stood still while the
  * pointer moved over the window (the owner, 2026-10-16). */
 const waitsForUser = typeof navigator === "undefined" || !navigator.userAgent.includes("Edg/");
+/** The window is WebKit (macOS), not WebView2. */
+export const WEBKIT_WINDOW = waitsForUser;
 function userBusy(): boolean {
-  return waitsForUser && Date.now() - lastInput < INPUT_QUIET_MS;
+  return waitsForUser && Date.now() - lastInput < INPUT_QUIET_MS && Date.now() > editedUntil;
+}
+/** A change made in the window (an action, a look, a profile) shows on the deck's picture at once,
+ * not after the pointer rests: on macOS the new action's picture came 2-5 s late while the mouse
+ * moved (issue #9, sotomskir, 2026-10-26). */
+let editedUntil = 0;
+const EDIT_SHOWS_MS = 3000;
+function edited<T>(p: Promise<T>): Promise<T> {
+  editedUntil = Date.now() + EDIT_SHOWS_MS;
+  return p;
 }
 
 /** A live JPEG from the engine as an object URL, the previous one released. As data URIs each
@@ -1019,15 +1725,42 @@ function useLiveJpeg<F extends { jpeg: string }>(which: "keys" | "dial"): { fram
     let pending: F | null = null;
     let current: string | null = null;
     let alive = true;
+    // a picture goes on the page only once it is decoded, the last one staying until then: swapped
+    // in undecoded, the keys flashed empty at 20 pictures a second (owner, 2026-10-27: "migoczą
+    // przyciski na apce"); pictures that come while one decodes keep only the newest
+    let decoding = false;
+    let waiting: F | null = null;
     const show = (f: F) => {
-      (window as unknown as { __mirrorFrame?: () => void }).__mirrorFrame?.();
+      if (decoding) {
+        waiting = f;
+        return;
+      }
+      decoding = true;
       const bytes = Uint8Array.from(atob(f.jpeg), (c) => c.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
-      const old = current;
-      current = url;
-      setShown({ frame: f, url });
-      // the old picture goes once the new one is in the page
-      if (old) window.setTimeout(() => URL.revokeObjectURL(old), 1000);
+      const img = new Image();
+      img.src = url;
+      img
+        .decode()
+        .catch(() => {})
+        .then(() => {
+          decoding = false;
+          if (!alive) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          (window as unknown as { __mirrorFrame?: () => void }).__mirrorFrame?.();
+          const old = current;
+          current = url;
+          setShown({ frame: f, url });
+          // the old picture goes once the new one is in the page
+          if (old) window.setTimeout(() => URL.revokeObjectURL(old), 1000);
+          if (waiting) {
+            const next = waiting;
+            waiting = null;
+            show(next);
+          }
+        });
     };
     const offer = (f: F) => {
       if (!alive) return;
@@ -1059,12 +1792,12 @@ function useLiveJpeg<F extends { jpeg: string }>(which: "keys" | "dial"): { fram
 /** End the screensaver on the deck, as a touch of the deck does. */
 export const saverEnd = () => (inTauri() ? invoke("saver_end").catch(() => {}) : Promise.resolve());
 
-export function useSaverShown(): { effect: string; color: string } | null {
-  const [shown, setShown] = useState<{ effect: string; color: string } | null>(null);
+export function useSaverShown(): { effect: string; color: string; preview?: boolean } | null {
+  const [shown, setShown] = useState<{ effect: string; color: string; preview?: boolean } | null>(null);
   useEffect(() => {
     if (!inTauri()) return;
-    invoke<{ effect: string; color: string } | null>("saver_shown").then(setShown).catch(() => {});
-    const un = listen<{ effect: string; color: string } | null>("engine://saver", (e) => setShown(e.payload));
+    invoke<{ effect: string; color: string; preview?: boolean } | null>("saver_shown").then(setShown).catch(() => {});
+    const un = listen<{ effect: string; color: string; preview?: boolean } | null>("engine://saver", (e) => setShown(e.payload));
     return () => {
       un.then((u) => u());
     };

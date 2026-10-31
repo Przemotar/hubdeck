@@ -19,6 +19,37 @@ pub fn engine_state(engine: State<'_, Engine>) -> EngineState {
     engine.lock().state()
 }
 
+/// The key screen's pictures a second and HubDeck's CPU since the last call (the Living deck
+/// panel shows them live).
+#[tauri::command]
+pub fn deck_rate() -> serde_json::Value {
+    let (fps, cpu) = super::deck_rate();
+    serde_json::json!({ "fps": fps, "cpu": cpu })
+}
+
+/// Where the key panel's frames spend their time since the last call, in ms a frame (the Living
+/// deck panel's frame cost debugger, asked once a second while it is open).
+#[tauri::command]
+pub fn frame_cost() -> serde_json::Value {
+    super::frame_cost()
+}
+
+/// Whether the living deck's GPU layers can run here (a graphics card HubDeck can use): the panel
+/// says so when not (they were left out of the deck without a word). The first call starts the
+/// card (about a second), on a blocking thread.
+#[tauri::command]
+pub async fn living_gpu() -> bool {
+    tauri::async_runtime::spawn_blocking(|| super::gpu::get().is_some()).await.unwrap_or(false)
+}
+
+/// The looks being tried (`x-<name>.wgsl`, A/B branches) the shader folder holds, as (kind, name):
+/// the Deck look view lists one test preset for each, so a new one needs no build (owner,
+/// 2026-10-29: "dorzucać bez nowych buildów"). None in a release.
+#[tauri::command]
+pub fn living_trials() -> Vec<(String, String)> {
+    super::canvas::trials()
+}
+
 /// Stop a timer that ran out, wherever it is (the window's "Timer ran out" bar).
 #[tauri::command]
 pub fn timer_stop(engine: State<'_, Engine>, profile: String, control: String) {
@@ -259,6 +290,82 @@ pub fn settings_set(engine: State<'_, Engine>, auto_switch: Option<bool>, fallba
     Ok(())
 }
 
+/// Save a key's drawing as a PNG (288 px), drawn off the window's thread.
+#[tauri::command]
+pub async fn key_png_save(look: Look, path: String) -> Res<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let png = render::Renderer::default().png(&render::key_svg_sized(&look, 288))?;
+        std::fs::write(&path, png).map_err(io)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The keys of a profile's page (None = the main one) as a Stream Deck icon pack; returns how many.
+#[tauri::command]
+pub async fn keys_export_pack(engine: State<'_, Engine>, profile: String, page: Option<String>, path: String) -> Res<usize> {
+    let p = engine.lock().store.profiles.get(&profile).cloned().ok_or_else(|| format!("no profile {profile}"))?;
+    let keys: Vec<(String, Look)> = (0..15)
+        .filter_map(|i| {
+            let id = match &page {
+                Some(pg) => format!("{pg}/keys.{i}"),
+                None => format!("keys.{i}"),
+            };
+            let b = p.controls.get(&id)?;
+            let label = b.look.label.clone().filter(|l| !l.trim().is_empty()).unwrap_or_else(|| format!("Key {}", i + 1));
+            Some((label.replace('\n', " "), b.look.clone()))
+        })
+        .collect();
+    let name = p.name.clone();
+    tauri::async_runtime::spawn_blocking(move || super::iconpacks::export_stream_deck(&name, &keys, std::path::Path::new(&path))).await.map_err(|e| e.to_string())?
+}
+
+/// The icons picked lately, newest first.
+#[tauri::command]
+pub fn recent_icons(engine: State<'_, Engine>) -> Vec<String> {
+    engine.lock().store.settings.recent_icons.clone()
+}
+
+/// An icon was picked: first in the recent ones (built-in, `game:` and `emoji:` names only).
+#[tauri::command]
+pub fn recent_icon_add(engine: State<'_, Engine>, icon: String) -> Res<Vec<String>> {
+    let known = render::icon_svg(&icon).is_some() || icon.strip_prefix(render::EMOJI_PREFIX).is_some_and(|e| !e.trim().is_empty() && e.chars().count() <= 8);
+    let mut s = engine.lock();
+    if known {
+        let list = &mut s.store.settings.recent_icons;
+        list.retain(|i| *i != icon);
+        list.insert(0, icon);
+        list.truncate(24);
+        s.store.save_settings().map_err(io)?;
+    }
+    Ok(s.store.settings.recent_icons.clone())
+}
+
+/// The user's own key looks of the icon editor.
+#[tauri::command]
+pub fn look_templates_get(engine: State<'_, Engine>) -> Vec<super::profile::LookTemplate> {
+    engine.lock().store.settings.look_templates.clone()
+}
+
+/// Replace the user's own key looks (save, rename, delete in the icon editor). A template keeps
+/// only how a key looks: no label, icon or picture, and at most 60 of them.
+#[tauri::command]
+pub fn look_templates_set(engine: State<'_, Engine>, templates: Vec<super::profile::LookTemplate>) -> Res<()> {
+    let templates: Vec<_> = templates
+        .into_iter()
+        .filter(|t| !t.name.trim().is_empty())
+        .take(60)
+        .map(|mut t| {
+            t.name = t.name.trim().chars().take(40).collect();
+            (t.look.label, t.look.icon, t.look.image, t.look.note) = (None, None, None, None);
+            t
+        })
+        .collect();
+    let mut s = engine.lock();
+    s.store.settings.look_templates = templates;
+    s.store.save_settings().map_err(io)
+}
+
 /// Set (or with `None`, clear) what one control does in a profile.
 #[tauri::command]
 pub fn binding_set(engine: State<'_, Engine>, profile: String, control: String, binding: Option<Binding>) -> Res<()> {
@@ -357,6 +464,14 @@ pub struct Screens {
     saver: String,
     #[serde(default)]
     saver_after_minutes: u32,
+    /// A preset's layers when `saver` is one.
+    #[serde(default)]
+    saver_layers: Option<Vec<super::profile::Layer>>,
+    /// The dial and the lights while it runs (`clock`/`same`/`off`, `scene`/`same`/`off`).
+    #[serde(default)]
+    saver_dial: String,
+    #[serde(default)]
+    saver_lights: String,
 }
 
 #[tauri::command]
@@ -370,6 +485,9 @@ pub fn screens_get(engine: State<'_, Engine>) -> Screens {
         deck_font: s.deck_font.clone().unwrap_or_default(),
         saver: s.saver.clone(),
         saver_after_minutes: s.saver_after_minutes,
+        saver_layers: s.saver_layers.clone(),
+        saver_dial: s.saver_dial.clone().unwrap_or_else(|| "clock".into()),
+        saver_lights: s.saver_lights.clone().unwrap_or_else(|| "scene".into()),
     }
 }
 
@@ -381,7 +499,14 @@ pub fn screens_set(engine: State<'_, Engine>, screens: Screens) -> Res<()> {
         s.store.settings.screen_brightness = screens.brightness.clamp(5, 100);
         s.store.settings.blank_after_minutes = screens.blank_after_minutes.min(240);
         s.store.settings.blank_when_locked = screens.blank_when_locked;
-        s.store.settings.saver = Some(screens.saver.clone()).filter(|e| super::saver::EFFECTS.contains(&e.as_str())).unwrap_or_default();
+        s.store.settings.saver = Some(screens.saver.clone()).filter(|e| super::saver::known(e)).unwrap_or_default();
+        s.store.settings.saver_layers = screens.saver_layers.clone().filter(|_| super::saver::preset(&s.store.settings.saver).is_some());
+        if !screens.saver_dial.is_empty() {
+            s.store.settings.saver_dial = Some(screens.saver_dial.clone()).filter(|d| d != "clock" && ["same", "off"].contains(&d.as_str()));
+        }
+        if !screens.saver_lights.is_empty() {
+            s.store.settings.saver_lights = Some(screens.saver_lights.clone()).filter(|l| l != "scene" && ["same", "off"].contains(&l.as_str()));
+        }
         if screens.saver_after_minutes > 0 {
             s.store.settings.saver_after_minutes = screens.saver_after_minutes.min(240);
         }
@@ -1001,7 +1126,9 @@ pub fn icons_list() -> Vec<Icon> {
 
 /// The exact SVG the hardware gets (unrotated), for the live preview.
 #[tauri::command]
-pub fn preview_svg(screen: String, look: Look) -> String {
+pub fn preview_svg(screen: String, mut look: Look, t: Option<f32>) -> String {
+    // a frame of the key's motion for the full editor's live preview (the deck's own pictures)
+    look.t = t.filter(|t| t.is_finite() && *t > 0.0).map_or(0.0, |t| t % 3600.0);
     match screen.as_str() {
         "dial" => render::dial_svg(&look, None, 0),
         _ => render::key_svg(&look, 0),

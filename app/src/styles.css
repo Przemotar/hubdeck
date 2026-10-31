@@ -1170,6 +1170,130 @@ button.chip.is-active {
   color: var(--warntx);
   font-size: 12.5px;
 }
+/* the living deck's choices as tiles (owner, 2026-10-26: "miejsce gdzie mogę te elementy włączać i przełączać") */
+.fx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+.fx-tile {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--tx);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.fx-tile:hover {
+  box-shadow: inset 0 0 0 1px var(--tx2);
+}
+.fx-tile.is-active {
+  background: color-mix(in srgb, var(--acc) 18%, var(--bg2));
+  box-shadow: inset 0 0 0 2px var(--acc);
+}
+.fx-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 12px;
+}
+.fx-group {
+  gap: 6px;
+}
+.fx-cost {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.fx-cost > summary {
+  cursor: pointer;
+  color: var(--tx2);
+}
+.fx-cost > summary > span:first-child {
+  margin-right: 8px;
+}
+.fx-cost-total {
+  display: block;
+  margin-left: 18px;
+  color: var(--tx3);
+  font-variant-numeric: tabular-nums;
+}
+.fx-cost-body {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.fx-cost-body > .label {
+  margin-top: 4px;
+}
+.fx-cost-row {
+  display: grid;
+  grid-template-columns: minmax(0, 10em) 1fr 4.6em 5.4em;
+  align-items: center;
+  gap: 8px;
+}
+.fx-cost-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fx-cost-ms {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fx-cost-note {
+  color: var(--tx3);
+  font-size: 11px;
+}
+.fx-cost-row.is-heaviest .fx-load-bar i {
+  background: var(--warn);
+}
+.fx-cost-row.is-heaviest .fx-cost-note {
+  color: var(--warn);
+}
+.fx-load-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+.fx-load-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ok, #3fb37f);
+}
+/* "None" on a row of its own: the twelve screensavers fill four rows of three */
+.saver-off {
+  display: grid;
+  grid-column: 1 / -1;
+}
+/* a screensaver's colour, which the dial and the lights take while it runs */
+.saver-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+.fx-tile svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+/* a look that flashes (owner, 2026-10-26: "dodamy ostrzeżenia przy tych trybach") */
+.help.warn {
+  padding: 6px 10px;
+  border: 1px solid var(--warnln);
+  border-radius: 8px;
+  background: var(--warnbg);
+  color: var(--warntx);
+}
 .page-warn > svg {
   color: var(--warn);
   width: 14px;
@@ -1461,6 +1585,14 @@ button.chip.is-active {
 }
 .panel-head h2 {
   margin: 2px 0 0;
+}
+/* a long profile name above the title wraps instead of running out of a narrow panel */
+.panel-head .grow {
+  min-width: 0;
+}
+.panel-head .crumb {
+  display: block;
+  overflow-wrap: anywhere;
 }
 .ph-icon {
   width: 34px;
@@ -1856,6 +1988,14 @@ button.chip.is-active {
   height: 6px;
   border-radius: 3px;
   background: var(--ok);
+}
+
+/* a narrow window: Feedback, Plugins, Settings and New profile keep their icons only, so the active
+   profile's tab keeps its name (it was cut at 960 px; owner's "4. napraw", 2026-10-30) */
+@media (max-width: 1180px) {
+  .topbar .tb-label {
+    display: none;
+  }
 }
 
 /* profile tabs: what does not fit goes under "More" */
@@ -5526,3 +5666,426 @@ button.lib-foot:focus-visible span {
   gap: 12px;
   margin-top: 4px;
 }
+
+/* the key's look editor (owner's "1 a", 2026-10-25): tabs, templates drawn with the key's own label and icon */
+.designer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* five tabs in a ~300px panel: each as wide as its name, a second row before anything is cut */
+.designer-tabs,
+.designer-seg {
+  flex-wrap: wrap;
+}
+.designer-tabs .tab,
+.designer-seg .tab {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  padding-inline: 8px;
+}
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 10px 8px;
+}
+.tpl-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tpl-key {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+}
+.tpl-key svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tpl-key:hover {
+  transform: translateY(-1px);
+}
+.tpl-key.is-active {
+  box-shadow: 0 0 0 2px var(--bg1), 0 0 0 4px var(--acc);
+}
+.tpl-name {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tpl-del {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.designer-name,
+.designer-badge,
+.designer-ring {
+  gap: 8px;
+  align-items: flex-end;
+}
+.designer-ring {
+  align-items: center;
+}
+.designer-apply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* one column: a key's whole name reads, and long names never widen the panel */
+.apply-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.apply-list .check {
+  min-width: 0;
+}
+
+/* the full key editor (owner's "2 a", 2026-10-25): icon library, the key big and live, the look's tabs */
+.studio {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.studio-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.studio-title {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(250px, 300px) minmax(320px, 1fr) minmax(300px, 360px);
+  gap: 12px;
+  padding: 12px;
+}
+.studio-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.studio-stage {
+  align-items: center;
+}
+.studio-canvas {
+  width: fit-content;
+  max-width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border-radius: 46px;
+  background: repeating-conic-gradient(var(--line) 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+}
+.studio-key {
+  width: 288px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 34px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.studio-key:active {
+  cursor: grabbing;
+}
+.studio-key:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 4px;
+}
+.studio-key svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.studio-move {
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.studio-stage .help {
+  text-align: center;
+  max-width: 46ch;
+}
+.studio-keys {
+  display: grid;
+  grid-template-columns: repeat(5, 48px);
+  gap: 8px;
+  justify-content: center;
+}
+.studio-chip {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  overflow: hidden;
+  background: none;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.studio-chip svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.studio-chip.is-on {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--bg1), 0 0 0 4px var(--acc);
+}
+.studio-chip.is-current {
+  cursor: default;
+}
+@media (max-width: 1100px) {
+  .studio-grid {
+    grid-template-columns: minmax(220px, 260px) minmax(280px, 1fr) minmax(280px, 320px);
+  }
+  .studio-key {
+    width: 216px;
+  }
+}
+/* the library on the editor's left takes the column's height; as many columns as fit, no sideways scroll */
+.studio-library .icon-picker {
+  flex: 1;
+  min-height: 0;
+}
+.studio-library .icon-grid {
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+}
+.studio-library .icon-grid.pack {
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+}
+.studio-bar {
+  flex-wrap: wrap;
+}
+.studio-note {
+  max-width: 40ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* looks by conditions (step 4) and the values a label can show */
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.rule-when,
+.rule-then {
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rule-when .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.rule-num {
+  flex: 0 0 72px !important;
+}
+.label-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.label-values .chip {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+}
+
+/* The Deck look view (session 36, mockups v1-v5): presets and elements on the left, the preview,
+   the smoothness and the elements on (or the picked one's settings) on the right. */
+.dl .studio-bar { flex-wrap: wrap; }
+.dl-live { font-size: 12px; color: #4ade80; display: inline-flex; align-items: center; gap: 6px; }
+.dl-live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.dl-leave { width: min(420px, 100%); }
+/* What's new after an update: the release's one big thing with its moving picture, then a few that open their place */
+.whatsnew { width: min(520px, 100%); max-height: calc(100vh - 48px); overflow: auto; display: grid; gap: 14px; padding: 16px 20px 18px; border-radius: 16px; background: var(--popbg); box-shadow: var(--popsh); }
+.wn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wn-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--acc); }
+.wn-hero { display: grid; gap: 8px; }
+.wn-hero .dl-thumb { border-radius: 10px; }
+.wn-hero h2 { margin: 6px 0 0; font-size: 22px; line-height: 1.2; text-wrap: balance; }
+.wn-hero p { margin: 0; color: var(--tx2); font-size: 14px; line-height: 1.5; }
+.wn-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.wn-items { list-style: none; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.wn-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px; border: 0; border-radius: 10px; background: none; color: var(--tx); font: inherit; text-align: left; }
+.wn-item.is-link { cursor: pointer; }
+.wn-item.is-link:hover { background: var(--hov); }
+.wn-item.is-link:focus-visible { outline: 2px solid var(--accring); outline-offset: 1px; }
+.wn-icon { flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--acc); }
+.wn-text { display: grid; gap: 1px; min-width: 0; }
+.wn-text b { font-size: 14px; font-weight: 600; }
+.wn-text small { font-size: 12.5px; color: var(--tx2); line-height: 1.4; }
+.wn-go { margin-left: auto; color: var(--tx3); }
+.wn-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* the preset on the lights and as the screensaver, under the preview */
+.dl-also { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.dl-also-sw { display: inline-flex; gap: 3px; margin-right: 2px; }
+.dl-also-sw i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+.dl-also-row { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.dl-also-parts { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-left: 4px; }
+.dl-also-own { display: grid; gap: 4px; padding-left: 4px; font-size: 12.5px; color: var(--tx2); }
+.dl-own { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dl-own i { width: 9px; height: 9px; border-radius: 50%; }
+.dl-also-own > .link-btn { justify-self: start; }
+.dl-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 520px); gap: 12px; padding: 12px; }
+.dl-left, .dl-right { overflow-y: auto; }
+.dl-tabs { display: flex; gap: 4px; background: var(--bg0); border: 1px solid var(--line); border-radius: 10px; padding: 4px; align-self: flex-start; }
+.dl-tabs button { font: inherit; font-weight: 600; color: var(--tx2); background: transparent; border: 0; border-radius: 7px; padding: 5px 16px; cursor: pointer; }
+.dl-tabs button.is-on { background: var(--bg3); color: var(--tx); }
+.dl-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; }
+/* two a row in the side panel */
+.saver-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dl-keys .dl-sub { font-size: 12px; font-weight: 600; color: var(--tx2); margin-top: 6px; }
+/* six choices a row: no tile left alone on a second row at the usual widths */
+.dl-keys .dl-tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.dl-tile { position: relative; font: inherit; color: var(--tx); text-align: left; background: var(--bg2); border: 1px solid var(--line-strong); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; min-width: 0; }
+.dl-tile:hover { border-color: color-mix(in srgb, var(--acc) 60%, transparent); }
+.dl-tile.is-sel { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc), 0 0 14px color-mix(in srgb, var(--acc) 35%, transparent); }
+.dl-tile:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.dl-el.is-on { border: 2px solid var(--acc); padding: 5px; background: color-mix(in srgb, var(--acc) 12%, var(--bg2)); }
+.dl-el.is-focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 40%, transparent); }
+.dl-el:not(.is-on) .dl-thumb img { filter: grayscale(0.6) brightness(0.55); }
+.dl-el:not(.is-on) .dl-name { color: var(--tx2); font-weight: 500; }
+.dl-thumb { display: block; width: 100%; aspect-ratio: 300 / 171; border-radius: 6px; background: #000; overflow: hidden; }
+/* "none": plain empty keys in the deck's 5 x 3, as the thumbnails show the key windows */
+.dl-thumb.is-none { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(3, 1fr); gap: 7%; padding: 6% 5%; background: var(--bg1); }
+.dl-thumb.is-none { position: relative; }
+.dl-thumb.is-none i { border-radius: 3px; background: color-mix(in srgb, var(--tx) 4%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tx) 9%, transparent); }
+.dl-thumb.is-none b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--tx2); }
+.dl-thumb.is-none b span, .dl-thumb.is-none b svg { flex: none; }
+.dl-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.dl-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dl-name { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; line-height: 1.25; }
+.dl-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: #fff; flex: none; }
+.dl-mark .i { width: 12px; height: 12px; }
+.dl-mark.is-dim { opacity: 0.45; }
+.dl-marks { display: inline-flex; gap: 3px; flex: none; }
+.dl-check { position: static; flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2px solid rgba(255, 255, 255, 0.4); background: var(--bg1); color: transparent; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.dl-check:hover { border-color: #fff; color: rgba(255, 255, 255, 0.7); }
+.dl-check[aria-checked="true"], .dl-el.is-on .dl-check { background: var(--acc); border-color: var(--acc); color: #fff; }
+.dl-check .i { width: 16px; height: 16px; }
+.dl-cost { font-family: var(--dk-mono, monospace); font-size: 11px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line-strong); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.dl-cost em { font-style: normal; color: var(--tx2); font-size: 10px; }
+.dl-cost.is-l, .dl-meterhead .is-l { color: #4ade80; }
+.dl-cost.is-m, .dl-meterhead .is-m { color: #fbbf24; }
+.dl-cost.is-h, .dl-meterhead .is-h { color: #f87171; }
+.dl-elems { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 14px; align-items: start; }
+.dl-rail { display: flex; flex-direction: column; gap: 3px; position: sticky; top: 0; }
+.dl-rail button { font: inherit; text-align: left; color: var(--tx2); background: transparent; border: 1px solid transparent; border-radius: 9px; padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: center; }
+.dl-rail button:hover { background: var(--bg2); }
+.dl-rail button.is-on { background: var(--bg3); border-color: var(--acc); color: var(--tx); }
+.dl-rn { font-weight: 600; font-size: 13px; line-height: 1.2; display: flex; flex-direction: column; }
+.dl-rn .tx2 { font-size: 11px; font-weight: 400; }
+.dl-rc { font-size: 11.5px; min-width: 20px; text-align: center; border-radius: 999px; background: var(--acc); color: #fff; padding: 0 6px; }
+.dl-depth { display: inline-flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: 6px; background: var(--bg0); border: 1px solid var(--line-strong); }
+.dl-depth i { display: block; width: 16px; height: 3px; border-radius: 2px; background: var(--bg3); }
+.dl-depth i.is-on { background: var(--acc); }
+.dl-cat { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dl-cathead { display: flex; gap: 10px; align-items: flex-start; }
+.dl-cathead > div { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dl-cathead strong { font-size: 15px; }
+.dl-rule { font-size: 11.5px; color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.dl-guard { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.dl-preview { background: #000; border-radius: 12px; padding: 8px; }
+.dl-panel { width: 100%; height: auto; display: block; }
+/* an upright deck: narrower, so it stands about as tall as the lying preview is wide x 0.8 */
+.dl-panel.is-upright { width: 46%; margin: 0 auto; }
+.dl-frame { fill: #0b0b0e; }
+.dl-hit { fill: transparent; stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; cursor: pointer; }
+.dl-hit:hover { stroke: rgba(255, 255, 255, 0.35); }
+.dl-wait { padding: 40px 10px; text-align: center; }
+.dl-under { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dl-under .help { flex: 1; min-width: 200px; }
+.dl-meterhead { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
+.dl-meterhead b { font-weight: 500; font-size: 12.5px; white-space: nowrap; }
+.dl-meter { display: flex; gap: 1px; height: 10px; border-radius: 999px; background: var(--bg3); overflow: hidden; }
+.dl-meter i { display: block; height: 100%; }
+.dl-meter i.is-ghost { background: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.4) 0 4px, transparent 4px 8px); }
+.dl-devsw { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx2); align-self: flex-start; }
+.dl-mixhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dl-mixtitle { font-size: 12.5px; min-width: 0; }
+.dl-mix { display: flex; flex-direction: column; gap: 2px; }
+.dl-mrow { display: grid; grid-template-columns: 5px minmax(0, 1fr) auto 72px auto auto; gap: 8px; align-items: center; padding: 4px 4px 4px 0; border-radius: 8px; cursor: pointer; }
+.dl-mrow:hover { background: var(--bg2); }
+.dl-mrow.is-off .dl-mname, .dl-mrow.is-off .dl-mms, .dl-mrow.is-off .dl-sw { opacity: 0.4; }
+.dl-sw { align-self: stretch; border-radius: 3px; }
+.dl-mname { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+.dl-mname > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-mcat { font-size: 11.5px; white-space: nowrap; }
+.dl-mms { font-size: 11.5px; text-align: right; color: var(--tx2); }
+.dl-mb { width: 28px; height: 26px; border-radius: 7px; border: 1px solid var(--line-strong); background: var(--bg3); color: var(--tx2); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.dl-mb:hover { color: var(--tx); border-color: var(--acc); }
+.dl-mb.is-on { background: #fbbf24; color: #241a00; }
+.dl-mb.is-off { color: #f87171; }
+.dl-oneline { font: inherit; font-size: 12.5px; text-align: left; color: var(--tx2); background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; cursor: pointer; }
+.dl-insp { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--acc); border-radius: 10px; padding: 10px 12px; background: var(--bg1); }
+.dl-insphead { display: flex; align-items: center; gap: 8px; }
+.dl-pop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: grid; place-items: center; z-index: 50; }
+.dl-pop > div { background: var(--bg1); border: 1px solid var(--line-strong); border-radius: 12px; padding: 16px; width: min(420px, 92vw); display: flex; flex-direction: column; gap: 10px; }
+.dl-icpick { display: flex; gap: 6px; flex-wrap: wrap; }
+.dl-icpick button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--bg2); color: var(--tx); display: grid; place-items: center; cursor: pointer; }
+.dl-icpick button.is-on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 30%, var(--bg2)); }
+@media (max-width: 1100px) { .dl-grid { grid-template-columns: minmax(0, 1fr); } .dl-elems { grid-template-columns: minmax(0, 1fr); } .dl-rail { position: static; flex-direction: row; flex-wrap: wrap; } }

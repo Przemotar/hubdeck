@@ -157,6 +157,9 @@ fn scan_loop(shared: Arc<Shared>, ready: Sender<Result<()>>) {
 }
 
 fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last_reset: &mut HashMap<ModuleKind, Instant>) {
+    // `MH_HID_SHARED=1` already opens every module shared (scan_loop)
+    #[cfg(target_os = "macos")]
+    let shared_open = std::env::var_os("MH_HID_SHARED").is_some();
     if let Err(e) = api.reset_devices().and_then(|_| api.add_devices(VENDOR_ID, 0)) {
         warn!("enumerate: {e}");
         return;
@@ -174,7 +177,22 @@ fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last
         if lock(&shared.paths).contains_key(&path) || backoff.get(&path).is_some_and(|(t, _)| Instant::now() < *t) {
             continue;
         }
-        let mut module = match api.open_path(&path) {
+        // macOS: keys and dial are opened shared, so a second device object of ours can keep
+        // several picture reports in flight (`pictures.rs`); an exclusive open cuts every other
+        // object off (0xe00002c5, 2026-10-30). Their reports are opaque byte arrays (usage
+        // 0xFF00), so the system's own driver has nothing to act on.
+        #[cfg(target_os = "macos")]
+        let pictured = matches!(kind, ModuleKind::Keys | ModuleKind::Dial) && std::env::var("HUBDECK_PIPELINE").as_deref() != Ok("0");
+        #[cfg(target_os = "macos")]
+        if pictured && !shared_open {
+            api.set_open_exclusive(false);
+        }
+        let opened = api.open_path(&path);
+        #[cfg(target_os = "macos")]
+        if pictured && !shared_open {
+            api.set_open_exclusive(true);
+        }
+        let mut module = match opened {
             Ok(device) => {
                 let mut m = Module::new(kind, descriptor_serial, device);
                 // Windows: a second handle for output reports, so pictures and LED colors never
@@ -183,6 +201,16 @@ fn scan_once(shared: &Arc<Shared>, api: &mut HidApi, backoff: &mut Backoff, last
                     && let Ok(writer) = api.open_path(&path)
                 {
                     m.set_writer(writer);
+                }
+                #[cfg(windows)]
+                if matches!(kind, ModuleKind::Keys | ModuleKind::Dial)
+                    && let Some(pictures) = crate::overlapped::Pipelined::open(&path)
+                {
+                    m.set_pictures(pictures);
+                }
+                #[cfg(target_os = "macos")]
+                if pictured && let Some(pictures) = crate::pictures::Pipelined::open(&path) {
+                    m.set_pictures(pictures);
                 }
                 m
             }

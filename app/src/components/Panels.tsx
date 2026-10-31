@@ -2,8 +2,9 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import { askInWindow, confirmed, open, save } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
-import { api, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens, triedPresets } from "../engine";
+import { api, withUpright, type FrameCost, FX_OPTIONS, FX_TINT, fxName, GPU_KINDS, type FxKind, type FxLayer, SKIN_MOTION, type Skin, type Look, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens, triedPresets, DISCORD, SAVER_SCENES, saverOf, knownScreens, SAVER_FROM_LOOK, saverPreset, PRESETS_HIDDEN, presetThumb, THEMES, themeTitle, layersOf } from "../engine";
 import { Icon } from "./Icon";
+import { NoneThumb, Thumb } from "./Thumb";
 import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
 import { ModuleThumb } from "./DeckView";
@@ -60,15 +61,19 @@ export function movedNote(moved: Moved[] | undefined, pages: Profile["pages"] = 
   return t("profile.moved", { list });
 }
 
-/** The app icon: a purple tile with a dial and a column of keys. */
+/** The app icon (k1, `scripts/icon/build-icon.py`): six light keys on a tile in the app's violet. */
 export const Logo = () => (
   <svg className="logo" viewBox="0 0 64 64" aria-hidden="true">
-    <rect x="2" y="2" width="60" height="60" rx="14" fill="#8b7cf6" />
-    <circle cx="25" cy="32" r="14" fill="none" stroke="#fff" strokeWidth="5" />
-    <line x1="25" y1="32" x2="25" y2="22" stroke="#fff" strokeWidth="5" strokeLinecap="round" />
-    <rect x="44" y="12" width="10" height="10" rx="2.5" fill="#fff" />
-    <rect x="44" y="27" width="10" height="10" rx="2.5" fill="#fff" />
-    <rect x="44" y="42" width="10" height="10" rx="2.5" fill="#fff" />
+    <defs>
+      <linearGradient id="logo-tile" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#8273f6" />
+        <stop offset="1" stopColor="#5b46e4" />
+      </linearGradient>
+    </defs>
+    <rect width="64" height="64" rx="14.4" fill="url(#logo-tile)" />
+    {[0, 1].map((r) =>
+      [0, 1, 2].map((c) => <rect key={`${r}${c}`} x={8.75 + c * 16.04} y={17.6 + r * 16.04} width={14.17} height={14.17} rx={3.4} fill="#f1eeff" />),
+    )}
   </svg>
 );
 
@@ -802,9 +807,9 @@ function ProfileTabs({ view, onOpenProfile, onOpenGallery, onOpenForApp, onOpenA
         )}
         {naming === null ? (
           <span className="pop-anchor" ref={addRef}>
-            <button data-guide="newDeck" className={`tab new-deck${adding ? " is-active" : ""}`} aria-expanded={adding} onClick={() => (setAdding((a) => !a), setReadyOpen(false))}>
+            <button data-guide="newDeck" className={`tab new-deck${adding ? " is-active" : ""}`} aria-expanded={adding} title={t("topbar.newDeck")} onClick={() => (setAdding((a) => !a), setReadyOpen(false))}>
               <Icon name="plus" />
-              {t("topbar.newDeck")}
+              <span className="tb-label">{t("topbar.newDeck")}</span>
             </button>
             {adding && (
               <div className="popover new-deck-pop" role="dialog" aria-label={t("topbar.newDeck")}>
@@ -999,13 +1004,13 @@ export function TopBar({
         </button>
       )}
       <HelpMenu />
-      <button className="tool ghost" onClick={onOpenPlugins}>
+      <button className="tool ghost" onClick={onOpenPlugins} title={t("topbar.plugins")}>
         <Icon name="plug" />
-        {t("topbar.plugins")}
+        <span className="tb-label">{t("topbar.plugins")}</span>
       </button>
-      <button className="tool ghost" onClick={onOpenSettings}>
+      <button className="tool ghost" onClick={onOpenSettings} title={t("topbar.settings")}>
         <Icon name="settings" />
-        {t("topbar.settings")}
+        <span className="tb-label">{t("topbar.settings")}</span>
       </button>
       <span className="sep" />
       <div className="status" title={orientation ? t("topbar.baseLies", { orientation: t(`orientation.${orientation}`) }) : undefined}>
@@ -1041,7 +1046,7 @@ function HelpMenu() {
     <span className="pop-anchor help-menu" ref={ref}>
       <button className="tool ghost" aria-haspopup="menu" aria-expanded={open} title={t("help.title")} onClick={() => setOpen((o) => !o)}>
         <Icon name="message-square" />
-        {t("help.button")}
+        <span className="tb-label">{t("help.button")}</span>
       </button>
       {open && (
         <div className="popover help-pop" role="menu">
@@ -1068,6 +1073,22 @@ function HelpMenu() {
             </button>
           </div>
           <p className="help">{t("help.menuText")}</p>
+          {/* the server's one address (owner's "7. tak dodaj", 2026-10-30): no GitHub account needed */}
+          <div className="menu-list">
+            <button role="menuitem" className="menu-row compact" onClick={() => (setOpen(false), window.dispatchEvent(new CustomEvent("hubdeck:whats-new")))}>
+              <Icon name="sparkles" />
+              <span className="menu-text">
+                <b>{t("whatsNew.menu")}</b>
+              </span>
+            </button>
+            <button role="menuitem" className="menu-row compact" onClick={() => go(DISCORD)}>
+              <Icon name="users" />
+              <span className="menu-text">
+                <b>{t("help.discord")}</b>
+                <small>{t("help.discordHelp")}</small>
+              </span>
+            </button>
+          </div>
         </div>
       )}
     </span>
@@ -1201,6 +1222,57 @@ function MusicTuning({ l, setL, save }: { l: LightSettings; setL: (l: LightSetti
   );
 }
 
+/** The style the lights had before they followed the music, to go back to when the music is switched off. */
+const BEFORE_MUSIC = "hubdeck.lightsBeforeMusic";
+
+/** Lights to the music, from its chip under the deck (owner's "3 a", 2026-10-30): on or off for every
+ * profile, which lights join, and how they follow it. */
+export function MusicPanel({ onClose }: { onClose: () => void }) {
+  useLanguage();
+  const [l, setL] = useState<LightSettings | null>(null);
+  useEffect(() => {
+    api.lights().then(setL, () => {});
+  }, []);
+  const head = <PanelHead title={t("music.title")} crumb={t("music.allProfiles")} icon="music" onClose={onClose} />;
+  if (!l) return <aside className="inspector sectioned living-panel">{head}</aside>;
+  const save = (next: LightSettings) => {
+    setL(next);
+    api.setLights(next).catch(() => {});
+  };
+  const on = l.style === "music";
+  const toggle = (want: boolean) => {
+    if (want) {
+      try {
+        localStorage.setItem(BEFORE_MUSIC, l.style);
+      } catch {
+        // a page without storage goes back to the rainbow
+      }
+      save({ ...l, style: "music" });
+    } else {
+      let before = "rainbow";
+      try {
+        before = localStorage.getItem(BEFORE_MUSIC) || "rainbow";
+      } catch {
+        // as above
+      }
+      save({ ...l, style: before === "music" ? "rainbow" : before });
+    }
+  };
+  return (
+    <aside className="inspector sectioned living-panel">
+      {head}
+      <section className="sec">
+        <label className="check">
+          <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+          {t("music.on")}
+        </label>
+        <p className="help">{t("music.onHelp")}</p>
+        <MusicTuning l={l} setL={setL} save={save} />
+      </section>
+    </aside>
+  );
+}
+
 export function EffectFields({ idPrefix, effect, speed, onChange }: { idPrefix: string; effect?: string; speed?: number; onChange: (effect?: string, speed?: number) => void }) {
   useLanguage();
   const current = effect ?? "static";
@@ -1308,6 +1380,12 @@ export function EdgePanel({ view, onClose, onAll }: { view: EngineView; onClose:
   }, []);
   if (!profile || !draft) return null;
   const commit = (next: Profile) => {
+    // his own edge colour wins: the preset's colours on the lights go off (owner's "1 a", 2026-10-30)
+    // his own edge colour is the more particular setting: the preset's colour leaves the edge only
+    if (next.edge !== profile.edge && next.effects?.lights) {
+      const to = (next.effects.lightsTo ?? ["edge", "controls"]).filter((p) => p !== "edge");
+      next = { ...next, effects: { ...next.effects, lights: to.length ? next.effects.lights : undefined, lightsTo: to.length ? to : undefined } };
+    }
     setDraft(next);
     api.saveProfile(next).catch((e) => setMessage(String(e)));
   };
@@ -1361,6 +1439,491 @@ export function EdgePanel({ view, onClose, onAll }: { view: EngineView; onClose:
         </button>
         <p className="help">{t("edge.allHelp")}</p>
         {message && <p className="help">{message}</p>}
+      </section>
+    </aside>
+  );
+}
+
+/** One option of a layer as a slider (0..100, wind -100..100), its default in the middle. */
+function FxSlider({ id, label, value, min, max, fallback, show, onChange }: { id: string; label: string; value?: number; min: number; max: number; fallback: number; show: (v: number) => string; onChange: (v: number) => void }) {
+  const v = value ?? fallback;
+  return (
+    <label className="field fx-opt" htmlFor={id}>
+      <span className="label">
+        {label} <span className="tx2">{show(v)}</span>
+      </span>
+      <input id={id} type="range" min={min} max={max} step={5} value={v} onChange={(e) => onChange(Number(e.target.value))} />
+    </label>
+  );
+}
+
+/** The options of one switched-on effect (only those its kind listens to). */
+export function FxOptions({ layer, onChange }: { layer: FxLayer; onChange: (l: FxLayer) => void }) {
+  const opts = FX_OPTIONS[layer.kind];
+  const id = `fx-${layer.kind}`;
+  return (
+    <div className="fx-card-body">
+      {opts.includes("strength") && <FxSlider id={`${id}-strength`} label={t("effects.strength")} value={layer.strength} min={10} max={100} fallback={60} show={(v) => `${v}%`} onChange={(strength) => onChange({ ...layer, strength })} />}
+      {opts.includes("speed") && <FxSlider id={`${id}-speed`} label={t("effects.speed")} value={layer.speed} min={0} max={100} fallback={50} show={(v) => `${(0.25 * Math.pow(16, v / 100)).toFixed(1)}×`} onChange={(speed) => onChange({ ...layer, speed })} />}
+      {opts.includes("density") && <FxSlider id={`${id}-density`} label={t(layer.kind === "bats" ? "effects.often" : layer.kind === "finish" ? "effects.grain" : layer.kind === "scene" ? "effects.stars" : "effects.density")} value={layer.density} min={0} max={100} fallback={50} show={(v) => `${v}%`} onChange={(density) => onChange({ ...layer, density })} />}
+      {opts.includes("wind") && <FxSlider id={`${id}-wind`} label={t(layer.kind === "light" ? "effects.angle" : "effects.wind")} value={layer.wind} min={-100} max={100} fallback={0} show={(v) => (v === 0 ? t("effects.calm") : `${v < 0 ? "←" : "→"} ${Math.abs(v)}%`)} onChange={(wind) => onChange({ ...layer, wind })} />}
+      {opts.includes("tint") && (
+        <div className="row between">
+          <label className="check">
+            <input type="checkbox" checked={!!layer.tint} onChange={(e) => onChange({ ...layer, tint: e.target.checked ? FX_TINT[layer.kind] : undefined })} />
+            {t("effects.tint")}
+          </label>
+          {layer.tint && (
+            <label className="color">
+              <input type="color" value={layer.tint} aria-label={t("effects.tint")} onChange={(e) => onChange({ ...layer, tint: e.target.value })} />
+              <span className="mono">{layer.tint.toUpperCase()}</span>
+            </label>
+          )}
+        </div>
+      )}
+      {layer.kind === "finish" && (layer.density ?? 50) > 50 && <p className="help">{t("effects.grainCost")}</p>}
+      {opts.includes("moving") && (
+        <label className="check">
+          <input type="checkbox" checked={layer.moving === true} onChange={(e) => onChange({ ...layer, moving: e.target.checked || undefined })} />
+          {t("effects.moving")}
+        </label>
+      )}
+      {opts.includes("side") && (
+        <div className="row between">
+          <span className="label">{t("effects.side")}</span>
+          <span className="seg" role="radiogroup" aria-label={t("effects.side")}>
+            {(["left", "right"] as const).map((sd) => (
+              <button key={sd} role="radio" aria-checked={(layer.side ?? "right") === sd} className={`tab${(layer.side ?? "right") === sd ? " is-active" : ""}`} onClick={() => onChange({ ...layer, side: sd === "right" ? undefined : sd })}>
+                {t(`effects.side.${sd}` as Key)}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+      {opts.includes("react") && (
+        <label className="check">
+          <input type="checkbox" checked={layer.react !== false} onChange={(e) => onChange({ ...layer, react: e.target.checked ? undefined : false })} />
+          {t("effects.react")}
+        </label>
+      )}
+      {GPU_KINDS.includes(layer.kind) && <p className="help">{t("effects.gpuHelp")}</p>}
+      <button className="tool small ghost align-start" onClick={() => onChange({ kind: layer.kind })}>
+        {t("effects.reset")}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The order the engine draws effects in, whatever order they were switched on (owner, 2026-10-26:
+ * categories with effects switched on and off, not a stack of layers): the scene at the back, the
+ * water and the ripple bending what is under them, across the keys, the press's sparks, the
+ * visitors, the lamp, the finish on top.
+ */
+export const FX_ORDER: FxKind[] = [
+  "goldlight",
+  "woodland",
+  "fuji",
+  "matrix",
+  "code",
+  "synthwave",
+  "ink",
+  "nebula",
+  "spectrum",
+  "circuit",
+  "orbit",
+  "vinyl",
+  "impasto",
+  "hollowhill",
+  "lanternhollow",
+  "tokyorain",
+  "ukiyo",
+  "koi",
+  "scene",
+  "aurora",
+  "aquarium",
+  "cover",
+  "lava",
+  "caustics",
+  "haunt",
+  "lanterns",
+  "storks",
+  "liquid",
+  "glass",
+  "water",
+  "ripple",
+  "fog",
+  "mist",
+  "rain",
+  "neonrain",
+  "snow",
+  "fireflies",
+  "embers",
+  "fire",
+  "leaves",
+  "sakura",
+  "burst",
+  "bats",
+  "hop",
+  "light",
+  "frames",
+  "holo",
+  "relief",
+  "gold",
+  "chrome",
+  "crystal",
+  "candle",
+  "spectral",
+  "frost",
+  "heart",
+  "finish",
+  "springs",
+  "pumpkins",
+  "webs",
+  "stone",
+  "carved",
+  "slime",
+  "mushrooms",
+  "eyes",
+  "ghost",
+  "spider",
+  "batburst",
+  "ghostrise",
+  "bloom",
+  "magnet",
+  "shockwave",
+  "chain",
+  "firework",
+  "domino",
+  "flip",
+];
+
+/**
+ * What each effect costs a frame on the CPU (ms, release build, the whole panel, 2026-10-26
+ * `canvas_cost`), and whether it moves the whole screen all the time (more to send each picture).
+ * The water and the ripple cost only for a few seconds after a press.
+ */
+export const FX_COST: Record<FxKind, { ms: number; moves: boolean }> = withUpright({
+  fog: { ms: 2.2, moves: true },
+  rain: { ms: 0.3, moves: true },
+  snow: { ms: 0.2, moves: true },
+  fireflies: { ms: 0.5, moves: true },
+  embers: { ms: 2.4, moves: true },
+  ripple: { ms: 0.6, moves: false },
+  water: { ms: 0.4, moves: false },
+  burst: { ms: 0.2, moves: false },
+  bats: { ms: 0.1, moves: false },
+  light: { ms: 0.5, moves: true },
+  scene: { ms: 0.4, moves: true },
+  finish: { ms: 0.4, moves: false },
+  fire: { ms: 0.5, moves: true },
+  aurora: { ms: 0.5, moves: true },
+  aquarium: { ms: 0.5, moves: true },
+  cover: { ms: 0.5, moves: true },
+  lava: { ms: 0.5, moves: true },
+  glass: { ms: 0.5, moves: true },
+  frames: { ms: 0.5, moves: true },
+  liquid: { ms: 0.5, moves: true },
+  frost: { ms: 0.5, moves: true },
+  springs: { ms: 0.4, moves: false },
+  heart: { ms: 0.4, moves: false },
+  flip: { ms: 0.5, moves: false },
+  hop: { ms: 0.5, moves: true },
+  holo: { ms: 0.5, moves: true },
+  relief: { ms: 0.5, moves: true },
+  gold: { ms: 0.5, moves: true },
+  chrome: { ms: 0.5, moves: true },
+  crystal: { ms: 0.5, moves: true },
+  mist: { ms: 0.5, moves: true },
+  neonrain: { ms: 0.5, moves: true },
+  caustics: { ms: 0.6, moves: true },
+  pumpkins: { ms: 0.5, moves: true },
+  eyes: { ms: 0.5, moves: true },
+  ghost: { ms: 0.5, moves: true },
+  spider: { ms: 0.5, moves: true },
+  webs: { ms: 0.4, moves: true },
+  batburst: { ms: 0.4, moves: false },
+  ghostrise: { ms: 0.4, moves: false },
+  domino: { ms: 0.4, moves: false },
+  chain: { ms: 0.4, moves: false },
+  firework: { ms: 0.4, moves: false },
+  shockwave: { ms: 0.4, moves: false },
+  magnet: { ms: 0.4, moves: false },
+  bloom: { ms: 0.4, moves: false },
+  haunt: { ms: 0.5, moves: true },
+  candle: { ms: 0.5, moves: true },
+  carved: { ms: 0.5, moves: true },
+  stone: { ms: 0.4, moves: false },
+  slime: { ms: 0.5, moves: true },
+  spectral: { ms: 0.5, moves: true },
+  leaves: { ms: 0.6, moves: true },
+  storks: { ms: 0.5, moves: true },
+  goldlight: { ms: 0.6, moves: true },
+  sakura: { ms: 0.6, moves: true },
+  lanterns: { ms: 0.5, moves: true },
+  ukiyo: { ms: 0.5, moves: true },
+  koi: { ms: 0.6, moves: true },
+  mushrooms: { ms: 0.5, moves: false },
+  woodland: { ms: 0.7, moves: true },
+  fuji: { ms: 0.7, moves: true },
+  matrix: { ms: 0.7, moves: true },
+  code: { ms: 0.7, moves: true },
+  synthwave: { ms: 0.7, moves: true },
+  ink: { ms: 0.7, moves: true },
+  nebula: { ms: 0.7, moves: true },
+  spectrum: { ms: 0.7, moves: true },
+  circuit: { ms: 0.7, moves: true },
+  orbit: { ms: 0.7, moves: true },
+  vinyl: { ms: 0.7, moves: true },
+  impasto: { ms: 0.7, moves: true },
+  hollowhill: { ms: 1.9, moves: true },
+  lanternhollow: { ms: 1.9, moves: true },
+  tokyorain: { ms: 1.9, moves: true },
+});
+
+/** A key's look in a skin (with the motion it was made with) or in none (its own motion goes too). */
+export function skinned(look: Look, skin: Skin | undefined): Look {
+  const own = look.skin && look.motion === SKIN_MOTION[look.skin];
+  if (!skin) return { ...look, skin: undefined, motion: own ? undefined : look.motion };
+  return { ...look, skin, motion: SKIN_MOTION[skin] ?? (own ? undefined : look.motion) };
+}
+
+/** The deck's frame budget at 24 pictures a second, ms. */
+const FRAME_BUDGET_MS = 1000 / 24;
+
+/**
+ * The frame cost debugger (owner, 2026-10-27: "debugger który pokaże mi ile każdy z efektów/laerów
+ * dodane ms na obliczenia i co sklada sie na te \"ciężkie obliczenia\""; his "ok" to the sketch):
+ * each layer's ms a frame, the heaviest marked, and the frame's parts, live once a second (the
+ * panel asks; the load bar uses the same numbers). Its open state is kept per viewer. Shown nowhere
+ * since the Living deck panel gave way to the Deck look view; kept until the owner picks whether
+ * the frame's parts (keys, JPEG, USB send) get a place there.
+ */
+export function FrameCostView({ cost }: { cost: FrameCost | null }) {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem("hubdeck.frameCost") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("hubdeck.frameCost", open ? "1" : "0");
+    } catch {
+      /* private window: the state is not kept */
+    }
+  }, [open]);
+  const rows = cost?.layers ?? [];
+  const heaviest = rows.reduce((m, r) => (r.ms > m ? r.ms : m), 0);
+  const parts = cost ? [cost.layersMs, cost.keysMs, cost.encodeMs] : [];
+  const total = parts.reduce((a, b) => a + b, 0);
+  // the effects against the heaviest effect, the picture's parts against the largest part: one
+  // scale for both left the effects' bars a sliver beside "Effects together"
+  const partScale = Math.max(...parts, cost?.sendMs ?? 0, 0.5);
+  const name = (kind: string) => (kind === "halo" ? t("effects.cost.halo") : fxName(kind as FxKind));
+  const bar = (label: string, ms: number, scale: number, extra?: string, mark?: boolean) => (
+    <div className={`fx-cost-row${mark ? " is-heaviest" : ""}`} key={label}>
+      <span className="fx-cost-name">{label}</span>
+      <span className="fx-load-bar" aria-hidden="true">
+        <i style={{ width: `${Math.min(100, (ms / scale) * 100)}%` }} />
+      </span>
+      <span className="fx-cost-ms mono">{t("effects.cost.ms", { ms: ms.toFixed(ms < 10 ? 2 : 1) })}</span>
+      <span className="fx-cost-note">{extra ?? ""}</span>
+    </div>
+  );
+  return (
+    <details className="fx-cost" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary title={t("effects.cost.help")}>
+        <span>{t("effects.cost")}</span>
+        {cost && <span className="mono fx-cost-total">{t("effects.cost.total", { ms: total.toFixed(1), budget: FRAME_BUDGET_MS.toFixed(1) })}</span>}
+      </summary>
+      {!cost ? (
+        <p className="help">{t("effects.cost.waiting")}</p>
+      ) : (
+        <div className="fx-cost-body">
+          <span className="label">{t("effects.cost.layers")}</span>
+          {rows.map((r) => bar(name(r.kind), r.ms, Math.max(heaviest, 0.5), r.ms === heaviest && rows.length > 1 ? t("effects.cost.heaviest") : undefined, r.ms === heaviest && rows.length > 1))}
+          <span className="label">{t("effects.cost.frame")}</span>
+          {bar(t("effects.cost.layersTotal"), cost.layersMs, partScale)}
+          {bar(t("effects.cost.keys"), cost.keysMs, partScale)}
+          {bar(t("effects.cost.encode"), cost.encodeMs, partScale)}
+          {bar(t("effects.cost.send"), cost.sendMs, partScale, t("effects.cost.ownThread"))}
+        </div>
+      )}
+    </details>
+  );
+}
+
+/** The screensaver's panel (owner, 2026-10-26: "oddzielny panel do ustawienia wygaszacza dla danego
+ * profilu … z ustawieniem czasu"; his "1a": one shared saver and delay, a profile may have its own),
+ * in the inspector's place. */
+/** Presets that make no screensaver: the spectrum follows what plays, and nothing plays while you are away. */
+const SAVER_NOT_PRESETS = ["music-spectrum", "music-spectrum-up"];
+
+export function SaverPanel({ view, onClose }: { view: EngineView; onClose: () => void }) {
+  useLanguage();
+  const profile = view.profile;
+  const [draft, setDraft] = useState<Profile | null>(profile);
+  const [shared, setShared] = useState<Screens | null>(knownScreens);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => setDraft(profile), [profile]);
+  useEffect(() => {
+    api.screens().then(setShared, (e) => setMessage(String(e)));
+  }, []);
+  if (!profile || !draft) return null;
+  // the panel's place stays taken while the settings are read, so the deck does not jump
+  if (!shared) return <aside className="inspector sectioned living-panel"><PanelHead title={t("saver.title")} crumb={draft.name} icon="moon" onClose={onClose} /></aside>;
+  const now = saverOf(draft, shared);
+  const commitProfile = (next: Profile) => {
+    setDraft(next);
+    api.saveProfile(next).catch((e) => setMessage(String(e)));
+  };
+  const commitShared = (next: Screens) => {
+    setShared(next);
+    api.setScreens(next).catch((e) => setMessage(String(e)));
+  };
+  // a preset's layers go with it: the engine does not know the presets
+  const layersFor = (effect: string) => {
+    const id = saverPreset(effect);
+    return id ? THEMES.find((th) => th.id === id)?.layers : undefined;
+  };
+  const nowLayers = now.own ? draft.saver?.layers : shared.saverLayers;
+  // a pick goes to the profile's own screensaver, or to the one all profiles share
+  const pick = (effect: string, afterMinutes = now.afterMinutes) => {
+    const layers = effect === now.effect ? nowLayers : layersFor(effect);
+    if (now.own) commitProfile({ ...draft, saver: { effect, afterMinutes, layers } });
+    else commitShared({ ...shared, saver: effect, saverAfterMinutes: afterMinutes, saverLayers: layers });
+  };
+  const own = (on: boolean) => commitProfile({ ...draft, saver: on ? { effect: now.effect, afterMinutes: now.afterMinutes, layers: nowLayers } : undefined });
+  const name = (id: string) => (id === SAVER_FROM_LOOK ? t("saver.fromLook") : saverPreset(id) ? themeTitle(saverPreset(id)!) : t(`saver.scene.${id}` as Key));
+  // the profile's own look from Deck look, as its thumbnail
+  const lookTheme = draft.effects?.theme ?? null;
+  // a moving thumbnail as the deck shows it, as the presets have (owner, 2026-10-30: "czy screensavery
+  // tez nie powinny miec podgladu?"); scripts/ui/look-loops.mjs makes them as `saver-<id>`
+  const tile = (id: string, swatch?: string) => (
+    <button
+      key={id || "none"}
+      role="radio"
+      aria-checked={now.effect === id}
+      className={`dl-tile${now.effect === id ? " is-sel" : ""}${id ? "" : " dl-none"}`}
+      onClick={() => {
+        pick(id);
+        // a click shows it at once, on the deck and in the window (owner, 2026-10-27)
+        if (id) api.saverTry(id, layersFor(id)).catch((e) => setMessage(String(e)));
+      }}
+    >
+      {!id ? (
+        <NoneThumb label={t("screens.saverOff")} />
+      ) : id === SAVER_FROM_LOOK ? (
+        lookTheme ? <Thumb id={presetThumb(lookTheme)} moving={now.effect === id} /> : <span className="dl-thumb" />
+      ) : saverPreset(id) ? (
+        <Thumb id={presetThumb(saverPreset(id)!)} moving={now.effect === id} />
+      ) : (
+        <Thumb id={`saver-${id}`} moving={now.effect === id} />
+      )}
+      <span className="dl-row">
+        <span className="dl-name">{id ? name(id) : t("screens.saverOff")}</span>
+        {swatch && <i className="saver-swatch" style={{ background: swatch, color: swatch }} />}
+      </span>
+    </button>
+  );
+  return (
+    <aside className="inspector sectioned living-panel">
+      <PanelHead title={t("saver.title")} crumb={draft.name} icon="moon" onClose={onClose} />
+      <section className="sec">
+        <div className="field">
+          <span className="label">{t("saver.forProfile")}</span>
+          <div className="seg full" role="radiogroup" aria-label={t("saver.forProfile")}>
+            <button role="radio" aria-checked={!now.own} className={`tab${!now.own ? " is-active" : ""}`} onClick={() => own(false)}>
+              {t("saver.shared")}
+            </button>
+            <button role="radio" aria-checked={now.own} className={`tab${now.own ? " is-active" : ""}`} onClick={() => own(true)}>
+              {t("saver.own")}
+            </button>
+          </div>
+          <p className="help">{now.own ? t("saver.ownHelp") : t("saver.sharedHelp")}</p>
+        </div>
+        <div className="field">
+          <label htmlFor="saver-after" className="label">
+            {t("screens.saverAfter")}
+          </label>
+          <select id="saver-after" className="input" value={now.afterMinutes} onChange={(e) => pick(now.effect, Number(e.target.value))}>
+            {[1, 2, 5, 10, 15, 30, 60].map((m) => (
+              <option key={m} value={m}>
+                {t("screens.minutes", { count: m })}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* one list: the split into scenes and simple ones was the engine's, not the user's (owner,
+            2026-10-27: "czemu tam jest podział") */}
+        <div className="field fx-group">
+          <span className="label">{t("screens.saver")}</span>
+          <div className="dl-tiles saver-tiles" role="radiogroup" aria-label={t("screens.saver")}>
+            {/* "off" first (owner, 2026-10-30) */}
+            {tile("")}
+            {SAVER_SCENES.filter((sc) => !sc.hidden).map((sc) => tile(sc.id, sc.color || undefined))}
+          </div>
+        </div>
+        {/* the presets too, without their answer to presses (owner, 2026-10-30: "presety dorzucamy jako
+            screensavery tez (no ale bez efektu nacisniecia bo nacisnietcie wybudza, tak?)") */}
+        <div className="field fx-group">
+          <span className="label">{t("saver.presets")}</span>
+          <div className="dl-tiles saver-tiles" role="radiogroup" aria-label={t("saver.presets")}>
+            {/* only when the profile has a look; Spectrum stands still when nothing plays, as it does while
+                you are away (owner's "3. ok", 2026-10-30) */}
+            {layersOf(draft.effects).length > 0 && tile(SAVER_FROM_LOOK)}
+            {THEMES.filter((th) => !PRESETS_HIDDEN.has(th.id) && !SAVER_NOT_PRESETS.includes(th.id) && layersOf({ layers: th.layers }).length).map((th) => tile(`preset:${th.id}`))}
+          </div>
+          <p className="help">{t("saver.gpuHelp")}</p>
+        </div>
+        <button className="tool align-start" disabled={!now.effect} onClick={() => api.saverTry(now.effect).catch((e) => setMessage(String(e)))}>
+          <Icon name="play" />
+          {t("saver.try")}
+        </button>
+        <p className="help">{now.effect ? t("saver.tryHelp") : t("saver.help")}</p>
+      </section>
+      <section className="sec">
+        <h3 className="sec-title">{t("saver.allProfiles")}</h3>
+        <div className="field">
+          <label htmlFor="saver-dial" className="label">
+            {t("saver.dial")}
+          </label>
+          <select id="saver-dial" className="input" value={shared.saverDial ?? "clock"} onChange={(e) => commitShared({ ...shared, saverDial: e.target.value as Screens["saverDial"] })}>
+            {(["clock", "same", "off"] as const).map((d) => (
+              <option key={d} value={d}>
+                {t(`saver.dial.${d}` as Key)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="saver-lights" className="label">
+            {t("saver.lights")}
+          </label>
+          <select id="saver-lights" className="input" value={shared.saverLights ?? "scene"} onChange={(e) => commitShared({ ...shared, saverLights: e.target.value as Screens["saverLights"] })}>
+            {(["scene", "same", "off"] as const).map((d) => (
+              <option key={d} value={d}>
+                {t(`saver.lights.${d}` as Key)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="saver-blank" className="label">
+            {t("screens.after")}
+          </label>
+          <select id="saver-blank" className="input" value={shared.blankAfterMinutes} onChange={(e) => commitShared({ ...shared, blankAfterMinutes: Number(e.target.value) })}>
+            {[0, 5, 10, 15, 30, 60].map((m) => (
+              <option key={m} value={m}>
+                {m === 0 ? t("screens.never") : t("screens.minutes", { count: m })}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="help">{t("saver.help")}</p>
+        {message && <p className="help warn">{message}</p>}
       </section>
     </aside>
   );
@@ -1766,7 +2329,14 @@ function LightsSettings() {
         onPointerUp={() => save(l)}
         onKeyUp={() => save(l)}
       />
-      <MusicTuning l={l} setL={setL} save={save} />
+      {/* lights to the music sit under the deck now, beside the living deck and the screensaver
+          (owner's "3 a", 2026-10-30: "zeby to bylo obok siebie a nie schowane w opcjach") */}
+      <div className="row between">
+        <span className="help">{t("music.moved")}</span>
+        <button className="tool small" onClick={() => window.dispatchEvent(new CustomEvent("hubdeck:open-music"))}>
+          {t("settings.saverOpen")}
+        </button>
+      </div>
       {l.style === "rainbow" && (
         <label className="check" title={t("lights.hubRainbowHelp")}>
           <input type="checkbox" checked={l.hubRainbow ?? true} onChange={(e) => save({ ...l, hubRainbow: e.target.checked })} />
@@ -2465,29 +3035,14 @@ function ScreensSettings() {
         </select>
       </div>
       <p className="help">{t("screens.help")}</p>
-      {/* the screensaver: mood while you are away, nothing moving while you work */}
+      {/* the screensaver moved to its own panel under the deck (owner, 2026-10-26) */}
       <div className="field">
-        <label htmlFor="saver" className="label">
-          {t("screens.saver")}
-        </label>
-        <div className="row">
-          <select id="saver" className="input grow" value={s.saver ?? ""} onChange={(e) => save({ ...s, saver: e.target.value })}>
-            <option value="">{t("screens.saverOff")}</option>
-            <option value="rain">{t("screens.saverRain")}</option>
-            <option value="stars">{t("screens.saverStars")}</option>
-            <option value="waves">{t("screens.saverWaves")}</option>
-          </select>
-          {!!s.saver && (
-            <select id="saver-after" className="input" aria-label={t("screens.saverAfter")} value={s.saverAfterMinutes ?? 5} onChange={(e) => save({ ...s, saverAfterMinutes: Number(e.target.value) })}>
-              {[1, 2, 5, 10, 15, 30].map((m) => (
-                <option key={m} value={m}>
-                  {t("screens.minutes", { count: m })}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <p className="help">{t("screens.saverHelp")}</p>
+        <span className="label">{t("screens.saver")}</span>
+        <p className="help">{t("settings.saverMoved")}</p>
+        <button className="tool small align-start" onClick={() => window.dispatchEvent(new CustomEvent("hubdeck:open-saver"))}>
+          <Icon name="moon" />
+          {t("settings.saverOpen")}
+        </button>
       </div>
       <div className="field">
         <label htmlFor="app-icons" className="label">

@@ -1,5 +1,5 @@
-//! Windows: `.streamDeckPlugin` files list HubDeck under Open with, for this user only. HubDeck
-//! becomes the file's app only when nothing else opens it; where Elgato's Stream Deck app opens
+//! Windows: `.streamDeckPlugin` and `.streamDeckIconPack` files list HubDeck under Open with, for
+//! this user only. HubDeck becomes a file's app only when nothing else opens it; where Elgato's Stream Deck app opens
 //! them it stays so (the installer's own file associations would take them over, so they are
 //! not used; the uninstaller takes these keys out, `windows/hooks.nsh`).
 
@@ -7,8 +7,8 @@ use windows::Win32::System::Registry::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, REG
 use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
 use windows::core::{HSTRING, PCWSTR};
 
-const PROG_ID: &str = "HubDeck.streamDeckPlugin";
-const EXT: &str = ".streamDeckPlugin";
+/// The kinds of files: extension, HubDeck's ProgId for it, what Explorer calls it.
+const KINDS: [(&str, &str, &str); 2] = [(".streamDeckPlugin", "HubDeck.streamDeckPlugin", "Stream Deck plugin"), (".streamDeckIconPack", "HubDeck.streamDeckIconPack", "Stream Deck icon pack")];
 
 fn set(key: &str, name: Option<&str>, value: &str) -> bool {
     let data: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
@@ -19,12 +19,12 @@ fn set(key: &str, name: Option<&str>, value: &str) -> bool {
     }
 }
 
-/// The ProgId that opens `.streamDeckPlugin` files now (this user's or the machine's), if any.
-fn current_app() -> Option<String> {
+/// The ProgId that opens files with extension `ext` now (this user's or the machine's), if any.
+fn current_app(ext: &str) -> Option<String> {
     let mut buf = [0u16; 256];
     let mut len = (buf.len() * 2) as u32;
     // SAFETY: the buffer and its length in bytes are passed together
-    unsafe { RegGetValueW(HKEY_CLASSES_ROOT, &HSTRING::from(EXT), PCWSTR::null(), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut len)) }.ok().ok()?;
+    unsafe { RegGetValueW(HKEY_CLASSES_ROOT, &HSTRING::from(ext), PCWSTR::null(), RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut len)) }.ok().ok()?;
     let s = String::from_utf16_lossy(&buf[..(len as usize / 2).saturating_sub(1)]);
     (!s.is_empty()).then_some(s)
 }
@@ -36,20 +36,22 @@ pub fn register() {
     }
     let Ok(exe) = std::env::current_exe() else { return };
     let exe = exe.to_string_lossy();
-    let class = format!("Software\\Classes\\{PROG_ID}");
-    let mut ok = set(&class, None, "Stream Deck plugin")
-        && set(&format!("{class}\\DefaultIcon"), None, &format!("\"{exe}\",0"))
-        && set(&format!("{class}\\shell\\open\\command"), None, &format!("\"{exe}\" \"%1\""))
-        && set(&format!("Software\\Classes\\{EXT}\\OpenWithProgids"), Some(PROG_ID), "");
-    let before = current_app();
-    if ok && before.is_none() {
-        ok = set(&format!("Software\\Classes\\{EXT}"), None, PROG_ID);
-    }
-    if !ok {
-        log::warn!("could not list HubDeck under Open with for {EXT} files");
-        return;
+    for (ext, prog_id, what) in KINDS {
+        let class = format!("Software\\Classes\\{prog_id}");
+        let mut ok = set(&class, None, what)
+            && set(&format!("{class}\\DefaultIcon"), None, &format!("\"{exe}\",0"))
+            && set(&format!("{class}\\shell\\open\\command"), None, &format!("\"{exe}\" \"%1\""))
+            && set(&format!("Software\\Classes\\{ext}\\OpenWithProgids"), Some(prog_id), "");
+        let before = current_app(ext);
+        if ok && before.is_none() {
+            ok = set(&format!("Software\\Classes\\{ext}"), None, prog_id);
+        }
+        if !ok {
+            log::warn!("could not list HubDeck under Open with for {ext} files");
+            continue;
+        }
+        log::info!("{ext} files: HubDeck under Open with; opened by {}", before.as_deref().unwrap_or(prog_id));
     }
     // SAFETY: no item pointers with SHCNE_ASSOCCHANGED
     unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None) };
-    log::info!("{EXT} files: HubDeck under Open with; opened by {}", before.as_deref().unwrap_or(PROG_ID));
 }

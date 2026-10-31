@@ -2,8 +2,10 @@
 //! która leci na spotify"). Spotify gives no beat to apps like HubDeck's (its audio analysis is
 //! closed to them since 2024-11), so the sound itself is listened to: what goes to the speakers,
 //! through Windows' loopback capture (WASAPI, the documented way audio visualizers in lighting
-//! apps do it). Listening only while a light uses the effect, on a thread of its own; nothing is
-//! recorded or sent anywhere, only a loudness and the time of the last beat are kept.
+//! apps do it). Listening only while a light uses the effect or the living deck's music layer is
+//! on (`spectrum`, session 35: "the music's spectrum behind the icons, from what plays"), on a
+//! thread of its own; nothing is recorded or sent anywhere, only a loudness, the time of the last
+//! beat and sixteen band levels are kept.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::OnceLock;
@@ -12,6 +14,15 @@ use std::time::{Duration, Instant};
 
 /// A light wants the beat now.
 static WANT: AtomicBool = AtomicBool::new(false);
+/// A light asked for the beat (its own say, kept apart from the music layer's).
+static LIGHTS: AtomicBool = AtomicBool::new(false);
+/// When the living deck's music layer last asked for the spectrum, ms since `start()` (0 = never);
+/// it asks every frame it draws, so the listening stops a few seconds after it goes.
+static SPECTRUM_ASKED: AtomicU64 = AtomicU64::new(0);
+/// The spectrum in sixteen bands from the bass up (log-spaced, 0..1, f32 bits), as last heard.
+static BANDS: [AtomicU32; BAND_COUNT] = [const { AtomicU32::new(0) }; BAND_COUNT];
+/// How many bands the spectrum is cut into.
+pub const BAND_COUNT: usize = 16;
 /// The listening thread runs.
 static RUNNING: AtomicBool = AtomicBool::new(false);
 /// The loudness now, 0..1, and against its average over the last seconds (1 = as usual; f32 bits).
@@ -73,12 +84,47 @@ fn ms(at: Instant) -> u64 {
 
 /// Listen while `yes` (a light on the deck uses the effect); the thread stops by itself after.
 pub fn want(yes: bool) {
+    LIGHTS.store(yes, Ordering::Relaxed);
+    refresh();
+}
+
+/// The living deck's music layer draws now and wants the spectrum ([`bands`]); asked every frame.
+pub fn want_spectrum() {
+    SPECTRUM_ASKED.store(ms(Instant::now()), Ordering::Relaxed);
+    refresh();
+}
+
+/// The spectrum in sixteen bands (0..1, the bass first), or None while nothing is heard.
+pub fn bands() -> Option<[f32; BAND_COUNT]> {
+    let heard = HEARD_AT.load(Ordering::Relaxed);
+    if heard == 0 || ms(Instant::now()).saturating_sub(heard) > 600 {
+        return None;
+    }
+    Some(std::array::from_fn(|i| f32::from_bits(BANDS[i].load(Ordering::Relaxed))))
+}
+
+/// Seconds since the last beat heard (a large number when none).
+pub fn since_beat() -> f32 {
+    let at = BEAT_AT.load(Ordering::Relaxed);
+    if at == 0 { 1e3 } else { ms(Instant::now()).saturating_sub(at) as f32 / 1000.0 }
+}
+
+/// Whether anything wants the listening now: a light, or the music layer in the last 3 s.
+fn wanted() -> bool {
+    let asked = SPECTRUM_ASKED.load(Ordering::Relaxed);
+    LIGHTS.load(Ordering::Relaxed) || (asked > 0 && ms(Instant::now()).saturating_sub(asked) < 3000)
+}
+
+fn refresh() {
+    let yes = wanted();
     WANT.store(yes, Ordering::Relaxed);
     if yes && !RUNNING.swap(true, Ordering::AcqRel) {
         let _ = start();
         #[cfg(windows)]
         let spawned = std::thread::Builder::new().name("beat".into()).spawn(win::listen);
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        let spawned = std::thread::Builder::new().name("beat".into()).spawn(mac::listen);
+        #[cfg(not(any(windows, target_os = "macos")))]
         let spawned: std::io::Result<()> = {
             RUNNING.store(false, Ordering::Release);
             Ok(())
@@ -229,6 +275,8 @@ pub struct Detector {
     fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
     last_mags: Vec<f32>,
     tempo: Option<Tempo>,
+    /// The sixteen bands as shown: quick to rise, slower to fall, like a spectrum analyser's bars.
+    bands: [f32; BAND_COUNT],
 }
 
 /// A tempo the music keeps: the time between beats and a beat on that grid.
@@ -265,6 +313,7 @@ impl Detector {
             fft: rustfft::FftPlanner::new().plan_fft_forward(FFT_SIZE),
             last_mags: Vec::new(),
             tempo: None,
+            bands: [0.0; BAND_COUNT],
         }
     }
 
@@ -347,6 +396,18 @@ impl Detector {
         // bins from ~47 Hz to ~16 kHz at 48 kHz
         let mags: Vec<f32> = buf[1..FFT_SIZE / 3].iter().map(|c| (1.0 + 100.0 * c.norm()).ln()).collect();
         let flux = if self.last_mags.len() == mags.len() { mags.iter().zip(&self.last_mags).map(|(m, p)| (m - p).max(0.0)).sum::<f32>() / mags.len() as f32 } else { 0.0 };
+        // the sixteen bands, log-spaced over the bins and never sharing one (the two lowest once
+        // read the same bin); each band its loudest bin's log magnitude (a mean washed a single
+        // tone out of the wide high bands), about 0..9 for a full-scale tone
+        let n = mags.len();
+        let mut lo = 1usize.min(n.saturating_sub(1));
+        for (b, shown) in self.bands.iter_mut().enumerate() {
+            let edge = (n as f32).powf((b + 1) as f32 / BAND_COUNT as f32).round() as usize;
+            let hi = edge.max(lo + 1).min(n);
+            let level = if lo < hi { (mags[lo..hi].iter().fold(0.0f32, |m, v| m.max(*v)) / 7.0).clamp(0.0, 1.0) } else { 0.0 };
+            *shown = if level > *shown { *shown + (level - *shown) * 0.6 } else { *shown * 0.9 + level * 0.1 };
+            lo = hi.min(n.saturating_sub(1));
+        }
         self.last_mags = mags;
         flux
     }
@@ -372,6 +433,11 @@ impl Detector {
 
     pub fn loudness(&self) -> f32 {
         self.loud
+    }
+
+    /// The spectrum's sixteen bands as shown (0..1, the bass first).
+    pub fn bands(&self) -> [f32; BAND_COUNT] {
+        self.bands
     }
 
     /// The loudness against the last seconds' (1 = as usual).
@@ -472,6 +538,9 @@ fn tempo_raw(onsets: &std::collections::VecDeque<(f32, Instant)>, held: Option<f
 /// What the listening thread found in one block.
 fn publish(d: &Detector, heard: Heard, at: Instant, sound: bool) {
     LOUD.store(d.loudness().to_bits(), Ordering::Relaxed);
+    for (slot, v) in BANDS.iter().zip(d.bands()) {
+        slot.store(v.to_bits(), Ordering::Relaxed);
+    }
     REL.store(d.relative().to_bits(), Ordering::Relaxed);
     if sound {
         HEARD_AT.store(ms(at), Ordering::Relaxed);
@@ -505,7 +574,7 @@ mod win {
     pub fn listen() {
         // SAFETY: COM on this thread, multithreaded apartment.
         let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-        while WANT.load(Ordering::Relaxed) {
+        while wanted() {
             if let Err(e) = session() {
                 log::info!("music beat: {e}");
                 std::thread::sleep(Duration::from_secs(1));
@@ -513,8 +582,8 @@ mod win {
         }
         RUNNING.store(false, Ordering::Release);
         // a want that came while it was stopping
-        if WANT.load(Ordering::Relaxed) {
-            super::want(true);
+        if wanted() {
+            super::refresh();
         }
     }
 
@@ -557,7 +626,7 @@ mod win {
             let until = probe.as_ref().map(|(_, d)| Instant::now() + *d);
             // what tempo it hears, in the log every 10 s while it listens
             let mut told = Instant::now();
-            while WANT.load(Ordering::Relaxed) || until.is_some_and(|u| Instant::now() < u) {
+            while wanted() || until.is_some_and(|u| Instant::now() < u) {
                 std::thread::sleep(Duration::from_millis(10));
                 loop {
                     let frames_ready = capture.GetNextPacketSize().map_err(err)?;
@@ -602,9 +671,114 @@ mod win {
     }
 }
 
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::*;
+
+    unsafe extern "C" {
+        fn mh_listen_start(rate: *mut f64, channels: *mut i32) -> i32;
+        fn mh_listen_stop();
+        fn mh_listen_read(out: *mut f32, max: u32) -> u32;
+        fn mh_listen_output_changed() -> i32;
+    }
+
+    /// The listening thread: a Core Audio tap of everything that plays (`macos/listen.m`) until no
+    /// light wants it; a new default output (headphones in or out) is listened to a second later.
+    pub fn listen() {
+        while wanted() {
+            if let Err(e) = session() {
+                log::info!("music beat: {e}");
+                // a refusal does not change by itself: not asked again every second
+                std::thread::sleep(Duration::from_secs(if e.contains("System Audio Recording") { 30 } else { 1 }));
+            }
+        }
+        RUNNING.store(false, Ordering::Release);
+        if wanted() {
+            super::refresh();
+        }
+    }
+
+    fn session() -> Result<(), String> {
+        let (mut rate, mut channels) = (0f64, 0i32);
+        // SAFETY: plain C functions; the tap and its device belong to listen.m.
+        let code = unsafe { mh_listen_start(&mut rate, &mut channels) };
+        match code {
+            0 => {}
+            2 => return Err("macOS 14.2 or newer hears what plays".into()),
+            3 => return Err("macOS refused to let HubDeck hear what plays: allow it in System Settings > Privacy & Security > Screen & System Audio Recording".into()),
+            4 => return Err("no sound output".into()),
+            7 => return Err("the sound is not in a format HubDeck reads".into()),
+            c => return Err(format!("the listening device would not start ({c})")),
+        }
+        log::info!("music beat: listening ({rate:.0} Hz, {channels} channels, Core Audio tap)");
+        let mut detector = Detector::new(rate.round() as u32);
+        let mut mono = vec![0f32; 1 << 16];
+        let mut told = Instant::now();
+        let mut checked = Instant::now();
+        while wanted() {
+            std::thread::sleep(Duration::from_millis(10));
+            // SAFETY: `mono` has room for the length given.
+            let n = unsafe { mh_listen_read(mono.as_mut_ptr(), mono.len() as u32) } as usize;
+            let now = Instant::now();
+            if n > 0 {
+                let block = &mono[..n];
+                let heard = detector.feed(block, now);
+                let sound = block.iter().any(|v| v.abs() > 1e-4);
+                publish(&detector, heard, now, sound);
+            }
+            if told.elapsed() >= Duration::from_secs(10) {
+                told = now;
+                match detector.tempo() {
+                    Some(t) => log::info!("music beat: tempo {:.0} ms ({:.0} a minute, sure {:.2}, stands out {:.1})", t.period_ms, 60_000.0 / t.period_ms, t.sure, t.stands_out),
+                    None => log::info!("music beat: no sure tempo, flashes follow what is heard"),
+                }
+            }
+            if checked.elapsed() >= Duration::from_secs(1) {
+                checked = now;
+                // SAFETY: as above.
+                if unsafe { mh_listen_output_changed() } != 0 {
+                    // SAFETY: as above.
+                    unsafe { mh_listen_stop() };
+                    return Err("the sound output changed; listening to the new one".into());
+                }
+            }
+        }
+        // SAFETY: as above.
+        unsafe { mh_listen_stop() };
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sixteen bands follow the pitch: a 100 Hz tone lights the low bands, a 6 kHz tone the
+    /// high ones, silence none (the music layer's bars, session 35).
+    #[test]
+    fn bands_follow_the_pitch() {
+        let tone = |hz: f32| {
+            let mut d = Detector::new(48_000);
+            let start = Instant::now();
+            for block in 0..60u64 {
+                let samples: Vec<f32> = (0..480).map(|i| ((block * 480 + i) as f32 / 48_000.0 * hz * std::f32::consts::TAU).sin() * 0.5).collect();
+                d.feed(&samples, start + Duration::from_millis(block * 10));
+            }
+            d.bands()
+        };
+        let peak = |b: [f32; BAND_COUNT]| b.iter().enumerate().max_by(|x, y| x.1.total_cmp(y.1)).map(|(i, _)| i).unwrap();
+        let low = tone(100.0);
+        let high = tone(6000.0);
+        assert!(peak(low) <= 5, "100 Hz peaks in band {} of {low:?}", peak(low));
+        assert!(peak(high) >= 11, "6 kHz peaks in band {} of {high:?}", peak(high));
+        assert!(low[peak(low)] > 0.3 && high[peak(high)] > 0.3, "loud enough: {low:?} {high:?}");
+        let mut quiet = Detector::new(48_000);
+        let start = Instant::now();
+        for block in 0..60u64 {
+            quiet.feed(&[0.0; 480], start + Duration::from_millis(block * 10));
+        }
+        assert!(quiet.bands().iter().all(|v| *v < 0.05), "silence: {:?}", quiet.bands());
+    }
 
     /// 48 kHz mono blocks of 10 ms: a kick (a 60 Hz burst) every `every_ms`, quiet in between.
     fn song(every_ms: u64, seconds: u64) -> Vec<(Vec<f32>, u64)> {

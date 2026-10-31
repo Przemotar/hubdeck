@@ -23,6 +23,7 @@
 //
 //   node scripts/release-gate.mjs [--profile <name or id>, default: a draft with every GIF and Mochi] [--minutes 5] [--every 5] [--restarts 3]
 //                                 [--skip audit,sizes,readme,soak,calls,restarts,window,questions,catalog] [--window-seconds 150] [--calls-per-hour 720]
+//                                 [--motion: the soak with built-in motion on every key instead of GIFs]
 //
 // The soak only shows the profile (a try, like the assistant's Try): the user's home and active
 // profile come back at the end. Nothing takes the focus: the app is started with --hidden.
@@ -45,10 +46,12 @@ const skip = new Set(opt("skip", "").split(",").filter(Boolean));
 const win = process.platform === "win32";
 const mac = process.platform === "darwin";
 
-// limits (measured on the owner's machines, 2026-10-14: 92 MB flat, 2-10 % with Mochi on the dial)
+// limits (measured on the owner's machines, 2026-10-14: 92 MB flat, 2-10 % with Mochi on the dial;
+// the peak raised to 500 on 2026-10-31, owner: "Może powinno być 500MB? … pamięć nie rośnie więc jest
+// spoko": the GPU device alone holds ~274 MB on his RTX 3060 Ti, 380-395 MB in all)
 const LIMITS = {
   growthMbPerMin: 3, // steady growth after the first minute
-  peakMb: 400,
+  peakMb: 500,
   cpuAvgPct: 15, // % of one core, with the animated profile on screen
   installerMb: 60,
   installedMb: 200,
@@ -122,8 +125,13 @@ function sample(p) {
 }
 
 function start() {
-  if (win) spawn(appPath, ["--hidden"], { detached: true, stdio: "ignore" }).unref();
-  else execFileSync("open", ["-g", appPath, "--args", "--hidden"]);
+  // Windows: through WMI, not as our child: a Claude Code session that ends kills its process tree
+  // (a detached spawn included), and the app and its guard died at 16:35 on 2026-10-25 without
+  // handing the deck back (docs/KNOWLEDGE.md)
+  if (win) {
+    const cmd = `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${appPath}" --hidden' }; if ($r.ReturnValue -ne 0) { throw "Win32_Process.Create: $($r.ReturnValue)" }`;
+    execFileSync("powershell", ["-NoProfile", "-Command", cmd], { stdio: "ignore" });
+  } else execFileSync("open", ["-g", appPath, "--args", "--hidden"]);
 }
 
 // --- 1. audits -----------------------------------------------------------------------------
@@ -234,7 +242,21 @@ async function soak() {
   let tried = null;
   let draft = null;
   const { profiles } = await call("GET", "profiles");
-  if (want) {
+  if (args.includes("--motion")) {
+    // built-in motion on every key instead of GIFs (session 30): pulse, shine and a moving noise
+    // pattern (the costliest: two copies of 260 specks), Mochi on the dial
+    const motions = [
+      { motion: "pulse", style: "gradient", bg: "#6a3fd8", bg2: "#e0457b", angle: 135 },
+      { motion: "shine", gloss: "glass", bg: "#1e3a8a" },
+      { motion: "slide", pattern: "noise", patternOpacity: 30, bg: "#c2410c" },
+    ];
+    const controls = { dial: { action: "core.pet", params: { name: "Mochi", press: "pet" }, look: { label: "Mochi" } } };
+    for (let i = 0; i < 15; i++) controls[`keys.${i}`] = { action: "", look: { label: `Key ${i + 1}`, icon: "heart", fg: "#ffffff", ...motions[i % 3] } };
+    const made = await call("POST", "profiles", { name: "Release gate soak", draft: true, controls });
+    draft = made.profile?.id;
+    await call("POST", `profiles/${draft}/try`);
+    tried = "Release gate soak (15 keys of built-in motion, Mochi)";
+  } else if (want) {
     const found = profiles.find((x) => x.id === want || x.name === want);
     if (!found) return report("soak", false, `no profile "${want}"`);
     await call("POST", `profiles/${found.id}/try`);
@@ -457,12 +479,28 @@ async function windowStage() {
       return sxx ? (pts.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / sxx) * 60 : 0;
     };
     const growth = slope(settled.map((m) => ({ x: m.at, y: m.mb })));
+    // the slope's own uncertainty: over 90 s WebView2's sawtooth (±15 MB) alone tilts the line by
+    // ±15 MB/min (session 35: 759-795 MB flat read as 14.3 MB/min); it fails only when the growth
+    // stands clear of that (the slope less two standard errors over the limit)
+    const slopeError = (pts) => {
+      if (pts.length < 3) return 0;
+      const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+      const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+      const sxx = pts.reduce((a, p) => a + (p.x - mx) ** 2, 0);
+      if (!sxx) return 0;
+      const k = pts.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / sxx;
+      const resid = pts.reduce((a, p) => a + (p.y - my - k * (p.x - mx)) ** 2, 0);
+      return Math.sqrt(resid / (pts.length - 2) / sxx) * 60;
+    };
+    const growthError = slopeError(settled.map((m) => ({ x: m.at, y: m.mb })));
     const heaps = settled.filter((m) => m.heap != null);
     const heapGrowth = slope(heaps.map((m) => ({ x: m.at, y: m.heap })));
-    const ok = errors.length === 0 && frames >= WINDOW_LIMITS.framesPerSec && slowShare <= WINDOW_LIMITS.slowShare && growth <= WINDOW_LIMITS.webviewGrowthMbPerMin;
-    report("window", ok, `frames ${frames.toFixed(1)}/s (limit ${WINDOW_LIMITS.framesPerSec}), ${(slowShare * 100).toFixed(1)} % over 50 ms (limit ${WINDOW_LIMITS.slowShare * 100}), slowest ${worst} ms, deck pictures ${pictures.toFixed(1)}/s, WebView2 ${memStart.toFixed(1)} -> ${memEnd.toFixed(1)} MB, growth ${growth.toFixed(1)} MB/min after the first minute (limit ${WINDOW_LIMITS.webviewGrowthMbPerMin}${settled.length < 2 ? "; run --window-seconds 120 or more to measure it" : ""})${heaps.length >= 2 ? `, page heap ${heaps[0].heap.toFixed(1)} -> ${heaps.at(-1).heap.toFixed(1)} MB (${heapGrowth.toFixed(2)} MB/min)` : ""}, ${errors.length} window errors${errors.length ? ": " + errors[0].split("] window: ")[1]?.slice(0, 200) : ""}`);
+    const ok = errors.length === 0 && frames >= WINDOW_LIMITS.framesPerSec && slowShare <= WINDOW_LIMITS.slowShare && growth - 2 * growthError <= WINDOW_LIMITS.webviewGrowthMbPerMin;
+    report("window", ok, `frames ${frames.toFixed(1)}/s (limit ${WINDOW_LIMITS.framesPerSec}), ${(slowShare * 100).toFixed(1)} % over 50 ms (limit ${WINDOW_LIMITS.slowShare * 100}), slowest ${worst} ms, deck pictures ${pictures.toFixed(1)}/s, WebView2 ${memStart.toFixed(1)} -> ${memEnd.toFixed(1)} MB, growth ${growth.toFixed(1)} ± ${growthError.toFixed(1)} MB/min after the first minute (limit ${WINDOW_LIMITS.webviewGrowthMbPerMin}, once clear of two errors${settled.length < 2 ? "; run --window-seconds 120 or more to measure it" : ""})${heaps.length >= 2 ? `, page heap ${heaps[0].heap.toFixed(1)} -> ${heaps.at(-1).heap.toFixed(1)} MB (${heapGrowth.toFixed(2)} MB/min)` : ""}, ${errors.length} window errors${errors.length ? ": " + errors[0].split("] window: ")[1]?.slice(0, 200) : ""}`);
   } finally {
-    ps("-Stop");
+    // the copy and the Vite server it started (only one automation.ps1 started; the owner's own
+    // dev server is never in its pid file): one was left running after each gate (session 35)
+    ps("-StopVite");
   }
 }
 

@@ -1,0 +1,1 @@
+One post per living-deck preset, with its moving picture. Rate a preset with ⭐ and tell in its thread what works on your deck and what does not; photos and films of your deck are welcome. The presets are in HubDeck under Deck look > Presets.

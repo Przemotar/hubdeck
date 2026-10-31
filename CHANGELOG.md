@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.2.0
+
+- **The living deck.** The keys module can be one picture instead of fifteen squares: a scene drawn
+  live behind your icons, seen through the key windows, moving all the time, and a press does
+  something in it (leaves thrown off a key, a gust through the cherry blossom, koi swimming up for
+  food). Click **Living deck** under the deck in the window: **Deck look** shows the presets and your
+  deck live, the deck shows a preset while you try it, and nothing is kept until **Apply**. Twelve
+  presets: Hollow Hill and Lantern Hollow for Halloween, Golden autumn, Mushroom hunt, Fuji and
+  sakura, Koi pond, Tokyo Rain, Code rain, Synthwave, Cyber rig, Nebula and Spectrum (it follows what
+  plays on your speakers; HubDeck listens only while it is on and records nothing). Mushroom hunt,
+  Fuji and Koi pond are drawn for a deck lying flat or standing upright. **Keys** in the same view
+  gives every key a style and a light on the icons that stay when you change the preset; **Save as
+  mine** keeps your own. The scenes are drawn by the graphics card at up to 24 pictures a second; a
+  computer without one HubDeck can use gets the deck without them, and the window says so.
+- **A preset colours the rest of the deck**: the base's edge, the knobs and the faders take the
+  preset's colours. A light you set yourself on one of them stays yours; each can go back to the
+  preset with one click.
+- **Screensaver**, beside Living deck under the deck: after the minutes you set, a scene across all
+  15 keys (aurora, aquarium, lava lamp, fireplace, summer night, neon rain, haunted night) or any of
+  the presets, each tile with a moving preview. The dial can show a clock and the lights breathe in
+  the scene's colour meanwhile. One for every profile or a profile's own, and **Preview on the deck**
+  for 20 seconds. Using the window ends it. The code rain, night sky, waves and big clock screensavers
+  are gone; a profile that had one gets the aurora.
+- **Lights to the music** moved under the deck, beside Screensaver: on, off and how they follow the
+  beat.
+- **A look editor for keys**: Edit look in a key's Look panel has Templates, Background, Icon,
+  Label and Extras (patterns, a badge, a frame, motion such as pulse, shine or glow), and styles
+  that draw the whole key one way (film, glitch, neon tube, glass, pumpkin). **Full editor** opens
+  the key on the whole window with the icon library; drag the icon or the label, and edit several
+  keys at once.
+- **A key's look can follow what happens** (When): CPU or another value over a number, music
+  playing, the microphone muted, an app in front, a time of day; and a label can show a value (CPU,
+  memory, temperatures, the time, the song playing).
+- **Icon packs both ways**: a `.streamDeckIconPack` opens with HubDeck (double click or drop it on
+  the window), and the full editor saves a key as a PNG or a page as an icon pack. A profile can
+  have its own style: new keys in it start in that look.
+- **Sharper keys.** Every picture goes to the keys in full colour; moving keys used to be sent at a
+  lower quality that halved the colour. Only the keys that changed are sent.
+- **Smoother moving keys**: several pieces of a picture are in flight at once instead of one after
+  another, so a fuller picture still goes out sooner, and moving keys keep their own pace. On the
+  same deck (22 GIFs and Mochi on the dial), 0.1.12 -> 0.2.0: the GIFs 15.9 -> 20.0 pictures a
+  second, Mochi 20 -> 25; a deck moving on every key went from 10.9 to 22.2.
+- **The window keeps up with the deck**: the keys in the window move up to 25 times a second (about
+  8 before), and a change of a key's action shows there at once (#9).
+- **A key that calls a web address or asks an app no longer holds the deck**: a call that waited
+  (a local app that was not running held it about 2 seconds) now runs beside it.
+- **What's new** comes up once after an update (this one shows the living deck); it is also in
+  Help and feedback.
+- **A new icon**, and **Join the Discord** in Help and feedback.
+
+Measured before the release (Windows, the release build, that deck): 12.0 % of one CPU core (7.2 %
+in 0.1.12: more pictures, in full colour), memory flat. With the graphics card in use HubDeck holds
+about 440 MB (64 MB in 0.1.12), most of it the card's driver.
+
+Join the [Discord](https://przemotar.github.io/hubdeck/discord) to rate the presets and vote on
+what comes next.
+
 ## 0.1.12
 
 - **A multi action switch shows the right side after a restart** (#10): when its first press sets

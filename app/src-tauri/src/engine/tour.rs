@@ -703,7 +703,7 @@ pub fn tour_sound(app: AppHandle, on: bool) -> Result<(), String> {
 /// Show a screensaver on the deck for a few seconds (the finale).
 #[tauri::command]
 pub fn tour_saver(app: AppHandle, effect: String) -> Result<(), String> {
-    let effect = if super::saver::EFFECTS.contains(&effect.as_str()) { effect } else { "rain".into() };
+    let effect = if super::saver::scene(&effect).is_some() { effect } else { "aurora".into() };
     app.state::<Engine>().lock().saver_preview = Some((effect, Instant::now() + Duration::from_secs(8)));
     Ok(())
 }

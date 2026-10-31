@@ -13,6 +13,24 @@ called `masterhub`; the public repo will be a clean export named `hubdeck`.
 3. Scriptable by agents: a local API, a CLI and an MCP server can drive the deck and read its state.
 4. Shippable: signed installers (`.msi`, `.dmg`), auto-update, CI, docs.
 
+## The quality aim
+
+The owner, 2026-10-26: "każdy ficzer, rzecz, funkcjonalność którą robimy na masterhuba musi być
+topowej jakości"; "chcę mieć w hubdecku topowe rozwiązania, wyprzedające znacznie konkurencję";
+"nie możemy pogarszać jakości".
+
+- **Where we aim**: not parity with Stream Deck and the official app, but clearly ahead of them:
+  things a person would not build by hand because they cost too much, made possible by an AI
+  builder (looks made for each user's own apps, effects across the whole device, themes from a
+  description); good enough to show Cooler Master what their hardware can do.
+- **How quality is judged**: measured, not guessed: the camera on the real deck, pixel tests,
+  frame times, CPU and memory, side by side with the best references (premium packs, popular
+  apps), and blind tests with the owner. A thing is "ready" only after that.
+- **What is never traded**: picture quality (full JPEG quality, full colour, at rest and in
+  motion), readability of the user's content, and stability; speed comes from doing less work,
+  never from a worse result.
+- The plan for looks, effects and themes and its stages: `docs/LIVING-DECK.md`.
+
 ## Layout
 
 ```

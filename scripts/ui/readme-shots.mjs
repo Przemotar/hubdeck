@@ -33,7 +33,7 @@ const browser = await chromium.launch({ executablePath: findChromium() });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1.5, colorScheme: 'dark' });
 page.setDefaultTimeout(15000);
 const fresh = async () => {
-  await page.goto(`${base}?demo`);
+  await page.goto(`${base}?demo&tests=off`);
   await page.locator('.dk-ctl').first().waitFor();
   await page.waitForTimeout(1200);
 };

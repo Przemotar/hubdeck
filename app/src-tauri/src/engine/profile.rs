@@ -61,6 +61,64 @@ pub struct Look {
     /// A key icon's size: `small`, `large`; None = as the label leaves room for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_size: Option<String>,
+    /// The icon editor (owner's "1 a", 2026-10-25): a `gradient` key's second color, `#rrggbb`;
+    /// None = a lighter and darker shade of `bg`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bg2: Option<String>,
+    /// A gradient's direction in degrees as in CSS (0 toward the top, 90 toward the right); None = 180.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<u16>,
+    /// A finish over a key's background: `glass` (the highlight of `style: glass`) or `matte` (darker
+    /// edges). Keys only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gloss: Option<String>,
+    /// A key label's effect: `shadow`, `outline`, `plain`; None = plain, with a dark edge only where
+    /// the label stands over an icon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_effect: Option<String>,
+    /// A small round badge at a key's top right with up to 3 characters (a count, "!", "NEW").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<String>,
+    /// The badge's color, `#rrggbb`; None = red.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge_color: Option<String>,
+    /// A frame inside a key's edge in this color, `#rrggbb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ring: Option<String>,
+    /// A pattern laid over a key's background, under its icon and label, in the label's color:
+    /// `stripes`, `dots`, `grid`, `noise` (the editor's overlay, owner's "1a", 2026-10-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+    /// How strongly the pattern shows, 5..=100 (%); None = 18.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern_opacity: Option<u8>,
+    /// A whole style for the key, its background, texture, light, icon and label made together, as
+    /// a premium icon pack is (owner, 2026-10-25: "te przyciski muszą być topowej jakości"):
+    /// `film`, `glitch`, `neon`, `glass`. Keys only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<String>,
+    /// Built-in motion of a key (owner's "1a", 2026-10-25: animations without a GIF): `slide` (the
+    /// pattern moves), `pulse` (the background breathes), `shine` (a light passes over). In the
+    /// look shown while on (`look_on`) it moves only then. Still with reduced motion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<String>,
+    /// The key's own font for its label, a family on this computer; None = the deck's font
+    /// (Settings > Screens). The full editor (owner's "2 a", 2026-10-25).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// The icon moved from its place, in key pixels (a key is 72), as dragged in the full editor.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub icon_dx: i8,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub icon_dy: i8,
+    /// The label moved from its place, in key pixels.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub label_dx: i8,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub label_dy: i8,
+    /// Looks by conditions, in order (`rules.rs`): while one holds, its look's fields win.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<super::rules::LookRule>,
     /// What this control does and how to set it, shown in the window when it is picked or pressed
     /// (the demo's `demo:<id>` are translated by the window).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +134,20 @@ pub struct Look {
     /// A red corner: the last press of this key failed; the window says why. Never saved.
     #[serde(skip)]
     pub failed: bool,
+    /// Seconds on the engine's clock while drawing a key with `motion` (0 = at rest). Never saved.
+    #[serde(skip)]
+    pub t: f32,
+    /// How far in from the key's edges a skin keeps the label, px (neon's tube). Never saved.
+    #[serde(skip)]
+    pub inset: f32,
+}
+
+/// A saved key look of the icon editor.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LookTemplate {
+    pub name: String,
+    pub look: Look,
 }
 
 fn saver_minutes() -> u32 {
@@ -84,6 +156,10 @@ fn saver_minutes() -> u32 {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+fn is_zero(n: &i8) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,6 +220,10 @@ impl Binding {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Profile {
+    /// The style new keys of this profile start in (a template's look: colors, background,
+    /// finish, effects), set in the full key editor; None = HubDeck's house look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_style: Option<Look>,
     #[serde(default = "default_version")]
     pub version: u32,
     pub id: String,
@@ -170,6 +250,10 @@ pub struct Profile {
     /// One picture or a clock across all 15 keys instead of separate key faces (keys still act).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel: Option<PanelContent>,
+    /// The living deck's effects on this profile's keys (`docs/LIVING-DECK.md`): a canvas across
+    /// the key screen, what a press does, what lives on the deck.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<Effects>,
     /// The profile's color for the "profile color" light style; None = one picked from its name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
@@ -187,6 +271,129 @@ pub struct Profile {
     /// ready profile the user has not switched on ("Ready for your apps", owner's pick 1a).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub switch_in: Option<bool>,
+    /// The profile's own screensaver; None = the one all profiles share (owner's "1a",
+    /// 2026-10-26: one saver and one delay for all, a profile may have its own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saver: Option<ProfileSaver>,
+}
+
+/// A profile's own screensaver (`saver.rs`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSaver {
+    /// Its effect or scene; empty = none on this profile.
+    #[serde(default)]
+    pub effect: String,
+    /// After how many idle minutes; None = the shared delay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_minutes: Option<u32>,
+    /// A preset's layers when `effect` is one (`saver::preset`): the window knows the presets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Vec<Layer>>,
+}
+
+/// A profile's living-deck effects (`canvas.rs`). Unknown names draw nothing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Effects {
+    /// Across the key screen: `fog`, `rain`, `snow`, `fireflies`, `embers`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<String>,
+    /// What a press does: `ripple`, `embers`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reaction: Option<String>,
+    /// What lives on the deck now and then: `bats`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inhabitant: Option<String>,
+    /// The effects' colour, `#rrggbb`; None = each effect's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<String>,
+    /// How strong, 0..=100; None = 60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strength: Option<u8>,
+    /// The layers in drawing order, each with its own options (owner, 2026-10-26: "warstwy i opcje
+    /// na warstwach, bo to buduje nam silnik"); when there are any, the fields above are not used.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<Layer>,
+    /// The preset's colours for the lights (`#rrggbb`: the edge, then the knobs and faders) while
+    /// "Lights in the preset's colours" is on; None = off. Only the colour: the lights' style and the
+    /// edge's effect stay the user's (owner's "1 a", 2026-10-30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lights: Option<Vec<String>>,
+    /// Which lights take them: `edge`, `controls` (the knobs and faders); None = both. A knob or fader
+    /// with its own colour keeps it (the more particular setting wins; owner's "2 a", 2026-10-30).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lights_to: Option<Vec<String>>,
+    /// The theme these layers came from (`halloween`, `christmas`, `japan`, `poland`), shown as
+    /// picked in the window; the layers are the truth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+}
+
+/// One layer of the living deck (`canvas.rs`). Options absent = the layer's own default.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Layer {
+    /// `fog`, `rain`, `snow`, `fireflies`, `embers`, `ripple`, `burst` (embers from a press), `bats`.
+    pub kind: String,
+    /// Shown; None = yes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<String>,
+    /// 0..=100; None = 60.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strength: Option<u8>,
+    /// 0..=100, 50 = its own pace (0.25x to 4x).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<u8>,
+    /// 0..=100, 50 = its own amount (0.25x to 4x).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub density: Option<u8>,
+    /// -100..=100, sideways (negative to the left of the screen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind: Option<i8>,
+    /// It answers presses (koi gather, snow shakes off, the spider climbs away); None = yes (owner,
+    /// 2026-10-26: a layer's own answer to a press is a switch of that layer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub react: Option<bool>,
+    /// It wanders (the lamp); None = it stays where its angle puts it (owner, 2026-10-26: "Czy ta
+    /// lampa nie powinna być statyczna tak jak się kąt ustawi a nie że lata?").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moving: Option<bool>,
+    /// Which side of the keys it keeps to (`left`, `right`; jack-o'-lanterns, cobwebs); None =
+    /// right (owner, 2026-10-26: his deck stands to his right, the left corners hide behind the frame).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<String>,
+}
+
+impl Effects {
+    /// The layers to draw: the list, or the three fixed places of before as layers (the ripple
+    /// first, as it was drawn: the other layers lie on its bent picture).
+    pub fn stack(&self) -> Vec<Layer> {
+        if !self.layers.is_empty() {
+            return self.layers.iter().filter(|l| l.on != Some(false)).cloned().collect();
+        }
+        let layer = |kind: &str| Layer { kind: kind.to_string(), tint: self.tint.clone(), strength: self.strength, ..Layer::default() };
+        let mut out = Vec::new();
+        if self.reaction.as_deref() == Some("ripple") {
+            out.push(layer("ripple"));
+        }
+        if let Some(c) = &self.canvas {
+            out.push(layer(c));
+        }
+        if self.inhabitant.as_deref() == Some("bats") {
+            out.push(layer("bats"));
+        }
+        if self.reaction.as_deref() == Some("embers") {
+            out.push(layer("burst"));
+        }
+        out
+    }
+    /// Whether anything is asked for.
+    pub fn active(&self) -> bool {
+        !self.stack().is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -225,6 +432,7 @@ fn default_version() -> u32 {
 impl Profile {
     pub fn new(name: &str) -> Self {
         Self {
+            key_style: None,
             version: PROFILE_VERSION,
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
@@ -236,10 +444,12 @@ impl Profile {
             edge_speed: None,
             color: None,
             panel: None,
+            effects: None,
             in_bar: None,
             assistant: false,
             version_of: None,
             switch_in: None,
+            saver: None,
         }
     }
 
@@ -466,12 +676,21 @@ pub struct Settings {
     /// Turn screens and LEDs off after this many minutes without input; 0 = never.
     #[serde(default)]
     pub blank_after_minutes: u32,
-    /// The screensaver's effect (`rain`, `stars`, `waves`; empty = none) and after how many idle
-    /// minutes it starts (`saver.rs`).
+    /// The screensaver all profiles share (one of `saver::SCENES`; empty = none) and
+    /// after how many idle minutes it starts; a profile may have its own ([`Profile::saver`]).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub saver: String,
     #[serde(default = "saver_minutes")]
     pub saver_after_minutes: u32,
+    /// A preset's layers when `saver` is one (`saver::preset`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saver_layers: Option<Vec<Layer>>,
+    /// What the dial shows while the screensaver runs: `clock` (None), `same` or `off`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saver_dial: Option<String>,
+    /// What the lights do while it runs: `scene` (None: they breathe in its colour), `same` or `off`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saver_lights: Option<String>,
     /// Turn screens and LEDs off while Windows is locked.
     #[serde(default = "yes")]
     pub blank_when_locked: bool,
@@ -498,6 +717,14 @@ pub struct Settings {
     /// Profiles made by themselves that the user has not looked at yet; the window lists them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auto_made: Vec<String>,
+    /// The user's own key looks saved in the icon editor ("Save as template"): a name and the look
+    /// fields a template carries (the label, icon and picture stay the key's own).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub look_templates: Vec<LookTemplate>,
+    /// Icons picked lately (built-in, game and emoji names), newest first, at most 24: the icon
+    /// library's Recent tab (Stream Deck and the official app keep "Frequently used").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_icons: Vec<String>,
     /// Drafts the deck assistant proposed: not in the bar, never switched to by an app, until
     /// the user picks one ("Use this") or throws it away.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -616,6 +843,9 @@ impl Default for Settings {
             blank_after_minutes: 0,
             saver: String::new(),
             saver_after_minutes: saver_minutes(),
+            saver_layers: None,
+            saver_dial: None,
+            saver_lights: None,
             blank_when_locked: true,
             profiles_dir: None,
             spotify_client_id: None,
@@ -624,6 +854,8 @@ impl Default for Settings {
             auto_profiles: true,
             offered: Vec::new(),
             auto_made: Vec::new(),
+            look_templates: Vec::new(),
+            recent_icons: Vec::new(),
             apps_joined: Vec::new(),
             apps_refused: Vec::new(),
             drafts: Vec::new(),

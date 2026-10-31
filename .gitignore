@@ -12,3 +12,29 @@ scripts/ui/overhang/
 scripts/ui/spotify/
 scripts/ui/owner/
 scripts/ui/music/
+# the moving thumbnails: the elements' stay local (the mixer is in the dev app only); the presets', the
+# key styles' and the lights' offered in Deck look ship (owner's "b", 2026-10-30: a CI release had none)
+app/public/looks/*
+!app/public/looks/poland-*
+!app/public/looks/japan-*
+!app/public/looks/matrix-rain.*
+!app/public/looks/neon-*
+!app/public/looks/space-nebula.*
+!app/public/looks/music-spectrum.*
+!app/public/looks/halloween-hill.*
+!app/public/looks/halloween-hollow.*
+!app/public/looks/S-*
+!app/public/looks/saver-*
+!app/public/looks/wn-*
+!app/public/looks/L-light.*
+!app/public/looks/L-holo.*
+!app/public/looks/L-relief.*
+!app/public/looks/L-candle.*
+!app/public/looks/L-spectral.*
+
+# A/B trial shaders copied in for test builds (private/ab holds them)
+app/src-tauri/src/engine/shaders/x-*.wgsl
+app/src-tauri/src/engine/shaders/trials.json
+
+# the render folders of look-check.py runs inside preset trials (session 38): pictures redone every pass
+private/ab/**/check*/

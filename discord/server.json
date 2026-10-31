@@ -1,0 +1,92 @@
+{
+  "_doc": "The HubDeck Discord server as data, read by scripts/discord-setup.py (docs/DISCORD.md). Texts are files in discord/texts/ named by key. Permissions are Discord's permission flag names in lower case.",
+  "guild": {
+    "description": "Free, open-source app for the MasterHUB deck",
+    "verification_level": 1,
+    "explicit_content_filter": 2,
+    "default_message_notifications": 1
+  },
+  "everyone": {
+    "permissions": [
+      "view_channel", "send_messages", "send_messages_in_threads", "create_public_threads",
+      "embed_links", "attach_files", "add_reactions", "use_external_emojis", "use_external_stickers",
+      "read_message_history", "use_application_commands", "change_nickname", "create_instant_invite"
+    ]
+  },
+  "roles": [
+    { "name": "Owner", "color": "#8b7cf6", "hoist": true, "mentionable": false, "permissions": [], "give_to_owner": true },
+    { "name": "Moderator", "color": "#3ba55d", "hoist": true, "mentionable": true,
+      "permissions": ["manage_messages", "manage_threads", "moderate_members", "kick_members", "view_audit_log"] },
+    { "name": "Contributor", "color": "#e6a23c", "hoist": false, "mentionable": false, "permissions": [] },
+    { "name": "Beta tester", "color": "#4fa3e0", "hoist": false, "mentionable": true, "permissions": [] }
+  ],
+  "bot_role": {
+    "name": "HubDeck",
+    "trimmed_permissions": [
+      "view_channel", "send_messages", "send_messages_in_threads", "create_public_threads",
+      "read_message_history", "embed_links", "attach_files", "add_reactions",
+      "manage_messages", "manage_threads", "manage_webhooks"
+    ]
+  },
+  "categories": [
+    { "key": "start", "name": "📌 Start here" },
+    { "key": "community", "name": "💬 Community" },
+    { "key": "hubdeck", "name": "🎛️ HubDeck" },
+    { "key": "staff", "name": "🔒 Staff" }
+  ],
+  "channels": [
+    { "key": "rules", "name": "📜┃rules", "category": "start", "type": "text", "existing": true, "topic": "topic-rules", "read_only": true,
+      "messages": [ { "text": "rules-welcome" }, { "text": "rules" } ] },
+    { "key": "announcements", "name": "📣┃announcements", "category": "start", "type": "announcement", "topic": "topic-announcements", "read_only": true },
+    { "key": "general", "name": "💬┃general", "category": "community", "type": "text", "existing": true, "topic": "topic-general" },
+    { "key": "setups", "name": "📸┃setups", "category": "community", "type": "forum", "topic": "topic-setups",
+      "default_reaction": "❤️", "default_sort_order": 0, "default_forum_layout": 2,
+      "tags": [ { "name": "Windows" }, { "name": "macOS" } ] },
+    { "key": "ideas", "name": "💡┃ideas", "category": "hubdeck", "type": "forum", "topic": "topic-ideas",
+      "default_reaction": "👍", "default_sort_order": 0, "default_forum_layout": 1,
+      "tags": [
+        { "name": "preset" }, { "name": "feature" }, { "name": "plugin" }, { "name": "look" }, { "name": "hardware" },
+        { "name": "planned", "moderated": true }, { "name": "in progress", "moderated": true },
+        { "name": "done", "moderated": true }, { "name": "not planned", "moderated": true }
+      ],
+      "pins": [ { "text": "pin-ideas" } ] },
+    { "key": "presets", "name": "🎨┃presets", "category": "hubdeck", "type": "forum", "topic": "topic-presets",
+      "default_reaction": "⭐", "default_sort_order": 0, "default_forum_layout": 2,
+      "tags": [
+        { "name": "Halloween", "moderated": true }, { "name": "Poland", "moderated": true },
+        { "name": "Japan", "moderated": true }, { "name": "Matrix", "moderated": true },
+        { "name": "Neon", "moderated": true }, { "name": "Space", "moderated": true },
+        { "name": "Music", "moderated": true }
+      ],
+      "pins": [ { "text": "pin-presets" } ] },
+    { "key": "plugins", "name": "🧩┃plugins", "category": "hubdeck", "type": "forum", "topic": "topic-plugins",
+      "default_reaction": "👍", "default_sort_order": 0, "default_forum_layout": 1,
+      "tags": [ { "name": "request" }, { "name": "question" }, { "name": "made one" } ] },
+    { "key": "help", "name": "🆘┃help", "category": "hubdeck", "type": "forum", "topic": "topic-help",
+      "default_reaction": "👍", "default_sort_order": 0, "default_forum_layout": 1,
+      "tags": [ { "name": "Windows" }, { "name": "macOS" }, { "name": "solved" } ],
+      "pins": [ { "text": "pin-help" } ] },
+    { "key": "moderator-only", "name": "moderator-only", "category": "staff", "type": "text", "existing": true, "keep_permissions": true }
+  ],
+  "onboarding": { "default_channels": ["rules", "announcements", "general", "setups", "ideas", "presets", "plugins", "help"] },
+  "automod": [
+    { "name": "Spam", "trigger_type": 3, "actions": ["block", "alert"] },
+    { "name": "Mention spam", "trigger_type": 5,
+      "trigger_metadata": { "mention_total_limit": 5, "mention_raid_protection_enabled": true },
+      "actions": ["block", "alert", "timeout"] },
+    { "name": "Scam links", "trigger_type": 1,
+      "trigger_metadata": {
+        "keyword_filter": ["free nitro", "nitro giveaway", "steam gift for you"],
+        "regex_patterns": [
+          "fr[e3]{2}\\s*n[i1l]tr[o0]",
+          "d[il1]s+c[o0]r+[cd]?[-_.]?(g[il1]fts?|n[il1]tr[o0]|airdrop)\\.[a-z]{2,}",
+          "st[e3]a?m+c[o0]m+[uv]n[il1]t[yi]?\\.(ru|xyz|top|site|online|link|icu|com\\.[a-z]{2})",
+          "@everyone.{0,80}(nitro|gift|airdrop|giveaway)"
+        ]
+      },
+      "actions": ["block", "alert"] }
+  ],
+  "automod_alerts": "moderator-only",
+  "automod_exempt_roles": ["Owner", "Moderator"],
+  "webhook": { "channel": "announcements", "name": "HubDeck releases" }
+}

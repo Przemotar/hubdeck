@@ -164,7 +164,8 @@ static OPENED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// The plugin files among a start's arguments (a double click starts `HubDeck.exe <file>`).
 pub fn files_in(args: &[String]) -> Vec<String> {
-    args.iter().filter(|a| a.to_lowercase().ends_with(".streamdeckplugin") && Path::new(a).is_file()).cloned().collect()
+    // plugins, and icon packs (the window installs those at once: pictures only, nothing runs)
+    args.iter().filter(|a| (a.to_lowercase().ends_with(".streamdeckplugin") || a.to_lowercase().ends_with(".streamdeckiconpack")) && Path::new(a).is_file()).cloned().collect()
 }
 
 /// Keep plugin files for the window and tell it (it asks before installing).
@@ -218,7 +219,7 @@ pub fn sd_drop_file(request: tauri::ipc::Request<'_>) -> Result<String, String> 
     let name = request.headers().get("x-name").and_then(|v| v.to_str().ok()).map(percent_decode).unwrap_or_default();
     let name = name.rsplit(['/', '\\']).next().unwrap_or("").trim().to_string();
     let lower = name.to_lowercase();
-    if name.is_empty() || name.contains("..") || !(lower.ends_with(".streamdeckplugin") || lower.ends_with(".zip")) {
+    if name.is_empty() || name.contains("..") || !(lower.ends_with(".streamdeckplugin") || lower.ends_with(".streamdeckiconpack") || lower.ends_with(".zip")) {
         return Err(format!("{name} is not a Stream Deck plugin file"));
     }
     let dir = std::env::temp_dir().join("hubdeck-dropped").join(format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)));

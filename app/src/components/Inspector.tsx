@@ -1,9 +1,12 @@
+import { withTemplate } from "../lookTemplates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState } from "../deck";
-import { actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, KEY_STYLES, controlId, hasState, inWindow, newBinding, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type AppInfo, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
-import { localizeAction, specialKeyName, t, useLanguage, type Key } from "../i18n";
+import { KeyDesigner, type OtherKey } from "./KeyDesigner";
+import { withLook } from "../editing";
+import { themeTitle, actionFits, ADVANCED_PARAMS, api, BACKGROUNDS, COMMON_SHORTCUTS, controlId, hasState, inWindow, newBinding, pressable, TURN_PARAMS, usePreview, type ActionDef, type Binding, type DialFace, type EngineView, type Gesture, type AppInfo, type InstalledItem, type Look, type Mode, type ParamDef, type Step, STEP_CONDITIONS } from "../engine";
+import { actionName, localizeAction, specialKeyName, t, useLanguage, type Key } from "../i18n";
 import { hasIcon, Icon } from "./Icon";
 import { IconPicker } from "./IconPicker";
 import { EffectFields } from "./Panels";
@@ -930,7 +933,7 @@ function ModesEditor({ modes, onChange, view }: { modes: Mode[]; onChange: (m: M
 }
 
 /** Knobs, faders and rollers: the name in the drawing and, for knobs and faders, the LED. */
-function ControlLook({ look, onChange, led }: { look: Look; onChange: (l: Look) => void; led: boolean }) {
+function ControlLook({ look, onChange, led, fromPreset }: { look: Look; onChange: (l: Look) => void; led: boolean; fromPreset?: string | null }) {
   return (
     <section className="look">
       <div className="field">
@@ -962,6 +965,8 @@ function ControlLook({ look, onChange, led }: { look: Look; onChange: (l: Look) 
           )}
           {look.led && <EffectFields idPrefix="led" effect={look.ledEffect} speed={look.ledSpeed} onChange={(ledEffect, ledSpeed) => onChange({ ...look, ledEffect, ledSpeed })} />}
           {look.led && look.ledEffect && <p className="help">{t("look.speedHelp")}</p>}
+          {/* the preset's colour and this control's own: the particular wins (owner's "2 a", 2026-10-30) */}
+          {fromPreset && <p className="help">{t("look.fromPresetLed", { name: fromPreset })}</p>}
           <p className="help">{t("look.ledHelp")}</p>
         </details>
       )}
@@ -999,14 +1004,11 @@ function useOutside(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
   }, [open, ref, close]);
 }
 
-/** Label sizes in key pixels (a key is 72; the label fits itself at 9.5 to 11.5 when Auto). */
-const LABEL_SIZES = [8, 10, 12, 14, 16, 20, 24];
-
 /**
  * The look of a key or the dial (owner's pick 2A): preview, label, Change icon (a popover),
  * Picture and the icon colors at hand; style, background, text color and presets under More looks.
  */
-function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }: { look: Look; onChange: (l: Look) => void; screen: "key" | "dial"; view: EngineView; idPrefix?: string; program?: string }) {
+function LookEditor({ look, onChange, screen, view, idPrefix = "look", program, others = [], onApplyTo, onOpenStudio }: { look: Look; onChange: (l: Look) => void; screen: "key" | "dial"; view: EngineView; idPrefix?: string; program?: string; others?: OtherKey[]; onApplyTo?: (ids: string[]) => Promise<unknown>; onOpenStudio?: () => void }) {
   const svg = usePreview(screen, look);
   const [imageError, setImageError] = useState<string | null>(null);
   const [iconsOpen, setIconsOpen] = useState(false);
@@ -1049,6 +1051,12 @@ function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }
                 )}
               </span>
             )}
+            {onOpenStudio && (
+              <button className="tool small" onClick={onOpenStudio} title={t("look.openStudioHelp")}>
+                <Icon name="palette" />
+                {t("look.openStudio")}
+              </button>
+            )}
             <button className="tool small" onClick={choosePicture} title={t(screen === "dial" ? "look.pictureHelpDial" : "look.pictureHelp")}>
               <Icon name="image" />
               {look.image ? t("look.changePicture") : t("look.picture")}
@@ -1082,9 +1090,28 @@ function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }
         </div>
       )}
       {imageError && <p className="help">{imageError}</p>}
+      {screen === "key" ? (
+        <details className="more-looks">
+          <summary>{t("look.edit")}</summary>
+          <KeyDesigner
+            look={look}
+            onChange={onChange}
+            others={others}
+            onApplyTo={onApplyTo ?? (() => Promise.resolve())}
+            appIcon={
+              program
+                ? () => {
+                    setImageError(null);
+                    api.appIcon(program).then((image) => onChange({ ...look, image }), (e) => setImageError(String(e)));
+                  }
+                : undefined
+            }
+          />
+          <p className="help">{t("look.pictureHelp")}</p>
+        </details>
+      ) : (
       <details className="more-looks">
-        <summary>{t(screen === "key" ? "look.more" : "look.moreDial")}</summary>
-        {/* full width: next to the preview the three did not fit (the dial got a sideways scrollbar) */}
+        <summary>{t("look.moreDial")}</summary>
         <div className="look-colors">
           <label className="color">
             <input type="color" value={look.bg ?? HOUSE_BG} onChange={(e) => onChange({ ...look, bg: e.target.value })} />
@@ -1099,55 +1126,6 @@ function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }
             {t("look.iconColor")}
           </label>
         </div>
-        {screen === "key" && (
-          <>
-            <div className="field">
-              <span className="label">{t("look.labelPos")}</span>
-              <div className="seg full" role="radiogroup" aria-label={t("look.labelPos")}>
-                {([undefined, "top", "middle", "bottom"] as const).map((p) => (
-                  <button key={p ?? "auto"} role="radio" aria-checked={look.labelPos === p} className={`tab${look.labelPos === p ? " is-active" : ""}`} onClick={() => onChange({ ...look, labelPos: p })}>
-                    {t(p ? `look.pos.${p}` : "look.auto")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <>
-              <label className="field">
-                <span className="label">{t("look.labelSize")}</span>
-                <select className="input" value={look.labelSize ?? ""} onChange={(e) => onChange({ ...look, labelSize: e.target.value ? Number(e.target.value) : undefined })}>
-                  <option value="">{t("look.auto")}</option>
-                  {LABEL_SIZES.map((z) => (
-                    <option key={z} value={z}>
-                      {z}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="field">
-                <span className="label">{t("look.iconSize")}</span>
-                <div className="seg full" role="radiogroup" aria-label={t("look.iconSize")}>
-                  {([undefined, "small", "large"] as const).map((z) => (
-                    <button key={z ?? "auto"} role="radio" aria-checked={look.iconSize === z} className={`tab${look.iconSize === z ? " is-active" : ""}`} onClick={() => onChange({ ...look, iconSize: z })}>
-                      {t(z ? `look.size.${z}` : "look.auto")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          </>
-        )}
-        {screen === "key" && (
-          <div className="field">
-            <span className="label">{t("look.style")}</span>
-            <div className="seg full" role="radiogroup" aria-label={t("look.style")}>
-              {KEY_STYLES.map((st) => (
-                <button key={st} role="radio" aria-checked={(look.style ?? "flat") === st} className={`tab${(look.style ?? "flat") === st ? " is-active" : ""}`} onClick={() => onChange({ ...look, style: st === "flat" ? undefined : st })}>
-                  {t(`look.style.${st}`)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="field">
           <span className="label">{t("look.presets")}</span>
           <div className="swatches" role="listbox" aria-label={t("look.presets")}>
@@ -1169,8 +1147,9 @@ function LookEditor({ look, onChange, screen, view, idPrefix = "look", program }
             {t("look.appIcon")}
           </button>
         )}
-        <p className="help">{t(screen === "dial" ? "look.pictureHelpDial" : "look.pictureHelp")}</p>
+        <p className="help">{t("look.pictureHelpDial")}</p>
       </details>
+      )}
     </section>
   );
 }
@@ -1320,7 +1299,7 @@ function SdInspector({ control, action, settings }: { control: string; action: s
   );
 }
 
-export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenPlugins, focusPlugin }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void; onOpenPlugins?: () => void; focusPlugin?: { id: string; at: number } | null }) {
+export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenPlugins, focusPlugin, onOpenStudio }: { live: LiveState; selected: ControlRef | null; view: EngineView; fresh?: boolean; onDismissFresh?: () => void; onOpenPlugins?: () => void; focusPlugin?: { id: string; at: number } | null; onOpenStudio?: (control: string) => void }) {
   useLanguage();
   const profile = view.profile;
   const page = view.state?.page ?? null;
@@ -1330,6 +1309,20 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
   const control = selected ? controlId(selected.kind, selected.index, page, activeGesture) : null;
   const stored = control && profile ? profile.controls[control] ?? null : null;
   const [draft, setDraft] = useState<Binding | null>(stored);
+  // the other keys of this page that do something: where "Apply this look to other keys" can go
+  const otherKeys: OtherKey[] =
+    selected?.kind === "keys" && profile
+      ? Array.from({ length: 15 }, (_, i) => controlId("keys", i, page))
+          .filter((id) => id !== control && profile.controls[id])
+          .map((id) => {
+            const b = profile.controls[id];
+            const n = Number(id.split(".").pop()) + 1;
+            const def = view.catalog?.actions.find((a) => a.id === b.action);
+            // a plugin's action is not in the catalog: the last word of its id ("…audiooutputswitch.toggle": Toggle)
+            const last = b.action.split(/[/.]/).pop() ?? b.action;
+            return { id, name: `${n}. ${b.look?.label?.trim() || (def ? actionName(def) : last.charAt(0).toUpperCase() + last.slice(1))}` };
+          })
+      : [];
   // "Change": the chooser over a control that already does something
   const [choosing, setChoosing] = useState(false);
   const saver = useDebouncedSave((b) => {
@@ -1443,6 +1436,8 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
   }
   const pickAction = (def: ActionDef) => {
     const fresh = newBinding(def);
+    // a key starts in the profile's own style, when it has one (the full key editor sets it)
+    if (selected.kind === "keys" && profile?.keyStyle) fresh.look = withTemplate(fresh.look, profile.keyStyle);
     // the label and icon say what the control does, so they follow the new action; the
     // colors, style and picture the user picked stay (Ctrl+Z brings the old label back)
     update({ ...fresh, look: draft ? { ...draft.look, label: fresh.look.label, icon: fresh.look.icon } : fresh.look }, 0);
@@ -1621,9 +1616,29 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
       {draft && !choosing && activeGesture === "tap" && (
         <div className="sec">
           <h3 className="sec-title">{t("inspector.look")}</h3>
-      {draft && !hasScreen && activeGesture === "tap" && <ControlLook look={draft.look} led={selected.kind === "knobs" || selected.kind === "faders"} onChange={(look) => update({ ...draft, look })} />}
+      {draft && !hasScreen && activeGesture === "tap" && <ControlLook
+          look={draft.look}
+          led={selected.kind === "knobs" || selected.kind === "faders"}
+          fromPreset={profile?.effects?.lights && profile.effects.theme && (!profile.effects.lightsTo || profile.effects.lightsTo.includes("controls")) ? themeTitle(profile.effects.theme) : null}
+          onChange={(look) => update({ ...draft, look })}
+        />}
 
-      {draft && hasScreen && activeGesture === "tap" && <LookEditor program={draft.action === "core.launch" && /\.exe"?$/i.test(String(draft.params.target ?? "").trim()) ? String(draft.params.target) : undefined} look={draft.look} screen={selected.kind === "dial" ? "dial" : "key"} view={view} onChange={(look) => update({ ...draft, look })} />}
+      {draft && hasScreen && activeGesture === "tap" && (
+        <LookEditor
+          program={draft.action === "core.launch" && /\.exe"?$/i.test(String(draft.params.target ?? "").trim()) ? String(draft.params.target) : undefined}
+          look={draft.look}
+          screen={selected.kind === "dial" ? "dial" : "key"}
+          view={view}
+          onChange={(look) => update({ ...draft, look })}
+          others={selected.kind === "keys" ? otherKeys : []}
+          onOpenStudio={selected.kind === "keys" && onOpenStudio && control ? () => (saver.flush(), onOpenStudio(control)) : undefined}
+          onApplyTo={(ids) => {
+            if (!profile) return Promise.resolve();
+            const changes = Object.fromEntries(ids.filter((id) => profile.controls[id]).map((id) => [id, { ...profile.controls[id], look: withLook(profile.controls[id].look ?? {}, draft.look ?? {}) }]));
+            return api.setBindings(profile.id, changes);
+          }}
+        />
+      )}
 
       {draft && hasScreen && activeGesture === "tap" && hasState(draft.action) && (
         <section className="field">

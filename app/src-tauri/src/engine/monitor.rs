@@ -137,6 +137,26 @@ impl CpuLoad {
     }
 }
 
+/// How much of the RAM is in use, %. On Windows from `GlobalMemoryStatusEx` (microseconds):
+/// sysinfo's `refresh_memory` took 29.6 ms there, every second, 3 % of a core on its own
+/// (session 33, `scripts/thread-cpu.py`: the "monitor" thread at 3.8 % with the deck still).
+#[cfg(windows)]
+fn ram_used(_sys: &mut sysinfo::System) -> f32 {
+    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    // SAFETY: a valid out-pointer with its length set.
+    if unsafe { GlobalMemoryStatusEx(&mut m) }.is_err() || m.ullTotalPhys == 0 {
+        return 0.0;
+    }
+    (m.ullTotalPhys - m.ullAvailPhys) as f32 / m.ullTotalPhys as f32 * 100.0
+}
+
+#[cfg(not(windows))]
+fn ram_used(sys: &mut sysinfo::System) -> f32 {
+    sys.refresh_memory();
+    if sys.total_memory() > 0 { sys.used_memory() as f32 / sys.total_memory() as f32 * 100.0 } else { 0.0 }
+}
+
 /// A control shows a value only LibreHardwareMonitor gives (CPU temperature, a non-NVIDIA GPU).
 static WANT_LHM: AtomicBool = AtomicBool::new(false);
 
@@ -166,8 +186,7 @@ pub fn watch(tx: Sender<Msg>) {
     let mut lhm_tried: Option<Instant> = None;
     loop {
         let cpu_load = cpu.sample(&mut sys);
-        sys.refresh_memory();
-        let ram = if sys.total_memory() > 0 { sys.used_memory() as f32 / sys.total_memory() as f32 * 100.0 } else { 0.0 };
+        let ram = ram_used(&mut sys);
         let mut sample = Sample { cpu: cpu_load, ram, ..Sample::default() };
         if let Some(device) = nvml.as_ref().and_then(|n| n.device_by_index(0).ok()) {
             sample.gpu = device.utilization_rates().ok().map(|u| u.gpu as f32);
@@ -271,6 +290,11 @@ mod tests {
             sys.refresh_memory();
         }
         println!("refresh_memory: {:?}", t.elapsed() / 5);
+        let t = Instant::now();
+        for _ in 0..5 {
+            ram_used(&mut sys);
+        }
+        println!("ram_used: {:?} ({:.1} %)", t.elapsed() / 5, ram_used(&mut sys));
         let t = Instant::now();
         let nvml = nvml_wrapper::Nvml::init();
         println!("nvml init: {:?} ({})", t.elapsed(), nvml.is_ok());

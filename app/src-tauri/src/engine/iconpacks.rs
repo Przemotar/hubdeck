@@ -20,6 +20,40 @@ const MAX_FILE: u64 = 5 * 1024 * 1024;
 const MAX_TOTAL: u64 = 200 * 1024 * 1024;
 const MAX_ICONS: usize = 3000;
 
+/// The size Stream Deck wants its pack icons at (Elgato's icon pack documentation: 144 x 144).
+const SD_ICON_PX: u32 = 144;
+
+/// Keys as a Stream Deck icon pack (Elgato's format: `<id>.sdIconPack/` with `manifest.json`,
+/// `icons.json`, `icon.png` and `icons/` at 144 px), for someone with a Stream Deck or to keep:
+/// each key as it looks now, named by its label. Returns how many icons went in.
+pub fn export_stream_deck(name: &str, keys: &[(String, super::profile::Look)], path: &Path) -> Result<usize, String> {
+    use std::io::Write as _;
+    let r = super::render::Renderer::default();
+    let slug: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect::<String>().trim_matches('-').to_string();
+    let root = format!("dev.hubdeck.{}.sdIconPack/", if slug.is_empty() { "keys" } else { &slug });
+    let mut list = Vec::new();
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for (i, (label, look)) in keys.iter().enumerate() {
+        let file_stem: String = label.chars().map(|c| if c.is_alphanumeric() { c } else { '-' }).collect::<String>().trim_matches('-').chars().take(40).collect();
+        let file = format!("{:02}-{}.png", i + 1, if file_stem.is_empty() { "key".to_string() } else { file_stem });
+        files.push((format!("{root}icons/{file}"), r.png(&super::render::key_svg_sized(look, SD_ICON_PX))?));
+        list.push(serde_json::json!({ "path": file, "name": label, "tags": ["hubdeck"] }));
+    }
+    let Some((_, first)) = keys.first() else { return Err("no keys to export".into()) };
+    files.push((format!("{root}icon.png"), r.png(&super::render::key_svg_sized(first, 56))?));
+    let manifest = serde_json::json!({ "Name": name, "Version": "1.0.0", "Author": "HubDeck", "Description": "Keys made in HubDeck", "Icon": "icon.png" });
+    files.push((format!("{root}manifest.json"), serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?));
+    files.push((format!("{root}icons.json"), serde_json::to_vec_pretty(&list).map_err(|e| e.to_string())?));
+    let mut out = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut z = zip::ZipWriter::new(&mut out);
+    for (name, data) in &files {
+        z.start_file(name.as_str(), zip::write::SimpleFileOptions::default()).map_err(|e| e.to_string())?;
+        z.write_all(data).map_err(|e| e.to_string())?;
+    }
+    z.finish().map_err(|e| e.to_string())?;
+    Ok(keys.len())
+}
+
 /// An installed pack as the picker lists it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -370,6 +404,24 @@ mod tests {
             z.finish().unwrap();
         }
         buf.into_inner()
+    }
+
+    #[test]
+    fn exported_keys_install_back_as_a_stream_deck_pack() {
+        let root = temp("export");
+        let data = root.join("data");
+        let file = root.join("My keys.streamDeckIconPack");
+        let look = |label: &str| super::super::profile::Look { label: Some(label.into()), icon: Some("play".into()), bg: Some("#3060c0".into()), ..Default::default() };
+        let n = export_stream_deck("My keys", &[("Play".into(), look("Play")), ("Lubię to".into(), look("Lubię to"))], &file).unwrap();
+        assert_eq!(n, 2);
+        let pack = install(&data, &file).unwrap();
+        assert_eq!(pack.name, "My keys");
+        let icons = icons(&data, &pack.id).unwrap();
+        assert_eq!(icons.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), ["Play", "Lubię to"]);
+        // 144 x 144 as Stream Deck wants
+        let png = std::fs::read(data.join("iconpacks").join(&pack.id).join(&icons[0].file)).unwrap();
+        let img = image::load_from_memory(&png).unwrap();
+        assert_eq!((img.width(), img.height()), (144, 144));
     }
 
     #[test]

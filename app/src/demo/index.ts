@@ -30,7 +30,9 @@ const UPDATE = {
   date: "2026-10-20 10:00:00 +00:00",
 };
 
-const profiles = new Map<string, Profile>((fixture.profiles as unknown as Profile[]).map((p) => [p.id, p]));
+// `&tests=off` leaves out the fixture's "Test: …" profiles (the README's screenshots, 2026-10-31)
+const withTests = new URLSearchParams(location.search).get("tests") !== "off";
+const profiles = new Map<string, Profile>((fixture.profiles as unknown as Profile[]).filter((p) => withTests || !p.name.startsWith("Test:")).map((p) => [p.id, p]));
 
 // the tour in the browser demo: the parts of a deck for the demo's kit (screenshots, flows)
 const tour = { draft: "demo-everyday", focus: "games", kit: "dialKnobs", mac: false, call: "discord", music: "Spotify", games: 12, rollers: true, stops: [] as { id: string; keep: boolean; look: number; looks: number; controls: string[]; tryControl: string | null; tasks?: string[]; faces?: string[] }[] };
@@ -123,6 +125,7 @@ const sortedJson = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x =
 
 const changed = () => void emit("engine://state", state());
 
+let demoTemplates: { name: string; look: Record<string, unknown> }[] = [];
 const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   engine_state: () => state(),
   deck_snapshot: () => deck,
@@ -211,6 +214,9 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   "plugin:opener|open_url": () => null,
   update_settings_get: () => [true, true],
   update_settings_set: () => null,
+  // the key look editor's own templates, kept for the page's life
+  look_templates_get: () => demoTemplates,
+  look_templates_set: (a) => ((demoTemplates = (a.templates as typeof demoTemplates) ?? []), null),
   lights_get: () => ({
     style: "rainbow",
     color: "#8b7cf6",

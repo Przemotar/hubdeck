@@ -1,0 +1,17 @@
+[package]
+name = "gpu-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Not a member of the app's workspace: the GPU test (docs/LIVING-DECK.md, stage 1's shader
+# comparison) must not slow the app's builds or add to its size before the owner decides.
+[workspace]
+
+[dependencies]
+wgpu = "25"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = 3

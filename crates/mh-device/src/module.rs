@@ -6,6 +6,10 @@ use mh_protocol::report::{self, FEATURE_LEN};
 use mh_protocol::{ModuleKind, Query, Report, descriptor};
 use parking_lot::FairMutex;
 
+#[cfg(windows)]
+use crate::overlapped::Pipelined;
+#[cfg(target_os = "macos")]
+use crate::pictures::Pipelined;
 use crate::{Error, ModuleId, Result};
 
 /// Time a module gets to switch to software mode before it is read (see `initialize`).
@@ -33,6 +37,10 @@ pub struct Module {
     /// slice. Through the shared handle one 64-byte LED color took 34.8 ms on the owner's base
     /// (2026-10-19), through a handle of its own 2.7 ms (`tests/output_timing.rs`).
     writer: Option<FairMutex<HidDevice>>,
+    /// Pictures several reports at a time (keys and dial; Windows `overlapped.rs`, macOS
+    /// `pictures.rs`).
+    #[cfg(any(windows, target_os = "macos"))]
+    pictures: Option<FairMutex<Pipelined>>,
     /// Handed back to its firmware at exit: nothing more is sent (a picture after that, while the
     /// app was closing, may be what left a dial refusing commands on the next start, 2026-10-13).
     released: AtomicBool,
@@ -43,12 +51,28 @@ impl Module {
     pub(crate) fn new(kind: ModuleKind, serial: String, device: HidDevice) -> Self {
         let mut buf = [0u8; 4096];
         let output_len = device.get_report_descriptor(&mut buf).ok().and_then(|n| descriptor::output_report_len(&buf[..n], 0x02)).unwrap_or(64);
-        Self { id: ModuleId { kind, serial }, output_len, port_path: None, device: FairMutex::new(device), writer: None, software_mode: AtomicBool::new(false), released: AtomicBool::new(false) }
+        Self {
+            id: ModuleId { kind, serial },
+            output_len,
+            port_path: None,
+            device: FairMutex::new(device),
+            writer: None,
+            #[cfg(any(windows, target_os = "macos"))]
+            pictures: None,
+            software_mode: AtomicBool::new(false),
+            released: AtomicBool::new(false),
+        }
     }
 
     /// Output reports go through this handle (the same device opened again).
     pub(crate) fn set_writer(&mut self, device: HidDevice) {
         self.writer = Some(FairMutex::new(device));
+    }
+
+    /// Pictures go out several reports at a time through this handle.
+    #[cfg(any(windows, target_os = "macos"))]
+    pub(crate) fn set_pictures(&mut self, writer: Pipelined) {
+        self.pictures = Some(FairMutex::new(writer));
     }
 
     /// Whether the module currently accepts commands and queries (always true for the M0 family).
@@ -79,6 +103,17 @@ impl Module {
     pub fn send_all(&self, reports: &[Report]) -> Result<()> {
         if reports.iter().any(Report::is_forbidden) {
             return Err(Error::Forbidden);
+        }
+        // a picture (many output reports): several at a time where the handle for it is open
+        #[cfg(any(windows, target_os = "macos"))]
+        if reports.len() > 1
+            && let Some(pictures) = self.pictures.as_ref().filter(|_| reports.iter().all(|r| matches!(r, Report::Output(_))))
+        {
+            let mut w = pictures.lock();
+            if self.released.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            return w.write_all(reports.iter().filter_map(|r| if let Report::Output(b) = r { Some(b.as_slice()) } else { None }), self.output_len);
         }
         // only output reports (a picture, an LED color): through the writer, never waiting for a read
         if let Some(writer) = self.writer.as_ref().filter(|_| reports.iter().all(|r| matches!(r, Report::Output(_)))) {

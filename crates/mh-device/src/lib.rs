@@ -20,6 +20,12 @@ mod hub;
 pub mod location;
 mod module;
 mod notify;
+#[cfg(windows)]
+mod overlapped;
+/// Public for `examples/pipeline_mac.rs`; HubDeck uses it through [`Module::send_all`].
+#[cfg(target_os = "macos")]
+#[doc(hidden)]
+pub mod pictures;
 pub mod recover;
 
 pub use events::{Event, ModuleId};
@@ -40,6 +46,8 @@ pub enum Error {
     HardwareMode(&'static str),
     #[error("{0} does not support this request")]
     Unsupported(&'static str),
+    #[error("{0}")]
+    Write(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

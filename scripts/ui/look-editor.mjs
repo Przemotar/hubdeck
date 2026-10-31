@@ -74,13 +74,17 @@ try {
   await sleep(900);
   check("an emoji from the list becomes the key's icon", (await look()).icon === "emoji:🔥", (await look()).icon);
 
-  // More looks: label at the top, size 16, a large icon
+  // Edit look (the key's look editor, session 30): Label tab: at the top, size 16; Icon tab: large
   await win.locator("details.more-looks > summary").first().click();
+  await sleep(300);
+  await win.getByRole("tab", { name: "Label", exact: true }).click();
   await sleep(300);
   await win.getByRole("radiogroup", { name: "Label position" }).getByRole("radio", { name: "Top" }).click();
   await sleep(500);
   await win.locator("label.field", { hasText: "Label size" }).locator("select").selectOption("16");
   await sleep(500);
+  await win.getByRole("tab", { name: "Icon", exact: true }).click();
+  await sleep(300);
   await win.getByRole("radiogroup", { name: "Icon size" }).getByRole("radio", { name: "Large" }).click();
   await sleep(900);
   const l = await look();
@@ -97,10 +101,12 @@ try {
   for (const [w, h] of [[960, 640], [1280, 800]]) {
     await win.setViewportSize({ width: w, height: h });
     await sleep(400);
-    const cut = (await clipped(win)).filter((x) => /Label|Icon size|Top|Middle|Bottom|Small|Large|Auto|More looks/.test(x.text));
+    const cut = (await clipped(win)).filter((x) => /Label|Icon size|Top|Middle|Bottom|Small|Large|Auto|Edit look/.test(x.text));
     check(`nothing of the new fields cut at ${w} wide`, cut.length === 0, cut.map((x) => x.text).join(" | "));
   }
   // Auto takes them back off
+  await win.getByRole("tab", { name: "Label", exact: true }).click();
+  await sleep(300);
   await win.getByRole("radiogroup", { name: "Label position" }).getByRole("radio", { name: "Auto" }).click();
   await sleep(700);
   check("Auto takes the label position off", (await look()).labelPos === undefined);

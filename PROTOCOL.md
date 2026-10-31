@@ -67,6 +67,27 @@ Key positions in the panel image (measured 2026-10-09 with a grid of labeled coo
 
 We read the output report length from the HID descriptor (`_output_report_len`): keys 320 B, M0 modules 64 B. Data chunk = length − 8.
 
+### Keys: where a per-key image lands (measured 2026-10-26, camera)
+
+A panel picture with a 10 px grid, then each key sent as its own 72x72 image cut from that
+picture; the camera's two photos compared key by key (phase correlation, 1.44 camera px a panel
+px): the per-key image of key `i` covers the panel square starting at about
+**x = 4 + 99.5 x column, y = 1 + 99.1 x row** (72x72; the same for both guesses tried, 102/100 and
+100/99, within half a pixel), not the 102/100 grid above.
+
+**To the pixel** (camera, 2026-10-26, `crates/mh-device/examples/align.rs`: one still picture of
+3 px noise sent in turns as the whole panel and as the 15 squares cut from it, each key's camera
+picture compared between the two, the cut moved by one pixel in each direction): the squares
+start at **x = 5, 104, 203, 303, 402** and **y = 1, 101, 199**. The rounded fit above put the left
+column (x 4) and the middle row (y 100) a pixel off: the owner saw whole keys jump with slow
+effects, where the app switches between the whole panel and the keys' squares. With the table
+every key's difference is at the camera's noise (1.9-2.3 against 12-30 a pixel off). Sizes and times (Python, q98): a key image 3.2 KB in
+~3 ms; the whole panel 34 KB in ~105 ms.
+
+The decoder takes the **standard Huffman tables only**: a panel JPEG with tables optimised for
+the picture (`jpeg-encoder` `set_optimized_huffman_tables`) showed its first rows, then black
+(2026-10-26).
+
 ## Picture frame rate (measured 2026-10-10)
 
 `cargo run --release -p mh-device --example framerate -- 4 <quality>` on the reference unit:
@@ -160,6 +181,52 @@ Consequences:
 - After `Set_Sw_Mode(true)` the app waits (`200 * i` ms) before reading the firmware.
 - `MHDaemon` (a separate process) reads CPU/GPU sensors every second through the CPUID SDK (kernel driver). Likely cause of the computer freeze on 2026-10-09, in conflict with MSI Mystic Light/Afterburner (a hypothesis with no proof, because the logs were lost in the hard reset).
 - Modules supported in the SDK: M0 (base, faders, knobs, rollers), M131E (dial), M4315 (keys), M3700, M3704, M4300, M4600, M5000.
+
+## What the hardware offers, and what is not used yet (checked 2026-10-26)
+
+- **No sound, microphone or vibration**: the deck enumerates as HID devices and Prolific hubs only
+  (no USB audio class; Windows `Get-PnpDevice`, VID `2516`/`067B`, 2026-10-26), and none of the
+  SDKs has such a function.
+- **Every function of the three SDKs** (names read from the DLLs as data, 2026-10-26):
+  M0: `Adjust_LED_Brightness`, `Adjust_LED_Color`, `Adjust_LED_Mode`, `Adjust_LED_Speed`,
+  `Calibrate_Direction` (forbidden), `Get_Device_Direction`, `Get_LED_Brightness`, `Get_LED_Mode`,
+  `Get_Slider_Value`, config/info/serial/firmware reads, and the forbidden writes
+  (`Save_Factory_Data`, `Set_Serial_Number`, `Test_FW_Recovery_Process`,
+  `Test_Factory_Reset_Process`, `Update_FW`). Keys M4315: `Adjust_Backlight`, `Get_Backlight`,
+  `Display_Color_On_Button`, `Display_Color_On_Screen`, `Display_Picture_On_Button`,
+  `Display_Picture_On_Screen`, `Set_Sw_Mode`, reads, the forbidden writes and
+  `Test_Animation_Recovery_Process` (a stored animation in the firmware; restoring it is a
+  recovery test, forbidden). Dial M131E: the same without the per-button pair.
+- **Checked with the camera (2026-10-26 12:41, `examples/lights.rs`, film at 30 fps)**: a key's
+  solid colour (`03 37 idx R G B`) fills that one key at once over the panel picture (14 ms, no
+  JPEG); the screen's colour (`03 36 R G B`) fills all keys (18 ms); a panel picture after either
+  shows normally. The backlight (`03 34`, 20 <-> 100) changes in 4-24 ms and the flashes show on
+  film (33 changes in 2 s went through). Not tried: the dial's `03 46`, LED brightness `02 2E`.
+- **How many pictures the key screen shows** (2026-10-26, `examples/counter.rs`: a frame number as
+  squares, filmed at 30 fps and read back): about **24 different pictures a second** at most, both
+  when 30.4 a second were sent (one report at a time) and 37.9 (two at a time), q98 pictures of
+  ~39 KB. Pictures written two reports at a time arrive whole (no tears or garbage on film).
+- **Sending**: hidapi writes a 320-byte report and waits for it; overlapped writes in flight on a
+  handle of their own take a q98 panel faster and with less CPU (`examples/pipeline.rs`, 40 KB:
+  one by one 33.6 ms at 12:34; later, with the PC busy, 48.9-109.6 ms and 4.2-6.2 ms of CPU a
+  picture against eight in flight 23.6-28.2 ms and 2.2-2.5 ms). HubDeck writes pictures with eight
+  in flight on Windows (`mh-device` `overlapped.rs`; `HUBDECK_PIPELINE=0` turns it off). At q98 the bytes decide: a
+  snowy panel (~80 KB) took 76 ms one report at a time (10.9 a second).
+- **Sending on macOS** (2026-10-30, `examples/pipeline_mac.rs`, MacBook M2 Pro, the deck through
+  the base): hidapi's write is IOHIDDeviceSetReport, one report at a time; Tokyo Rain's q98
+  panels took 121-133 ms (7.5-8.3 pictures a second). IOHIDDeviceSetReportWithCallback with
+  writes in flight on a device object of its own: a ~49 KB panel 76.5 -> 26.4 ms (13.1 -> 37.9 a
+  second) and 6.9 -> 2.9 ms of CPU a picture with 2, 4, 8 or 16 in flight alike (1 in flight 63.9
+  ms); a ~180 KB panel 85 ms (~2.1 MB/s, the device's pace). The second object opens only when
+  hidapi opened the module shared: an exclusive (seize) open refuses it and cuts off one opened
+  before it (`0xe00002c5`, kIOReturnExclusiveAccess). Every module's report descriptor is usage
+  page 0x0C with opaque byte arrays (usage 0xFF00, report ids 01/02/03 and feature ids), no
+  standard consumer usages, so the system's driver has nothing to act on in a shared open.
+  HubDeck opens keys and dial shared with eight in flight (`mh-device` `pictures.rs`;
+  `HUBDECK_PIPELINE=0` turns it off).
+- **No known way**: single LEDs inside a knob ring or along the base edge (the hardware has many,
+  its "water" mode lights them in turn, but no SDK function addresses one). Probing unknown
+  commands is not done (firmware risk; the owner's rule against workarounds).
 
 ## Side note
 

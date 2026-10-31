@@ -28,7 +28,6 @@ itself, at once; the model refines them and talks. Safety lives in code, not in 
 | House look | `app/src-tauri/src/engine/house.rs` | The key look every profile HubDeck makes uses |
 | Local API | `app/src-tauri/src/engine/api.rs` | What the MCP tools call in the running app (`/api/profiles`, `/api/assistant/idea`...) |
 | Time in front | `app/src-tauri/src/engine/usage.rs` | How long each app is in front, counted on this computer only (`usage.json`) |
-| Persona checks | `scripts/ui/personas.mjs`, `scripts/personas/` | Six made-up users in test copies, one real turn each, timings and draft quality |
 
 ## A talk, step by step
 

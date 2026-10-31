@@ -1092,9 +1092,25 @@ pub fn catalog() -> Vec<ActionDef> {
             id: SAVER,
             name: "Screensaver",
             group: "HubDeck",
-            description: "Shows a screensaver on the keys for a few seconds; any touch ends it. With Next, every press shows the next one. The one that starts by itself is set in Settings > Lights and screens.",
+            description: "Shows a screensaver on the keys for a few seconds; any touch ends it. With Next, every press shows the next one. The one that starts by itself is set under the deck, in Screensaver.",
             inputs: vec![Press],
-            params: vec![p("effect", "Which", ParamKind::Select { options: options(&[("", "Next"), ("rain", "Code rain"), ("stars", "Night sky"), ("waves", "Waves")]) }, json!(""))],
+            params: vec![p(
+                "effect",
+                "Which",
+                ParamKind::Select {
+                    options: options(&[
+                        ("", "Next"),
+                        ("aurora", "Aurora"),
+                        ("aquarium", "Aquarium"),
+                        ("lava", "Lava lamp"),
+                        ("fire", "Fireplace"),
+                        ("fireflies", "Summer night"),
+                        ("neon", "Neon rain"),
+                        ("haunted", "Haunted night"),
+                    ]),
+                },
+                json!(""),
+            )],
             icon: "image",
         },
         ActionDef {

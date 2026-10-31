@@ -202,8 +202,21 @@ const LOOP_FRAMES: u64 = 420;
 /// The clock Mochi is drawn at, on the loop's grid (whole milliseconds: an `f32` of seconds gets
 /// coarser than a step after a few days).
 pub fn loop_clock() -> f32 {
+    loop_at(loop_start().elapsed())
+}
+
+fn loop_start() -> Instant {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-    loop_at(START.get_or_init(Instant::now).elapsed())
+    *START.get_or_init(Instant::now)
+}
+
+/// When the loop's step after the one `at` falls in begins (a few ms into it): the dial wakes then,
+/// so each resting frame is a new step; waking on a beat of its own put two frames in one step now
+/// and then, and the second was the same picture, not sent (22.9 a second, 2026-10-30).
+pub fn next_step(at: Instant) -> Instant {
+    let start = loop_start();
+    let step = at.saturating_duration_since(start).as_millis() as u64 / STEP_MS;
+    start + Duration::from_millis((step + 1) * STEP_MS + 2)
 }
 
 fn loop_at(since: Duration) -> f32 {
