@@ -181,11 +181,12 @@ pub fn view(lights: &Lights) -> Vec<LedView> {
     lights.leds.iter().map(|l| LedView { color: format!("#{:02x}{:02x}{:02x}", l.rgb[0], l.rgb[1], l.rgb[2]), effect: if l.pulse { "music" } else { effect_name(l.mode) } }).collect()
 }
 
-/// One LED per control of a `kind` module (`knobs` 3, `faders` 5). None = no control has a color
+/// One LED per control of a `kind` module (`knobs` 3, `faders` 5), its controls numbered from `first`
+/// (a second module of the kind goes on from the first's: `knobs.3`). None = no control has a color
 /// or an effect, so the module keeps its own rainbow. Controls without either stay dark.
 /// "Brightness follows the value" works with the static effect only.
-pub fn module_leds(profile: Option<&Profile>, kind: &str, count: usize, levels: &HashMap<String, f32>) -> Option<Lights> {
-    let looks: Vec<Option<&Look>> = (0..count).map(|i| profile.and_then(|p| p.controls.get(&format!("{kind}.{i}"))).map(|b| &b.look)).collect();
+pub fn module_leds(profile: Option<&Profile>, kind: &str, first: usize, count: usize, levels: &HashMap<String, f32>) -> Option<Lights> {
+    let looks: Vec<Option<&Look>> = (0..count).map(|i| profile.and_then(|p| p.controls.get(&format!("{kind}.{}", first + i))).map(|b| &b.look)).collect();
     let lit = |l: &Look| l.led.as_deref().and_then(parse_hex).is_some() || l.led_effect.as_deref().is_some_and(|e| e != "static");
     if !looks.iter().any(|l| l.is_some_and(lit)) {
         return None;
@@ -201,7 +202,7 @@ pub fn module_leds(profile: Option<&Profile>, kind: &str, count: usize, levels: 
                 speed = Some(s.min(100)); // the module has one speed: the last control that sets one
             }
             let rgb = look.led.as_deref().and_then(parse_hex).unwrap_or([255, 255, 255]);
-            let rgb = if look.led_level && mode == LedMode::Static { scale(rgb, levels.get(&format!("{kind}.{i}")).copied().unwrap_or(1.0)) } else { rgb };
+            let rgb = if look.led_level && mode == LedMode::Static { scale(rgb, levels.get(&format!("{kind}.{}", first + i)).copied().unwrap_or(1.0)) } else { rgb };
             match look.led_effect.as_deref() {
                 Some("music") => Led::music(look.led.as_deref().and_then(parse_hex).or(profile.map(profile_color)).unwrap_or([255, 255, 255])),
                 _ => Led::new(rgb, mode),
@@ -292,11 +293,12 @@ fn dim(lights: &mut Lights, brightness: u8) {
 }
 
 /// The LEDs of a knobs or faders module: the style, levels and the muted-mic reaction, with the
-/// colors and effects set on single controls winning. None = the module's own rainbow.
-pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &HashMap<String, f32>, cfg: &LightSettings, live: &Live) -> Option<Lights> {
-    let advanced = module_leds(profile, kind, count, levels);
+/// colors and effects set on single controls winning; its controls numbered from `first`. None = the
+/// module's own rainbow.
+pub fn lights(profile: Option<&Profile>, kind: &str, first: usize, count: usize, levels: &HashMap<String, f32>, cfg: &LightSettings, live: &Live) -> Option<Lights> {
+    let advanced = module_leds(profile, kind, first, count, levels);
     let style = style_rgb(profile, cfg);
-    let binding = |i: usize| profile.and_then(|p| p.controls.get(&format!("{kind}.{i}")));
+    let binding = |i: usize| profile.and_then(|p| p.controls.get(&format!("{kind}.{}", first + i)));
     // a control's own colour wins over the preset's (the more particular setting; owner's "2 a",
     // 2026-10-30): the window lists such controls in Deck look with "back to the preset"
     let own = |i: usize| binding(i).is_some_and(|b| b.look.led.as_deref().and_then(parse_hex).is_some() || b.look.led_effect.as_deref().is_some_and(|e| e != "static"));
@@ -309,13 +311,13 @@ pub fn lights(profile: Option<&Profile>, kind: &str, count: usize, levels: &Hash
         } else if own(i) {
             advanced.as_ref().map(|a| a.leds[i]).unwrap_or(Led::solid([0, 0, 0]))
         } else if let Some(rgb) = style {
-            let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some());
+            let level = levels.get(&format!("{kind}.{}", first + i)).copied().filter(|_| cfg.react.levels && binding(i).is_some());
             // the style to the music is the edge's; knobs and faders join it by their own switch
             Led::solid(level.map(|l| scale(rgb, l)).unwrap_or(rgb))
         } else {
             // the rainbow: a control with a level keeps it in the LED's color (white = full), so
             // HubDeck's rainbow gets darker as the volume goes down (owner's tour test, session 9)
-            let level = levels.get(&format!("{kind}.{i}")).copied().filter(|_| cfg.react.levels && binding(i).is_some_and(|b| b.look.led_level));
+            let level = levels.get(&format!("{kind}.{}", first + i)).copied().filter(|_| cfg.react.levels && binding(i).is_some_and(|b| b.look.led_level));
             let v = level.map_or(255, |l| (l.clamp(MIN_LEVEL, 1.0) * 255.0).round() as u8);
             any |= level.is_some();
             out.leds.push(Led::new([v, v, v], LedMode::Rainbow));
@@ -401,21 +403,21 @@ mod tests {
         let edge = edge_lights(Some(&p), &cfg, &Live::default()).unwrap();
         assert_eq!(edge.leds[0].rgb, [0xff, 0x3a, 0xa8]);
         assert_eq!(edge.leds[0].mode, effect_mode(Some("breathing")));
-        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        let knobs = lights(Some(&p), "knobs", 0, 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
         assert!(knobs.leds.iter().all(|l| l.rgb == [0x2a, 0xd6, 0xff]));
         // a knob with its own colour keeps it (the particular wins)
         with_led(&mut p, "knobs.1", "#1db954", false);
-        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        let knobs = lights(Some(&p), "knobs", 0, 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
         assert_eq!((knobs.leds[0].rgb, knobs.leds[1].rgb), ([0x2a, 0xd6, 0xff], [0x1d, 0xb9, 0x54]));
         // only the edge: the knobs go back to the style (here the rainbow), the edge keeps the preset
         p.effects.as_mut().unwrap().lights_to = Some(vec!["edge".into()]);
-        let knobs = lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
+        let knobs = lights(Some(&p), "knobs", 0, 3, &HashMap::new(), &cfg, &Live::default()).unwrap();
         assert_eq!(knobs.leds[0].mode, LedMode::Rainbow);
         assert_eq!(edge_lights(Some(&p), &cfg, &Live::default()).unwrap().leds[0].rgb, [0xff, 0x3a, 0xa8]);
         p.effects.as_mut().unwrap().lights_to = None;
         // lights off: the preset lights nothing (a knob's own colour stays its own, as before presets)
         let off = LightSettings { style: "off".into(), ..cfg.clone() };
-        let k = lights(Some(&p), "knobs", 3, &HashMap::new(), &off, &Live::default()).unwrap();
+        let k = lights(Some(&p), "knobs", 0, 3, &HashMap::new(), &off, &Live::default()).unwrap();
         assert_eq!((k.leds[0].rgb, k.leds[2].rgb), ([0, 0, 0], [0, 0, 0]));
         assert_eq!(k.leds[1].rgb, [0x1d, 0xb9, 0x54]);
     }
@@ -448,8 +450,8 @@ mod tests {
     #[test]
     fn no_colors_keep_the_rainbow() {
         let p = Profile::new("x");
-        assert_eq!(module_leds(Some(&p), "faders", 5, &HashMap::new()), None);
-        assert_eq!(module_leds(None, "knobs", 3, &HashMap::new()), None);
+        assert_eq!(module_leds(Some(&p), "faders", 0, 5, &HashMap::new()), None);
+        assert_eq!(module_leds(None, "knobs", 0, 3, &HashMap::new()), None);
         assert_eq!(edge(Some(&p)), None);
     }
 
@@ -459,11 +461,11 @@ mod tests {
         with_led(&mut p, "faders.0", "#ff8000", false);
         with_led(&mut p, "faders.2", "#ffffff", true);
         let levels = HashMap::from([("faders.2".to_string(), 0.5)]);
-        let leds = module_leds(Some(&p), "faders", 5, &levels).unwrap();
+        let leds = module_leds(Some(&p), "faders", 0, 5, &levels).unwrap();
         assert_eq!(colors(&leds), vec![[255, 128, 0], [0, 0, 0], [128, 128, 128], [0, 0, 0], [0, 0, 0]]);
         assert!(leds.leds.iter().all(|l| l.mode == LedMode::Static));
         // at zero the LED stays faintly on
-        let low = module_leds(Some(&p), "faders", 5, &HashMap::from([("faders.2".to_string(), 0.0)])).unwrap();
+        let low = module_leds(Some(&p), "faders", 0, 5, &HashMap::from([("faders.2".to_string(), 0.0)])).unwrap();
         assert_eq!(low.leds[2].rgb, [15, 15, 15]);
     }
 
@@ -472,7 +474,7 @@ mod tests {
         let mut p = Profile::new("x");
         with_look(&mut p, "knobs.0", Look { led: Some("#ff0000".into()), led_effect: Some("breathing".into()), led_level: true, led_speed: Some(30), ..Look::default() });
         with_look(&mut p, "knobs.1", Look { led_effect: Some("rainbow".into()), led_speed: Some(250), ..Look::default() });
-        let l = module_leds(Some(&p), "knobs", 3, &HashMap::from([("knobs.0".to_string(), 0.1)])).unwrap();
+        let l = module_leds(Some(&p), "knobs", 0, 3, &HashMap::from([("knobs.0".to_string(), 0.1)])).unwrap();
         assert_eq!(l.leds[0], Led::new([255, 0, 0], LedMode::Breathing), "no level scaling while breathing");
         assert_eq!(l.leds[1].mode, LedMode::Rainbow, "an effect without a color lights up too");
         assert_eq!(l.leds[2], Led::solid([0, 0, 0]));
@@ -492,7 +494,7 @@ mod tests {
         let live = Live::default();
         let mut p = Profile::new("Desk");
         // the default style is the modules' own rainbow: nothing to send
-        assert_eq!(lights(Some(&p), "knobs", 3, &HashMap::new(), &cfg, &live), None);
+        assert_eq!(lights(Some(&p), "knobs", 0, 3, &HashMap::new(), &cfg, &live), None);
         assert_eq!(edge_lights(Some(&p), &cfg, &live), None);
         // one color for the whole deck, levels as brightness
         let blue = LightSettings { style: "color".into(), color: "#0000ff".into(), ..LightSettings::default() };
@@ -500,11 +502,11 @@ mod tests {
         p.controls
             .insert("knobs.0".into(), Binding { action: "core.volume".into(), params: serde_json::json!({"target": "mic"}), look: Look::default(), accel: false, look_on: None, swap_turns: false });
         let levels = HashMap::from([("knobs.0".to_string(), 0.5)]);
-        let l = lights(Some(&p), "knobs", 3, &levels, &blue, &live).unwrap();
+        let l = lights(Some(&p), "knobs", 0, 3, &levels, &blue, &live).unwrap();
         assert_eq!(colors(&l), vec![[0, 0, 128], [0, 0, 255], [255, 128, 0]]);
         // the muted mic turns its knob red; the edge stays as it is
         let muted = Live { mic_muted: true, ..Live::default() };
-        assert_eq!(lights(Some(&p), "knobs", 3, &levels, &blue, &muted).unwrap().leds[0].rgb, [255, 32, 32]);
+        assert_eq!(lights(Some(&p), "knobs", 0, 3, &levels, &blue, &muted).unwrap().leds[0].rgb, [255, 32, 32]);
         assert_eq!(edge_lights(Some(&p), &blue, &muted).unwrap().leds[0].rgb, [0, 0, 255]);
         // on air beats the style, a waiting agent beats on air
         let busy = Live { on_air: true, agent_waiting: true, ..Live::default() };

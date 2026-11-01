@@ -163,14 +163,14 @@ function litFrom(led: LedView, rainbow: string): Lit | null {
  * LEDs of knobs or faders: what the deck shows now (`shown`, from the engine), else the profile's
  * own colors, else the module's rainbow. null = dark.
  */
-export function ledColors(profile: Profile | null | undefined, kind: "knobs" | "faders", arranging: boolean, shown?: LedView[] | null): (Lit | null)[] {
+export function ledColors(profile: Profile | null | undefined, kind: "knobs" | "faders", arranging: boolean, shown?: LedView[] | null, first = 0): (Lit | null)[] {
   const base = kind === "knobs" ? KNOB_COLORS : FADER_COLORS;
   // the module's rainbow: all its LEDs show the same color and turn through the hues together
   const rainbow = base.map(() => ({ color: RAINBOW[0], effect: "rainbow" }));
   if (arranging) return base.map((color) => ({ color, effect: "static" }));
   if (shown === null) return rainbow;
   if (shown) return base.map((_, i) => (shown[i] ? litFrom(shown[i], RAINBOW[0]) : null));
-  const own = base.map((_, i) => profile?.controls[controlId(kind, i)]?.look.led ?? null);
+  const own = base.map((_, i) => profile?.controls[controlId(kind, first + i)]?.look.led ?? null);
   return own.some(Boolean) ? own.map((color) => (color ? { color, effect: "static" } : null)) : rainbow;
 }
 
@@ -550,7 +550,9 @@ const KNOB_AT: [number, number][] = [
 
 function Knobs({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, arranging, leds } = ctx;
-  const colors = ledColors(profile, "knobs", !!arranging, leds?.[m.id]);
+  // a second knobs module: its own controls, numbered on from the first's (knobs.3 ..)
+  const first = m.first ?? 0;
+  const colors = ledColors(profile, "knobs", !!arranging, leds?.[m.id], first);
   // the Y-shaped ridge between the three wells, from the middle of the triangle
   const [cx, cy] = [100, 92];
   const ridge = `M${cx} ${cy}V16M${cx} ${cy}L22 178M${cx} ${cy}L178 178`;
@@ -562,12 +564,13 @@ function Knobs({ ctx }: { ctx: Ctx }) {
       <path d={ridge} stroke="#fff" strokeOpacity=".07" strokeWidth="1.2" strokeLinecap="round" transform="translate(-1 -1)" />
       {[1, 0, 2].map((i) => {
         const [x, y] = KNOB_AT[i];
-        const k = controlKey(m.id, i);
-        const look = profile?.controls[controlId("knobs", i)]?.look;
+        const n = first + i;
+        const k = controlKey(m.id, n);
+        const look = profile?.controls[controlId("knobs", n)]?.look;
         return (
-          <Ctl key={i} ctx={ctx} index={i} kind="knobs" label={nameOf("knobs", i, look)} badge={[x + 26, y - 26]} ring={(cls) => <circle className={cls} cx={x} cy={y} r="38" />}>
-            <Knob ctx={ctx} x={x} y={y} led={colors[i]} angle={(live.counters[k] ?? 0) * 12} pressed={!!live.pressedKeys[k]} number={arranging ? i + 1 : undefined} />
-            <CtlLabel ctx={ctx} x={x} y={y} down={41} text={caption(profile?.controls[controlId("knobs", i)])} color={colors[i]?.effect === "hub" ? null : colors[i]?.color} />
+          <Ctl key={i} ctx={ctx} index={n} kind="knobs" label={nameOf("knobs", n, look)} badge={[x + 26, y - 26]} ring={(cls) => <circle className={cls} cx={x} cy={y} r="38" />}>
+            <Knob ctx={ctx} x={x} y={y} led={colors[i]} angle={(live.counters[k] ?? 0) * 12} pressed={!!live.pressedKeys[k]} number={arranging ? n + 1 : undefined} />
+            <CtlLabel ctx={ctx} x={x} y={y} down={41} text={caption(profile?.controls[controlId("knobs", n)])} color={colors[i]?.effect === "hub" ? null : colors[i]?.color} />
           </Ctl>
         );
       })}
@@ -654,8 +657,10 @@ function Rollers({ ctx }: { ctx: Ctx }) {
       <rect x="191" y="27" width="18" height="46" rx="5" fill={`url(#${id("cyl")})`} stroke="#000" strokeOpacity=".7" />
       <path d="M195.5 28V72M200 28V72M204.5 28V72" stroke="#000" strokeOpacity=".7" strokeWidth="1.3" />
       {range(2).map((i) => {
+        // a second rollers module: rollers.2, rollers.3
+        const n = (m.first ?? 0) + i;
         const [x0, x1] = i === 0 ? [24 + capW + 2, 189] : [211, 376 - capW - 2];
-        const k = controlKey(m.id, i);
+        const k = controlKey(m.id, n);
         // a notch moves the ribs a fifth of their spacing, so the direction is visible; the sign
         // follows how the owner sees his rollers turn
         const phase = ((((live.counters[k] ?? 0) * 0.2) % 1) + 1) % 1;
@@ -665,14 +670,14 @@ function Rollers({ ctx }: { ctx: Ctx }) {
           .map((y) => `M${x0 + 1} ${y}H${x1 - 1}`)
           .join("");
         const pulse = live.pulses[k] ?? 0;
-        const look = profile?.controls[controlId("rollers", i)]?.look;
+        const look = profile?.controls[controlId("rollers", n)]?.look;
         return (
-          <Ctl key={i} ctx={ctx} index={i} kind="rollers" label={nameOf("rollers", i, look)} badge={[x1 - 2, 28]} ring={(cls) => <rect className={cls} x={x0 - 5} y="23" width={x1 - x0 + 10} height="54" rx="12" />}>
+          <Ctl key={i} ctx={ctx} index={n} kind="rollers" label={nameOf("rollers", n, look)} badge={[x1 - 2, 28]} ring={(cls) => <rect className={cls} x={x0 - 5} y="23" width={x1 - x0 + 10} height="54" rx="12" />}>
             <rect x={x0} y="30" width={x1 - x0} height="40" rx="4" fill={`url(#${id("cyl")})`} />
             <path d={ribs} stroke="#000" strokeOpacity=".65" strokeWidth="1.2" />
             <path d={ribs} stroke="#fff" strokeOpacity=".07" strokeWidth=".6" transform="translate(0 1)" />
             {pulse > 0 && <rect key={pulse} className="dk-flash" x={x0} y="30" width={x1 - x0} height="40" rx="4" />}
-            <CtlLabel ctx={ctx} x={(x0 + x1) / 2} y={50} down={0} text={caption(profile?.controls[controlId("rollers", i)])} />
+            <CtlLabel ctx={ctx} x={(x0 + x1) / 2} y={50} down={0} text={caption(profile?.controls[controlId("rollers", n)])} />
           </Ctl>
         );
       })}
@@ -683,23 +688,26 @@ function Rollers({ ctx }: { ctx: Ctx }) {
 /** Five slots in a recessed tray; half-cylinder caps with a ribbed front; the LED glows in the slot below the cap. */
 function Faders({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, arranging, id, leds } = ctx;
-  const colors = ledColors(profile, "faders", !!arranging, leds?.[m.id]);
+  // a second faders module: faders.5 .. faders.9
+  const first = m.first ?? 0;
+  const colors = ledColors(profile, "faders", !!arranging, leds?.[m.id], first);
   const [top, bottom] = [42, 162];
   return (
     <>
       <ModuleBody ctx={ctx} w={400} h={200} />
       <Recess ctx={ctx} x={16} y={16} w={368} h={168} rx={10} />
       {range(5).map((i) => {
+        const n = first + i;
         const cx = 56 + i * 72;
-        const value = live.faders[controlKey(m.id, i)];
+        const value = live.faders[controlKey(m.id, n)];
         const v = value ?? 50;
         const ty = bottom - ((bottom - top) * v) / 100;
-        const look = profile?.controls[controlId("faders", i)]?.look;
+        const look = profile?.controls[controlId("faders", n)]?.look;
         const color = colors[i]?.color;
         // the engine's colors already follow the value; the profile's alone do not
         const level = look?.ledLevel && value !== undefined && !leds?.[m.id] ? 0.25 + (0.75 * value) / 100 : 1;
         return (
-          <Ctl key={i} ctx={ctx} index={i} kind="faders" label={nameOf("faders", i, look)} badge={[cx + 20, 26]} ring={(cls) => <rect className={cls} x={cx - 28} y="20" width="56" height="160" rx="12" />}>
+          <Ctl key={i} ctx={ctx} index={n} kind="faders" label={nameOf("faders", n, look)} badge={[cx + 20, 26]} ring={(cls) => <rect className={cls} x={cx - 28} y="20" width="56" height="160" rx="12" />}>
             <rect x={cx - 28} y="20" width="56" height="160" fill="transparent" />
             {/* the slot, and the LED lit inside it below the cap */}
             <rect x={cx - 3.5} y={top - 12} width="7" height={bottom - top + 24} rx="3.5" fill="#030304" stroke="#fff" strokeOpacity=".06" />
@@ -730,7 +738,7 @@ function Faders({ ctx }: { ctx: Ctx }) {
               </g>
               <path d={`M${cx - 14} ${ty - 11.5}h28`} stroke="#fff" strokeOpacity=".25" strokeWidth=".8" strokeLinecap="round" />
             </g>
-            <CtlLabel ctx={ctx} x={cx} y={bottom + 14} down={0} text={caption(profile?.controls[controlId("faders", i)])} color={color} outward />
+            <CtlLabel ctx={ctx} x={cx} y={bottom + 14} down={0} text={caption(profile?.controls[controlId("faders", n)])} color={color} outward />
           </Ctl>
         );
       })}
@@ -1268,14 +1276,15 @@ function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdg
     const m = p.module;
     if (m.kind === "dial") chips.push(chip({ module: m.id, kind: "dial", index: 0 }, null));
     if (m.kind === "knobs") {
-      const colors = ledColors(profile, "knobs", false, leds?.[m.id]);
-      for (const i of [0, 1, 2]) chips.push(chip({ module: m.id, kind: "knobs", index: i }, colors[i]));
+      const colors = ledColors(profile, "knobs", false, leds?.[m.id], m.first ?? 0);
+      for (const i of [0, 1, 2]) chips.push(chip({ module: m.id, kind: "knobs", index: (m.first ?? 0) + i }, colors[i]));
     }
     if (m.kind === "faders") {
-      const colors = ledColors(profile, "faders", false, leds?.[m.id]);
+      const colors = ledColors(profile, "faders", false, leds?.[m.id], m.first ?? 0);
       for (const i of range(5)) {
-        const v = live.faders[controlKey(m.id, i)];
-        chips.push(chip({ module: m.id, kind: "faders", index: i }, colors[i], v === undefined ? undefined : `${v}%`));
+        const n = (m.first ?? 0) + i;
+        const v = live.faders[controlKey(m.id, n)];
+        chips.push(chip({ module: m.id, kind: "faders", index: n }, colors[i], v === undefined ? undefined : `${v}%`));
       }
     }
   }

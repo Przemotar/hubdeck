@@ -108,6 +108,7 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
     let kinds = super::api::module_kinds(&app);
     let modules = kinds.attached.clone();
     let detached: Vec<String> = kinds.owned.into_iter().filter(|k| !kinds.attached.contains(k)).collect();
+    let same = super::api::same_kind_text(&app);
     let profiles: Vec<String> = {
         let engine = app.state::<Engine>();
         let s = engine.lock();
@@ -118,8 +119,8 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
         let since = super::usage::since();
         let known = known_installed();
         let taste = super::taste::text();
-        let text = format!("{}\n{taste}", scan_text(Some((&used, &since, &known)), &modules, &detached, &profiles));
-        let deck_text = format!("{}\n{taste}", scan_text(None, &modules, &detached, &profiles));
+        let text = format!("{}{same}\n{taste}", scan_text(Some((&used, &since, &known)), &modules, &detached, &profiles));
+        let deck_text = format!("{}{same}\n{taste}", scan_text(None, &modules, &detached, &profiles));
         Scan { used, since, known, modules, detached, profiles, text, deck_text }
     })
     .await
@@ -194,7 +195,8 @@ pub struct Idea {
     /// A few sample keys, drawn on the card in the house look.
     pub keys: Vec<SampleKey>,
     /// The whole deck as a sketch: `{keys: [binding x15], dial, knobs: [x3], rollers: [x2],
-    /// faders: [x5], edge}`, each binding `{action, params, label, icon}`. HubDeck makes a
+    /// faders: [x5], edge}` (with a second knobs, faders or rollers module its controls go on in the
+    /// same list: knobs x6), each binding `{action, params, label, icon}`. HubDeck makes a
     /// draft of it at once, so it can be seen and tried without another turn.
     pub deck: Option<Value>,
     /// The id of the user's own profile this idea is a new version of ("" = a new deck).
@@ -226,7 +228,8 @@ pub fn sketch_profile(idea: &Idea) -> (Option<Profile>, Vec<String>) {
         controls.insert(id, json!({"action": action, "params": if b["params"].is_object() { b["params"].clone() } else { json!({}) }, "look": look}));
     };
     for (kind, n) in [("keys", 15), ("knobs", 3), ("rollers", 2), ("faders", 5)] {
-        for (i, b) in deck[kind].as_array().into_iter().flatten().take(n).enumerate() {
+        // a second module of the kind goes on in the same list (knobs.3 ..)
+        for (i, b) in deck[kind].as_array().into_iter().flatten().take(super::api::numbered_up_to(kind, n)).enumerate() {
             put(format!("{kind}.{i}"), b);
         }
     }
@@ -1224,6 +1227,15 @@ mod tests {
         assert_eq!(choices, ["Streaming", "Coding", "Gaming"]);
         assert_eq!(split_choices("No buttons here."), ("No buttons here.".to_string(), vec![]));
         assert_eq!(split_choices("Broken <choices>a|b").1, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_sketch_fills_a_second_knobs_module() {
+        let knob = json!({"action": "core.media", "params": {"command": "playPause"}, "label": "Play"});
+        let idea = Idea { title: "Two knobs".into(), deck: Some(json!({"knobs": vec![knob.clone(); 14], "keys": vec![knob; 16]})), ..Idea::default() };
+        let p = sketch_profile(&idea).0.expect("a draft");
+        assert!(p.controls.contains_key("knobs.5") && p.controls.contains_key("knobs.11"), "a second (and more) knobs module's controls");
+        assert!(!p.controls.contains_key("knobs.12") && !p.controls.contains_key("keys.15"), "up to four knobs modules, one set of keys");
     }
 
     #[test]

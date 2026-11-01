@@ -68,14 +68,25 @@ export function placeModules(modules: ModuleInfo[], saved: Record<string, Placem
     return true;
   };
 
+  // a cell of a module the user arranged himself (cells over the edge do not count: a module may hang
+  // over it); the slot table's places among themselves stay as they were
+  const mine = Array.from({ length: GRID_ROWS }, () => Array<boolean>(GRID_COLS).fill(false));
+  const taken = (col: number, row: number, cols: number, rows: number) => {
+    for (let r = row; r < row + rows; r++) for (let c = col; c < col + cols; c++) if (mine[r]?.[c] === true) return true;
+    return false;
+  };
+
   const placed: Placed[] = [];
   const pending: ModuleInfo[] = [];
-  for (const m of attached) {
+  // the user's arrangement first, so the slot table's guess for a new module never covers it (a
+  // second module of a kind in a slot he never used drew over his dial, 2026-11-01)
+  const withUser = [...attached].sort((a, b) => Number(!saved[placementKey(a) ?? ""]) - Number(!saved[placementKey(b) ?? ""]));
+  for (const m of withUser) {
     const key = placementKey(m);
     const user = key ? saved[key] : undefined;
     const table = key ? SLOT_TABLE[key] : undefined;
     const p = user ?? table;
-    if (!p) {
+    if (!p || (!user && taken(p.col, p.row, ...rotatedSize(m.kind, p.rotation as Rotation)))) {
       pending.push(m);
       continue;
     }
@@ -85,6 +96,7 @@ export function placeModules(modules: ModuleInfo[], saved: Record<string, Placem
     const source: Placed["source"] = user ? "user" : "table";
     const item = { module: m, col: p.col, row: p.row, rotation, cols, rows, baseCols, baseRows, source, known: true };
     mark(item);
+    if (user) for (let r = item.row; r < item.row + rows; r++) for (let c = item.col; c < item.col + cols; c++) if (mine[r]?.[c] !== undefined) mine[r][c] = true;
     placed.push(item);
   }
   for (const m of pending) {
@@ -102,7 +114,8 @@ export function placeModules(modules: ModuleInfo[], saved: Record<string, Placem
     mark(item);
     placed.push(item);
   }
-  return placed;
+  // in the kinds' order, as before (the drawing and the lists go by it)
+  return placed.sort((a, b) => attached.indexOf(a.module) - attached.indexOf(b.module));
 }
 
 /** Slot of a placement entry for a module the user owns but has not attached yet. */

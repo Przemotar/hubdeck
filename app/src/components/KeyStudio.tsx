@@ -28,10 +28,9 @@ function useLivePreview(look: Look): string | null {
   const still = usePreview("key", look);
   const [frame, setFrame] = useState<string | null>(null);
   const frames = useRef(new Map<string, string>());
-  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   useEffect(() => {
     setFrame(null);
-    const cycle = look.motion && !reduce ? CYCLE[look.motion]?.(look) : undefined;
+    const cycle = look.motion ? CYCLE[look.motion]?.(look) : undefined;
     if (!cycle || !inTauri()) return;
     const base = JSON.stringify(look);
     let step = 0;
@@ -53,7 +52,7 @@ function useLivePreview(look: Look): string | null {
       window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(look), reduce]);
+  }, [JSON.stringify(look)]);
   return frame ?? still;
 }
 

@@ -13,6 +13,9 @@ export interface ModuleInfo {
   firmware: string | null;
   /** Slot inside the base, e.g. "1-4-3"; null when the platform cannot tell. */
   slot: string | null;
+  /** The number of its first control: a second knobs, faders or rollers module goes on from the
+   * first's (`knobs.3`); keys, the dial and the base 0. Missing in old snapshots = 0. */
+  first?: number;
 }
 
 export interface DeckSnapshot {

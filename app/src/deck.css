@@ -584,13 +584,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dk-flash,
-  [class*="dk-fx-"] {
-    animation: none;
-  }
-}
-
 /* what a knob, roller or fader does, written next to it (owner's pick A) */
 .dk-ctl-label {
   font: 600 14px var(--dk-font, "IBM Plex Sans", sans-serif);

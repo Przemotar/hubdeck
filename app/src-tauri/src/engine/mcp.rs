@@ -218,7 +218,7 @@ pub fn handle_message_for(kind: Kind, api: &dyn Api, msg: &Value) -> Option<Valu
     })
 }
 
-const INSTRUCTIONS: &str = "HubDeck drives a modular desk controller (Cooler Master MasterHUB modules): a 15-key module with screens, a round dial screen, 3 knobs, 5 faders and 2 rollers, plus the base's edge light. These tools let you design and build profiles for the user. Start with design_guide (how to make a profile that feels polished) and list_modules (build for the modules the user owns). Then look up list_actions, list_icons, list_apps or list_games as needed, build with create_profile (whole profile in one call) and refine with set_control, set_lights, add_page, add_image and add_animation; check keys with preview_control. Never replace or delete one of the user's profiles without asking first. HubDeck must be running.";
+const INSTRUCTIONS: &str = "HubDeck drives a modular desk controller (Cooler Master MasterHUB modules): a 15-key module with screens, a round dial screen, 3 knobs, 5 faders and 2 rollers, plus the base's edge light. These tools let you design and build profiles for the user. Start with design_guide (how to make a profile that feels polished) and list_modules (build for the modules the user owns; a second knobs, faders or rollers module has its own controls, numbered on: knobs.3 .. knobs.5). Then look up list_actions, list_icons, list_apps or list_games as needed, build with create_profile (whole profile in one call) and refine with set_control, set_lights, add_page, add_image and add_animation; check keys with preview_control. Never replace or delete one of the user's profiles without asking first. HubDeck must be running.";
 
 /// The binding schema, shared by the tools that take one.
 fn binding_schema() -> Value {
@@ -627,7 +627,7 @@ pub fn assistant_tools() -> Vec<Value> {
         json!({"type": "object", "properties": {"action": {"type": "string"}, "params": {"type": "object"}, "label": {"type": "string"}, "icon": {"type": "string"}}, "required": ["action"]});
     let deck = json!({
         "type": "object",
-        "description": "The whole deck sketched for the attached modules: keys (up to 15, from the top left, row by row), dial, knobs (up to 3), rollers (up to 2), faders (up to 5), edge (#rrggbb).",
+        "description": "The whole deck sketched for the attached modules: keys (up to 15, from the top left, row by row), dial, knobs (up to 3 a knobs module; with two, up to 6), rollers (up to 2 a module), faders (up to 5 a module), edge (#rrggbb).",
         "properties": {
             "keys": {"type": "array", "items": binding.clone()},
             "dial": binding.clone(),

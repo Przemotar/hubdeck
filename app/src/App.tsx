@@ -69,14 +69,6 @@ export default function App() {
     window.addEventListener("keydown", touch, true);
     return () => (window.removeEventListener("pointerdown", touch, true), window.removeEventListener("keydown", touch, true));
   }, []);
-  // less movement: the setting, taken from the system the first time
-  const reducedMotion = view.state?.reducedMotion;
-  useEffect(() => {
-    if (!view.state || !("__TAURI_INTERNALS__" in window)) return;
-    if (reducedMotion == null && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) api.reducedMotionSet(true).catch(() => {});
-    document.documentElement.classList.toggle("reduce-motion", reducedMotion === true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reducedMotion, !!view.state]);
   const [selected, setSelected] = useState<ControlRef | null>(null);
   const [arranging, setArranging] = useState(false);
   const [profileOpen, setProfileOpen] = useState(DEMO_PANEL === "profile");

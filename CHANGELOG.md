@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1
+
+- **Two modules of the same kind on one base** (#7): a second knobs, faders or rollers module gets
+  controls of its own (Knob 4-6, Fader 6-10, Roller 3-4), set up in the window like the first. Each
+  module keeps its actions by its serial number, so taking one off never hands its actions to the
+  other. A second keys module or dial still shows the same as the first. Not tried yet on a deck
+  with two modules of a kind: tell us how it goes.
+- **Stream Deck actions with more than two states show the right one** (#11, by sotomskir): Google
+  Meet's mic showed "muted" while you were live.
+- **Previewing a preset in Deck look lights the deck in its colours**: the edge, knobs and faders
+  take the preset's colours while you try it, not only after Apply.
+- **Reduce motion is gone.** In 0.2.0 it could switch itself on when Windows' animation effects
+  (or macOS's Reduce motion) were off, and then the deck stood still. Every deck moves again.
+- A key for a screensaver taken out in 0.2.0 (code rain, night sky, waves, big clock) no longer
+  stops a profile from being saved through the API or the assistant.
+- A module in a slot you have never used no longer shows up on top of one you arranged yourself.
+
 ## 0.2.0
 
 - **The living deck.** The keys module can be one picture instead of fifteen squares: a scene drawn

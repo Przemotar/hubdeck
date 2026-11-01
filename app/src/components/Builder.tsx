@@ -54,8 +54,13 @@ export function Builder({ live, view, saved, onPlace, onClose }: { live: LiveSta
     const out: Step[] = [];
     const dial = live.deck.modules.find((m) => m.kind === "dial");
     if (dial) out.push({ key: "dial", label: t("builder.stepDial"), control: "dial", kind: "dial", ref: { module: dial.id, kind: "dial", index: 0 } });
-    const knobs = live.deck.modules.find((m) => m.kind === "knobs");
-    if (knobs) for (let i = 0; i < 3; i++) out.push({ key: `knobs.${i}`, label: t("builder.stepKnob", { n: i + 1 }), control: `knobs.${i}`, kind: "knobs", ref: { module: knobs.id, kind: "knobs", index: i } });
+    // every knobs module, in the order of its numbers (a second one's knobs are 4-6)
+    const knobs = live.deck.modules.filter((m) => m.kind === "knobs").sort((a, b) => (a.first ?? 0) - (b.first ?? 0));
+    for (const m of knobs)
+      for (let i = 0; i < 3; i++) {
+        const n = (m.first ?? 0) + i;
+        out.push({ key: `knobs.${n}`, label: t("builder.stepKnob", { n: n + 1 }), control: `knobs.${n}`, kind: "knobs", ref: { module: m.id, kind: "knobs", index: n } });
+      }
     out.push({ key: "review", label: t("builder.stepReview"), control: null, kind: null, ref: null });
     return out;
   }, [live.deck.modules]);

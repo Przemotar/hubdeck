@@ -297,6 +297,7 @@ pub fn run() {
             }
             app.manage(Placements::load(data_dir.join("placements.json")));
             let deck = app.state::<Deck>().inner().clone();
+            deck.set_numbers_file(data_dir.join("module-numbers.json"));
             let engine = Engine::start(app.handle().clone(), deck.clone(), &data_dir);
             deck.set_engine(engine.sender());
             let (turn, offer_autostart) = {
@@ -456,7 +457,6 @@ pub fn run() {
             engine::commands::call_switch_set,
             tray::autostart_get,
             tray::autostart_set,
-            engine::commands::reduced_motion_set,
             engine::mcp::ai_prompt,
             engine::mcp::ai_build,
             engine::suggest::profile_fill,

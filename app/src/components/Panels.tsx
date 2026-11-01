@@ -2159,7 +2159,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
           {section === "general" && (
             <>
               <LanguageSettings />
-              <Appearance view={view} />
+              <Appearance />
               <SwitchingSettings view={view} />
               <StartupSettings />
               <ProfilesFolder />
@@ -2437,7 +2437,7 @@ function LanguageSettings() {
   );
 }
 
-function Appearance({ view }: { view: EngineView }) {
+function Appearance() {
   useLanguage();
   const theme = useTheme();
   const options: [Theme, Key][] = [
@@ -2456,15 +2456,6 @@ function Appearance({ view }: { view: EngineView }) {
         ))}
       </div>
       <p className="help">{t("theme.help")}</p>
-      {view.state && (
-        <>
-          <label className="check">
-            <input type="checkbox" checked={view.state.reducedMotion === true} onChange={(e) => api.reducedMotionSet(e.target.checked)} />
-            {t("settings.reducedMotion")}
-          </label>
-          <p className="help">{t("settings.reducedMotionHelp")}</p>
-        </>
-      )}
     </section>
   );
 }

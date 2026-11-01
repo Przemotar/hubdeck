@@ -297,8 +297,7 @@ registration), a shared profiles gallery, more than one base.
 - If HubDeck ever stops unexpectedly, a small guard hands the deck back to its firmware and starts
   HubDeck again; the window then says when it happened, and *Report this crash* opens a bug
   report with the details filled in (nothing is sent until you send it).
-- Tray app that starts with the system; dark and light look; *Reduce motion* (nothing blinks or
-  flashes); English, Polish and Japanese.
+- Tray app that starts with the system; dark and light look; English, Polish and Japanese.
 
 </details>
 

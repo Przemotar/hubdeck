@@ -147,7 +147,7 @@ deck does something real, so a reward must never invite pressing keys for fun. P
 32): surprises only as a side effect of ordinary use (a bat hangs on a key the user presses anyway
 and flies off; a day's count of such meetings now and then sets off a short bonus, e.g. a colony
 across the deck), at most once an hour, about 2 s, icons readable; never during a call, a game,
-the screensaver or with Reduce motion; a "Surprises" switch in the Living deck panel; play on
+the screensaver; a "Surprises" switch in the Living deck panel; play on
 purpose only on a page whose keys have no actions ("Catch the bat" on the Fun page, as Mochi is a
 toy on the dial). Others: Stream Deck has none (a "Horror 2" pack shows an apparition now and then,
 not interactive); Razer Chroma reacts to presses with light, no rewards.
@@ -365,8 +365,8 @@ Every stage builds on these seven parts; none of them may be cut short by a late
    engine keeps a CPU budget per machine (the Mac too, owner: "przetestujemy to też na Macu") by
    lowering the effect's own resolution or rate, never the content's.
 7. **Safety and checks.** Effects that flash carry a warning in the window (owner: "dodamy
-   ostrzeżenia przy tych trybach") and a flash limiter (WCAG's three flashes a second);
-   reduced motion stills them. Every look and effect, built-in or AI-made, goes through the same
+   ostrzeżenia przy tych trybach") and a flash limiter (WCAG's three flashes a second).
+   Reduce motion was taken out on 2026-11-01 (owner: an accidental switch makes the deck look broken). Every look and effect, built-in or AI-made, goes through the same
    checks: pixel tests (content readable, the brightness rule: background >= ~#24 to read as
    colour, content >= ~#70), the CPU and the window's memory measured (owner: "trzeba będzie
    zrobić pomiar"), the camera on the real deck.

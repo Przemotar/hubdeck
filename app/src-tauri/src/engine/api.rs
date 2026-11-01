@@ -209,6 +209,16 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
 /// Controls of each kind, as the API and the profile file name them.
 pub const CONTROLS: [(&str, usize); 5] = [("keys", 15), ("dial", 1), ("knobs", 3), ("faders", 5), ("rollers", 2)];
 
+/// How many modules of one kind of knobs, faders or rollers a profile can name controls for: a
+/// second one goes on from the first's numbers (`knobs.3` .. `knobs.5`; owner, 2026-11-01). Keys and
+/// the dial mirror the first module, so they keep their own count.
+pub const SAME_KIND_MODULES: usize = 4;
+
+/// The highest number + 1 a control of `kind` can have in a profile.
+pub fn numbered_up_to(kind: &str, count: usize) -> usize {
+    if matches!(kind, "knobs" | "faders" | "rollers") { count * SAME_KIND_MODULES } else { count }
+}
+
 /// Key looks (`look.style`).
 pub const KEY_STYLES: [&str; 4] = ["flat", "gradient", "glass", "outline"];
 
@@ -224,6 +234,39 @@ fn catalog() -> Value {
     })
 }
 
+/// For the assistant: the kinds with more than one module attached and their numbers, as a line
+/// ("" with one module of each kind).
+pub fn same_kind_text(app: &AppHandle) -> String {
+    let Some(deck) = app.try_state::<Deck>() else { return String::new() };
+    let snapshot = deck.snapshot();
+    let mut parts = Vec::new();
+    for (kind, count) in [("knobs", 3u16), ("faders", 5), ("rollers", 2), ("keys", 15), ("dial", 1)] {
+        let mut firsts: Vec<u16> = snapshot.modules.iter().filter(|m| m.kind == kind).map(|m| m.first).collect();
+        if firsts.len() < 2 {
+            continue;
+        }
+        firsts.sort_unstable();
+        parts.push(match kind {
+            "keys" | "dial" => format!("{} {kind} modules (they show the same: one set of {kind})", firsts.len()),
+            _ => format!("{} {kind} modules ({})", firsts.len(), firsts.iter().map(|f| format!("{kind}.{f} .. {kind}.{}", f + count - 1)).collect::<Vec<_>>().join(", ")),
+        });
+    }
+    if parts.is_empty() { String::new() } else { format!("\n- More than one module of a kind (each has its own controls; a sketch lists them on in the same list): {}", parts.join("; ")) }
+}
+
+/// Each attached module's first control number (see `sameKind`), e.g. `{"knobs": [0, 3]}`.
+fn numbering(app: &AppHandle) -> Value {
+    let mut out = serde_json::Map::new();
+    if let Some(deck) = app.try_state::<Deck>() {
+        for m in deck.snapshot().modules.iter().filter(|m| matches!(m.kind, "knobs" | "faders" | "rollers")) {
+            if let Some(list) = out.entry(m.kind).or_insert_with(|| json!([])).as_array_mut() {
+                list.push(json!(m.first));
+            }
+        }
+    }
+    Value::Object(out)
+}
+
 fn modules(app: &AppHandle) -> Value {
     let kinds = module_kinds(app);
     json!({
@@ -235,7 +278,9 @@ fn modules(app: &AppHandle) -> Value {
             "knobs": "knobs.0 .. knobs.2: 3 knobs that turn and press, each with an LED ring",
             "faders": "faders.0 .. faders.4: 5 faders (absolute 0..1), each with an LED",
             "rollers": "rollers.0 .. rollers.1: 2 rollers that turn (no press, no LED)",
+            "sameKind": "a second knobs, faders or rollers module goes on from the first's numbers in the order of their slots (knobs.3 .. knobs.5, faders.5 .. faders.9, rollers.2 .. rollers.3); a second keys module or dial shows the same as the first",
         },
+        "numbering": numbering(app),
     })
 }
 
@@ -307,8 +352,8 @@ pub fn control_kind(id: &str, pages: &[super::profile::Page]) -> Result<&'static
     match (name, index) {
         ("dial", None) => {}
         ("dial", Some(_)) => return Err(format!("{id}: the dial is just `dial`")),
-        (_, Some(i)) if i.parse::<usize>().is_ok_and(|i| i < count) && !i.starts_with('+') => {}
-        _ => return Err(format!("{id}: {name} are numbered {name}.0 .. {name}.{}", count - 1)),
+        (_, Some(i)) if i.parse::<usize>().is_ok_and(|i| i < numbered_up_to(name, count)) && !i.starts_with('+') => {}
+        _ => return Err(format!("{id}: {name} are numbered {name}.0 .. {name}.{}", numbered_up_to(name, count) - 1)),
     }
     if let Some(g) = gesture {
         if !matches!(g, "hold" | "double") {
@@ -360,8 +405,13 @@ pub fn check_binding(id: &str, b: &Binding, pages: &[super::profile::Page], erro
                     }
                 }
                 for p in &def.params {
+                    // a screensaver taken out of the list (code rain, night sky, waves, big clock, Snowy
+                    // night) still runs as the scene it maps to, so a 0.1.x key naming one saves (the gate,
+                    // 2026-10-31: the assistant could not save such a profile)
+                    let retired_saver = |v: &str| b.action == super::actions::SAVER && p.key == "effect" && super::saver::known(v);
                     if let (super::actions::ParamKind::Select { options }, Some(v)) = (&p.kind, b.params.get(p.key).and_then(Value::as_str))
                         && !options.iter().any(|(o, _)| o == v)
+                        && !retired_saver(v)
                     {
                         errors.push(format!("{id}: {}.{} must be one of {:?}", b.action, p.key, options.iter().map(|(o, _)| o.as_str()).collect::<Vec<_>>()));
                     }
@@ -985,10 +1035,44 @@ mod tests {
     #[test]
     fn control_ids_are_checked() {
         let pages = [page("tools")];
-        for ok in ["keys.0", "keys.14", "dial", "knobs.2", "faders.4", "rollers.1", "keys.3:hold", "dial:double", "knobs.0:hold", "tools/keys.2", "tools/keys.2:double"] {
+        // a second knobs, faders or rollers module goes on from the first's numbers (up to four)
+        for ok in [
+            "keys.0",
+            "keys.14",
+            "dial",
+            "knobs.2",
+            "faders.4",
+            "rollers.1",
+            "keys.3:hold",
+            "dial:double",
+            "knobs.0:hold",
+            "tools/keys.2",
+            "tools/keys.2:double",
+            "knobs.3",
+            "knobs.11",
+            "faders.19",
+            "rollers.7",
+            "knobs.4:hold",
+        ] {
             assert!(control_kind(ok, &pages).is_ok(), "{ok}");
         }
-        for bad in ["keys.15", "keys", "dial.0", "knobs.3", "faders.-1", "keys.+1", "rollers.0:hold", "faders.1:double", "keys.1:long", "other/keys.1", "tools/dial", "base", "keys.1.2"] {
+        for bad in [
+            "keys.15",
+            "keys",
+            "dial.0",
+            "knobs.12",
+            "faders.20",
+            "rollers.8",
+            "faders.-1",
+            "keys.+1",
+            "rollers.0:hold",
+            "faders.1:double",
+            "keys.1:long",
+            "other/keys.1",
+            "tools/dial",
+            "base",
+            "keys.1.2",
+        ] {
             assert!(control_kind(bad, &pages).is_err(), "{bad}");
         }
         assert_eq!(control_kind("tools/keys.2:hold", &pages), Ok("keys"));
@@ -996,6 +1080,19 @@ mod tests {
 
     fn binding(v: Value) -> Binding {
         serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn a_key_naming_a_screensaver_taken_out_still_saves() {
+        // 0.1.x keys: code rain, night sky, waves, big clock, and the hidden Snowy night
+        for effect in ["rain", "stars", "waves", "clock", "snowfall", "aurora", "preset"] {
+            let (mut errors, mut warnings) = (Vec::new(), Vec::new());
+            check_binding("keys.2", &binding(json!({"action": "core.saver", "params": {"effect": effect}})), &[], &mut errors, &mut warnings);
+            assert!(errors.is_empty(), "{effect}: {errors:?}");
+        }
+        let (mut errors, mut warnings) = (Vec::new(), Vec::new());
+        check_binding("keys.2", &binding(json!({"action": "core.saver", "params": {"effect": "volcano"}})), &[], &mut errors, &mut warnings);
+        assert!(!errors.is_empty(), "an unknown screensaver is still refused");
     }
 
     #[test]

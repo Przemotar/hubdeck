@@ -30,6 +30,68 @@ pub struct ModuleInfo {
     pub slot: Option<String>,
     #[serde(skip)]
     pub port_path: Option<Vec<u8>>,
+    /// The number of its first control: 0, or for a second module of the same kind of knobs,
+    /// faders or rollers the numbers after (`knobs.3` .. `knobs.5`). Each module keeps its numbers
+    /// (remembered by serial number in `module-numbers.json`), so taking one off never hands its
+    /// actions to another (owner, 2026-11-01: "co jak ktoś wepnie modul nr 1, a potem taki sam modul
+    /// nr 2, a potem ten nr 1 odepnie?"). A second keys module or dial shows the same as the first (0).
+    pub first: u16,
+}
+
+/// Kinds whose second module gets controls of its own (keys and the dial mirror the first).
+const OWN_CONTROLS: [ModuleKind; 3] = [ModuleKind::Knobs, ModuleKind::Faders, ModuleKind::Rollers];
+
+/// The group of every attached module (by id; its first control is `group * control_count`): a
+/// module keeps the group it had (`remembered`) unless an attached one took it first; a new one
+/// gets the lowest group free. Keys, the dial and the base are always 0. Modules are taken in
+/// the order of their port paths, so the result does not depend on the order they came in.
+fn assign_groups<'a>(modules: impl Iterator<Item = &'a ModuleInfo>, remembered: &BTreeMap<String, u16>) -> BTreeMap<String, u16> {
+    let mut by_kind: BTreeMap<&'static str, Vec<&ModuleInfo>> = BTreeMap::new();
+    for m in modules {
+        by_kind.entry(m.kind).or_default().push(m);
+    }
+    let mut out = BTreeMap::new();
+    for (kind, mut ms) in by_kind {
+        if !OWN_CONTROLS.iter().any(|k| k.name() == kind) {
+            out.extend(ms.into_iter().map(|m| (m.id.clone(), 0)));
+            continue;
+        }
+        ms.sort_by(|a, b| (&a.port_path, &a.serial).cmp(&(&b.port_path, &b.serial)));
+        let mut taken = std::collections::BTreeSet::new();
+        let mut later = Vec::new();
+        for m in ms {
+            match remembered.get(&m.id) {
+                Some(g) if taken.insert(*g) => {
+                    out.insert(m.id.clone(), *g);
+                }
+                _ => later.push(m),
+            }
+        }
+        for m in later {
+            let g = (0u16..).find(|g| !taken.contains(g)).unwrap_or(0);
+            taken.insert(g);
+            out.insert(m.id.clone(), g);
+        }
+    }
+    out
+}
+
+/// The first control number of a module in `group`.
+fn first_of(kind: &str, group: u16) -> u16 {
+    OWN_CONTROLS.iter().find(|k| k.name() == kind).map_or(0, |k| group * k.control_count() as u16)
+}
+
+/// The event with its control numbered as the engine and the window know it (see `first`).
+fn numbered(ui: UiEvent, first: u16) -> UiEvent {
+    let at = |index: u8| (u16::from(index) + first).min(u16::from(u8::MAX)) as u8;
+    match ui {
+        UiEvent::Fader { module, index, value } => UiEvent::Fader { module, index: at(index), value },
+        UiEvent::Knob { module, index, delta } => UiEvent::Knob { module, index: at(index), delta },
+        UiEvent::KnobDown { module, index } => UiEvent::KnobDown { module, index: at(index) },
+        UiEvent::KnobUp { module, index } => UiEvent::KnobUp { module, index: at(index) },
+        UiEvent::Roller { module, index, delta } => UiEvent::Roller { module, index: at(index), delta },
+        other => other,
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -124,9 +186,45 @@ struct Inner {
     faders: BTreeMap<String, u8>,
     /// When the hub last began looking for modules (start, resume).
     looking_since: Option<Instant>,
+    /// Each attached module's group (see [`assign_groups`]), by id.
+    groups: BTreeMap<String, u16>,
+    /// Every module's group as last given, attached or not (`module-numbers.json`).
+    remembered: BTreeMap<String, u16>,
+    numbers_file: Option<std::path::PathBuf>,
 }
 
 impl Inner {
+    /// Give the attached modules their groups after one came or went; new ones are remembered.
+    fn renumber(&mut self) {
+        self.groups = assign_groups(self.modules.values(), &self.remembered);
+        let mut changed = false;
+        for (id, g) in &self.groups {
+            if self.modules.get(id).is_some_and(|m| OWN_CONTROLS.iter().any(|k| k.name() == m.kind)) && self.remembered.get(id) != Some(g) {
+                self.remembered.insert(id.clone(), *g);
+                changed = true;
+            }
+        }
+        if changed && let Some(path) = &self.numbers_file {
+            match serde_json::to_string_pretty(&self.remembered) {
+                Ok(text) => {
+                    if let Err(e) = std::fs::write(path, text) {
+                        log::warn!("module numbers not saved: {e}");
+                    }
+                }
+                Err(e) => log::warn!("module numbers not saved: {e}"),
+            }
+        }
+        let second: Vec<String> = self.groups.iter().filter(|(_, g)| **g > 0).map(|(id, g)| format!("{id} -> {}", self.modules.get(id).map_or(0, |m| first_of(m.kind, *g)))).collect();
+        if !second.is_empty() {
+            log::info!("more than one module of a kind: {} (first control number)", second.join(", "));
+        }
+    }
+
+    /// The first control number of attached module `id`.
+    fn first(&self, id: &str) -> u16 {
+        self.modules.get(id).map_or(0, |m| first_of(m.kind, self.groups.get(id).copied().unwrap_or(0)))
+    }
+
     fn snapshot(&self) -> DeckSnapshot {
         let base_path = self.modules.values().find(|m| m.kind == "base").and_then(|m| m.port_path.clone());
         let modules = self
@@ -137,7 +235,7 @@ impl Inner {
                     (Some(p), Some(b)) => mh_device::location::slot_in_base(p, b),
                     _ => None,
                 };
-                ModuleInfo { slot, ..m.clone() }
+                ModuleInfo { slot, first: self.first(&m.id), ..m.clone() }
             })
             .collect();
         DeckSnapshot {
@@ -212,6 +310,15 @@ impl Deck {
     }
 
     /// Where input and deck changes go besides the window. Set before [`Deck::spawn`].
+    /// Where each module's control numbers are kept (`module-numbers.json`), read now.
+    pub fn set_numbers_file(&self, path: std::path::PathBuf) {
+        let remembered = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let mut inner = self.lock();
+        inner.remembered = remembered;
+        inner.numbers_file = Some(path);
+        inner.renumber();
+    }
+
     pub fn set_engine(&self, tx: crossbeam_channel::Sender<EngineMsg>) {
         *self.engine.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     }
@@ -321,8 +428,9 @@ impl Deck {
             for (i, (kind, path)) in modules.into_iter().enumerate() {
                 let serial = format!("VIRTUAL{i}");
                 let id = format!("{}:{serial}", kind.name());
-                inner.modules.insert(id.clone(), ModuleInfo { id, kind: kind.name(), serial, firmware: None, slot: None, port_path: Some(path) });
+                inner.modules.insert(id.clone(), ModuleInfo { id, kind: kind.name(), serial, firmware: None, slot: None, port_path: Some(path), first: 0 });
             }
+            inner.renumber();
             inner.orientation = Some("horizontal");
         }
         log::info!("automation: {} virtual module(s)", self.lock().modules.len());
@@ -331,10 +439,23 @@ impl Deck {
     }
 
     /// Test mode: a control of a virtual module used as if by hand (`keys` 4 `press`, `dial` `turn`
-    /// -1, `faders` 2 `slide` 60); the window and the engine get what the hardware would send.
+    /// -1, `faders` 2 `slide` 60, `knobs` 4 `turn` 1 on a second knobs module); the window and the
+    /// engine get what the hardware would send.
     pub fn virtual_input(&self, kind: &str, index: u8, gesture: &str, value: i64) -> Result<(), String> {
         let app = self.app.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or("not started")?;
-        let module = self.lock().modules.values().find(|m| m.kind == kind).map(|m| m.id.clone()).ok_or_else(|| format!("no {kind} module"))?;
+        // the module whose numbers hold `index` (the last one starting at or below it)
+        let (module, first) = {
+            let inner = self.lock();
+            inner
+                .modules
+                .values()
+                .filter(|m| m.kind == kind)
+                .map(|m| (m.id.clone(), inner.first(&m.id)))
+                .filter(|(_, f)| *f <= u16::from(index))
+                .max_by_key(|(_, f)| *f)
+                .ok_or_else(|| format!("no {kind} module"))?
+        };
+        let index = (u16::from(index) - first) as u8;
         let delta = value.clamp(-10, 10) as i8;
         let events = match (kind, gesture) {
             ("keys", "press") => vec![UiEvent::KeyDown { module: module.clone(), index }, UiEvent::KeyUp { module, index }],
@@ -346,7 +467,7 @@ impl Deck {
             ("faders", "slide") => vec![UiEvent::Fader { module, index, value: value.clamp(0, 100) as u8 }],
             _ => return Err(format!("{kind} cannot {gesture}")),
         };
-        for ui in events {
+        for ui in events.into_iter().map(|ui| numbered(ui, first)) {
             if let Some((control, input)) = engine_input(&ui) {
                 self.to_engine(EngineMsg::Input { control, event: input });
             }
@@ -418,6 +539,7 @@ impl Deck {
                     let mut inner = self.lock();
                     inner.faders.retain(|k, _| !k.starts_with(&format!("{key}#")));
                     inner.modules.remove(&key);
+                    inner.renumber();
                     drop(inner);
                     self.publish_snapshot(app);
                     self.to_engine(EngineMsg::DeckChanged);
@@ -444,6 +566,18 @@ impl Deck {
                 Event::Dial { module, delta } => UiEvent::Dial { module: module_key(&module), delta },
                 Event::DialDown { module } => UiEvent::DialDown { module: module_key(&module) },
                 Event::DialUp { module } => UiEvent::DialUp { module: module_key(&module) },
+            };
+            // a second knobs, faders or rollers module: its controls numbered after the first's
+            let ui = {
+                let inner = self.lock();
+                let module = match &ui {
+                    UiEvent::Fader { module, .. } | UiEvent::Knob { module, .. } | UiEvent::KnobDown { module, .. } | UiEvent::KnobUp { module, .. } | UiEvent::Roller { module, .. } => {
+                        Some(module.clone())
+                    }
+                    _ => None,
+                };
+                let first = module.map_or(0, |m| inner.first(&m));
+                numbered(ui, first)
             };
             // a fader reports its position once when attached; that only feeds the drawing,
             // actions run when it is moved (otherwise starting the app would set volumes)
@@ -479,10 +613,11 @@ impl Deck {
         {
             self.lock().orientation = Some(orientation_name(o));
         }
-        let info = ModuleInfo { id: module_key(id), kind: id.kind.name(), serial: id.serial.clone(), firmware, slot: None, port_path: m.port_path.clone() };
+        let info = ModuleInfo { id: module_key(id), kind: id.kind.name(), serial: id.serial.clone(), firmware, slot: None, port_path: m.port_path.clone(), first: 0 };
         let mut inner = self.lock();
         inner.unresponsive.remove(id.kind.name());
         inner.modules.insert(info.id.clone(), info);
+        inner.renumber();
     }
 
     fn publish_snapshot(&self, app: &AppHandle) {
@@ -492,6 +627,47 @@ impl Deck {
 
 #[cfg(test)]
 mod tests {
+    fn module(kind: ModuleKind, serial: &str, path: &[u8]) -> ModuleInfo {
+        ModuleInfo { id: format!("{}:{serial}", kind.name()), kind: kind.name(), serial: serial.into(), firmware: None, slot: None, port_path: Some(path.to_vec()), first: 0 }
+    }
+
+    #[test]
+    fn a_second_module_of_a_kind_keeps_its_numbers_when_the_first_goes() {
+        // the owner's case (2026-11-01): knobs 1 in, then knobs 2, then knobs 1 out
+        let one = module(ModuleKind::Knobs, "A", &[1, 4, 3]);
+        let two = module(ModuleKind::Knobs, "B", &[1, 1, 3]);
+        let mut remembered = BTreeMap::new();
+        let g = assign_groups([&one].into_iter(), &remembered);
+        assert_eq!(g["knobs:A"], 0);
+        remembered.extend(g);
+        // the second one sits in a lower slot, but the first keeps its numbers
+        let g = assign_groups([&one, &two].into_iter(), &remembered);
+        assert_eq!((g["knobs:A"], g["knobs:B"]), (0, 1));
+        assert_eq!(first_of("knobs", g["knobs:B"]), 3);
+        remembered.extend(g);
+        let g = assign_groups([&two].into_iter(), &remembered);
+        assert_eq!(g["knobs:B"], 1, "knobs 2 keeps knobs.3 .. knobs.5 with knobs 1 taken off");
+        // a new module alone (one swapped for another) takes the lowest free numbers: the profile's
+        // knobs.0 .. knobs.2 still work for someone who owns one
+        let three = module(ModuleKind::Knobs, "C", &[1, 4, 3]);
+        assert_eq!(assign_groups([&three].into_iter(), &remembered)["knobs:C"], 0);
+        // keys and the dial mirror: always 0
+        let k1 = module(ModuleKind::Keys, "K1", &[2, 3]);
+        let k2 = module(ModuleKind::Keys, "K2", &[3, 3]);
+        let g = assign_groups([&k1, &k2].into_iter(), &BTreeMap::new());
+        assert_eq!((g["keys:K1"], g["keys:K2"]), (0, 0));
+        assert_eq!(first_of("faders", 1), 5);
+        assert_eq!(first_of("rollers", 2), 4);
+    }
+
+    #[test]
+    fn events_of_a_second_module_go_on_from_the_firsts_numbers() {
+        let ui = numbered(UiEvent::Knob { module: "knobs:B".into(), index: 1, delta: 1 }, 3);
+        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("knobs.4"));
+        let ui = numbered(UiEvent::KeyDown { module: "keys:K2".into(), index: 4 }, 15);
+        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("keys.4"), "keys are never renumbered");
+    }
+
     use super::*;
 
     #[test]

@@ -943,7 +943,6 @@ export interface EngineState {
   /** During a call the deck shows the call app's profile. */
   callSwitch?: boolean;
   /** Less movement on the deck and in the window; null = never set (the system's setting is taken). */
-  reducedMotion?: boolean | null;
   foreground: string;
   /** Key page shown on the deck; null = the main page. */
   page: string | null;
@@ -1394,7 +1393,6 @@ export const api = {
   callSwitchSet: (on: boolean) => invoke("call_switch_set", { on }),
   autostart: () => invoke<boolean>("autostart_get"),
   autostartSet: (on: boolean) => invoke<boolean>("autostart_set", { on }),
-  reducedMotionSet: (on: boolean) => invoke("reduced_motion_set", { on }),
   pressesCounting: () => invoke<boolean>("presses_counting"),
   pressesCountSet: (on: boolean) => invoke("presses_count_set", { on }),
   languageSet: (language: string) => invoke("language_set", { language }),

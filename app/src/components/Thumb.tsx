@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Icon } from "./Icon";
 
 /** A moving thumbnail (a still until the mouse rests on it, or when `moving`). */
 export function Thumb({ id, moving }: { id: string; moving?: boolean }) {
   const [over, setOver] = useState(false);
   const [gone, setGone] = useState(false);
-  const reduce = useMemo(() => matchMedia("(prefers-reduced-motion: reduce)").matches, []);
-  const src = `/looks/${id}.${(over || moving) && !reduce ? "webp" : "jpg"}`;
+  const src = `/looks/${id}.${over || moving ? "webp" : "jpg"}`;
   return (
     <span className="dl-thumb" onMouseEnter={() => setOver(true)} onMouseLeave={() => setOver(false)}>
       {!gone && <img src={src} alt="" width={240} height={137} onError={() => setGone(true)} />}

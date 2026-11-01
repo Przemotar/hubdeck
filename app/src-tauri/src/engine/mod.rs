@@ -96,9 +96,8 @@ use std::time::{Duration, Instant};
 /// whether the mic is muted, the app in front.
 type RulesNow = (Option<monitor::Sample>, Option<(String, String, bool)>, bool, String);
 
-/// The clock of keys' built-in motion (`Look::motion`), and whether it stands still (reduced motion).
+/// The clock of keys' built-in motion (`Look::motion`).
 static MOTION_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
-static MOTION_STILL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use mh_protocol::report;
@@ -385,12 +384,14 @@ pub fn live_looks() -> serde_json::Value {
     serde_json::json!({"profile": profile, "looks": looks})
 }
 
-/// What a plugin or the local API put on a control: title, picture, on/off.
+/// What a plugin or the local API put on a control: title, picture, state.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PluginLook {
     pub title: Option<String>,
     pub image: Option<String>,
-    pub state: Option<bool>,
+    /// State index. Stream Deck `setState` uses the action's `States` (0, 1, 2, ...). Hubdeck's own
+    /// on/off is 0 or 1, and 1 is the "on" look.
+    pub state: Option<u8>,
     /// What a Stream Deck plugin shows for an encoder (`setFeedback`): value 0..1, big text, title.
     pub feedback: Option<(Option<f32>, String, String)>,
     /// A photo its layout shows (a song's cover), drawn behind the dial's text.
@@ -452,8 +453,6 @@ pub struct EngineState {
     pub call_switch: bool,
     /// Profiles make themselves for apps with a preset and for games.
     pub auto_profiles: bool,
-    /// Less movement (Settings): None = not set yet (the window takes the system's setting).
-    pub reduced_motion: Option<bool>,
     /// The draft shown on the deck for a try (`Engine::try_profile`).
     pub trying: Option<String>,
     /// A draft that was on the deck for a try when HubDeck stopped (the window offers it back).
@@ -534,8 +533,8 @@ pub(crate) struct Shared {
     pub effects_trial: Option<(String, profile::Effects, Instant, bool)>,
     /// The tour is on (`tour.rs`): actions that would go live, record or leave a call only say so.
     pub tour_dry_run: bool,
-    /// A control the tour points at on the hardware (`keys.5`, `knobs.2`, `dial`): it blinks (holds
-    /// still with reduced motion) from the first instant until the second, or until it is touched.
+    /// A control the tour points at on the hardware (`keys.5`, `knobs.2`, `dial`): it blinks from the
+    /// first instant until the second, or until it is touched.
     pub highlight: Option<(String, Instant, Instant)>,
     /// Timers that ran out and wait for a press (or the window's Stop).
     pub ringing: Vec<Ringing>,
@@ -647,7 +646,6 @@ impl Shared {
             in_call: self.call_hold,
             call_switch: self.store.settings.call_switch,
             auto_profiles: self.store.settings.auto_profiles,
-            reduced_motion: self.store.settings.reduced_motion,
             ringing: self.ringing.clone(),
         }
     }
@@ -2395,9 +2393,9 @@ impl Worker {
             plugins::input(&binding.action, id, &binding.params, event, binding.swap_turns);
             // a Stream Deck two-state action flips on key-up, as Stream Deck does
             if event == InputEvent::Press(false)
-                && let Some(on) = sdplugins::toggle_after_key_up(&binding.action, id)
+                && let Some(state) = sdplugins::toggle_after_key_up(&binding.action, id)
             {
-                self.plugin_looks.entry(id.to_string()).or_default().state = Some(on);
+                self.plugin_looks.entry(id.to_string()).or_default().state = Some(state);
                 self.redraw_keys();
             }
             return;
@@ -2857,6 +2855,7 @@ impl Worker {
                                 .plugin_looks
                                 .get(&id)
                                 .and_then(|p| p.state)
+                                .map(|n| n == 1)
                                 .or_else(|| (b.action == actions::TOGGLE).then(|| self.toggle_on(&toggle_key(profile.as_ref().map(|p| p.id.as_str()), &id), b)))
                                 .or_else(|| self.state_of(b));
                             // a Stream Deck action's state picks its picture, it is not HubDeck's red "on"
@@ -3373,7 +3372,10 @@ impl Worker {
                 self.dial_dirty = true;
             }
             "setImage" => look.image = m["image"].as_str().filter(|i| images::safe_data_uri(i)).map(str::to_string),
-            "setState" => look.state = m["state"].as_bool(),
+            "setState" => {
+                // a number is a state index; true/false is Hubdeck's own on/off, stored as 1 and 0
+                look.state = m["state"].as_u64().map(|n| u8::try_from(n).unwrap_or(u8::MAX)).or_else(|| m["state"].as_bool().map(u8::from));
+            }
             "showFeedback" => {
                 let caption = m["caption"].as_str().unwrap_or("").to_string();
                 self.feedback = Some((Feedback { value: m["value"].as_f64().map(|v| v as f32), caption }, Instant::now()));
@@ -3480,7 +3482,8 @@ impl Worker {
     /// A Stream Deck action's look: what its plugin set, else its manifest's picture and title for
     /// the current state (the whole key, as on a Stream Deck).
     fn sd_look(&self, id: &str, binding: &Binding, look: Look) -> Look {
-        let Some((image, title)) = sdplugins::state_look(&binding.action, self.plugin_looks.get(id).and_then(|p| p.state)) else { return look };
+        let index = self.plugin_looks.get(id).and_then(|p| p.state);
+        let Some((image, title)) = sdplugins::state_look(&binding.action, index) else { return look };
         let set = self.plugin_looks.get(id);
         let image = set.and_then(|p| p.image.clone()).or(look.image.clone()).or(image);
         // a plugin that draws its own title (ShowTitle false) has the label in its picture already
@@ -3857,14 +3860,25 @@ impl Worker {
     /// Advance animated GIFs whose next frame is due, and the panel clock once a minute.
     fn animate(&mut self, now: Instant) {
         self.update_highlight(now);
+        // a look tried and not renewed (the window closed mid-try): the deck and the lights go back
+        let trial_over = {
+            let mut s = self.lock();
+            let over = s.effects_trial.as_ref().is_some_and(|(_, _, until, _)| now >= *until);
+            if over {
+                s.effects_trial = None;
+            }
+            over
+        };
+        if trial_over {
+            self.redraw_keys();
+            self.update_leds();
+        }
         // sessions waiting for a permission blink; silent ones are dropped after hours
         // sessions and app items waiting for the user pulse on their keys
         if (self.fleet.pulsing() || states::any_waiting(&self.values)) && now.duration_since(self.fleet_pulse) >= agents::PULSE {
             self.fleet_pulse = now;
             self.redraw_keys();
         }
-        let still = self.lock().store.settings.reduced_motion == Some(true);
-        MOTION_STILL.store(still, std::sync::atomic::Ordering::Relaxed);
         if now.duration_since(self.fleet_sweep) >= Duration::from_secs(60) && self.fleet.forget_stale(now) {
             self.redraw_keys();
             self.dial_dirty = true;
@@ -3906,8 +3920,7 @@ impl Worker {
         names.extend(dial_image.clone());
         self.frames.retain(|n, _| names.contains(n));
         let (mut keys_due, mut dial_due) = (false, false);
-        // with reduced motion animated pictures stay on their first frame
-        for name in names.into_iter().filter(|_| !still) {
+        for name in names {
             let Some(delays) = images::animation(&name) else { continue };
             let entry = self.frames.entry(name.clone()).or_insert((0, now + delays[0]));
             if now >= entry.1 {
@@ -3919,8 +3932,7 @@ impl Worker {
             }
         }
         // keys with built-in motion on this page: a new picture at the moving keys' pace
-        if !still
-            && profile.panel.is_none()
+        if profile.panel.is_none()
             && (0..15)
                 .any(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.look.motion.is_some() || b.look_on.as_ref().is_some_and(|l| l.motion.is_some())))
         {
@@ -3930,14 +3942,14 @@ impl Worker {
             keys_due = true;
         }
         // the living deck's canvas: a new picture while it moves (at rest, a ripple that died out,
-        // nothing is drawn); still with reduced motion
-        if !still && profile.panel.is_none() && self.lock().shown_effects(&profile).is_some_and(|e| e.active()) && self.canvas.as_ref().is_none_or(|c| c.busy()) {
+        // nothing is drawn)
+        if profile.panel.is_none() && self.lock().shown_effects(&profile).is_some_and(|e| e.active()) && self.canvas.as_ref().is_none_or(|c| c.busy()) {
             keys_due = true;
         }
         // the screensaver's scene moves as the living deck does, the dial's clock with the minute
         if self.saver_on && self.arcade.is_none() {
             let effect = self.saver_pick().0;
-            if !still && self.lock().saver_effects(&effect).is_some() && self.canvas.as_ref().is_none_or(|c| c.busy()) {
+            if self.lock().saver_effects(&effect).is_some() && self.canvas.as_ref().is_none_or(|c| c.busy()) {
                 keys_due = true;
             }
             if self.saver_dial().0 == "clock" && self.saver_dial_shown != clock_now() {
@@ -4129,7 +4141,7 @@ impl Worker {
     /// The image reference to draw for a look: an animated GIF's current frame (`name#3`); a look
     /// with built-in motion gets the time it is drawn at.
     fn current_frame(&self, look: &mut Look) {
-        if look.motion.is_some() && !MOTION_STILL.load(std::sync::atomic::Ordering::Relaxed) {
+        if look.motion.is_some() {
             // in steps of 1/16 s: every motion's cycle is a whole number of steps, so its pictures
             // repeat and come from the tile cache instead of being drawn again
             let steps = (MOTION_START.get_or_init(Instant::now).elapsed().as_secs_f32() * 16.0).floor() % 57600.0;
@@ -4152,9 +4164,17 @@ impl Worker {
         // the values the local API reads (`GET /api/controls`)
         self.lock().levels = self.levels.clone();
         let snapshot = self.deck.snapshot();
+        // with a look being tried (Deck look), the lights take its colours as the keys take its
+        // picture (owner, 2026-11-01: the base kept the saved preset's colour while he went through
+        // the presets)
         let (profile, light_cfg) = {
             let s = self.lock();
-            (s.active_profile().cloned(), s.store.settings.lights.clone())
+            let profile = s.active_profile().map(|p| {
+                let mut p = p.clone();
+                p.effects = s.shown_effects(&p).cloned();
+                p
+            });
+            (profile, s.store.settings.lights.clone())
         };
         let on = |k: &str| self.integration.get(k).copied().unwrap_or(false);
         let live = leds::Live {
@@ -4202,8 +4222,9 @@ impl Worker {
                 ("knobs", Some(g)) => g.knob_leds.clone().map(leds::Lights::solid),
                 ("faders", Some(g)) => g.fader_leds.clone().map(leds::Lights::solid),
                 (kind, None) if self.lighting.contains_key(kind) => self.lighting.get(kind).map(|o| o.lights(count)),
-                ("knobs", None) => leds::lights(profile.as_ref(), "knobs", 3, &self.levels, &light_cfg, &live),
-                ("faders", None) => leds::lights(profile.as_ref(), "faders", 5, &self.levels, &light_cfg, &live),
+                // a second module of the kind: its own controls, numbered on from the first's
+                ("knobs", None) => leds::lights(profile.as_ref(), "knobs", usize::from(m.first), 3, &self.levels, &light_cfg, &live),
+                ("faders", None) => leds::lights(profile.as_ref(), "faders", usize::from(m.first), 5, &self.levels, &light_cfg, &live),
                 // the metronome test: the edge follows it whatever it shows otherwise
                 ("base", _) if beat::testing(Instant::now()) => Some(leds::Lights { leds: vec![leds::Led::music(profile.as_ref().map(leds::profile_color).unwrap_or([255, 255, 255]))], speed: None }),
                 ("base", _) => leds::edge_lights(profile.as_ref(), &light_cfg, &live),
@@ -4211,7 +4232,7 @@ impl Worker {
             };
             // LEDs set by plugins or the API go on top (not in games or while the screens are off)
             let wanted = if game.is_none() && !blanked {
-                let ids: Vec<String> = if m.kind == "base" { vec!["base".into()] } else { (0..count).map(|i| format!("{}.{i}", m.kind)).collect() };
+                let ids: Vec<String> = if m.kind == "base" { vec!["base".into()] } else { (0..count).map(|i| format!("{}.{}", m.kind, usize::from(m.first) + i)).collect() };
                 if ids.iter().any(|id| self.plugin_leds.contains_key(id)) {
                     let mut lights = wanted.clone().unwrap_or_else(|| leds::Lights::solid(vec![[0, 0, 0]; count]));
                     for (i, id) in ids.iter().enumerate() {
@@ -4227,7 +4248,11 @@ impl Worker {
                 wanted
             };
             // the tour points at a knob or fader: its LED blinks white
-            let wanted = match self.highlight_shown.as_ref().filter(|_| game.is_none() && !blanked).and_then(|(c, lit)| Some((c.strip_prefix(m.kind)?.strip_prefix('.')?.parse::<usize>().ok()?, *lit)))
+            let wanted = match self
+                .highlight_shown
+                .as_ref()
+                .filter(|_| game.is_none() && !blanked)
+                .and_then(|(c, lit)| Some((c.strip_prefix(m.kind)?.strip_prefix('.')?.parse::<usize>().ok()?.checked_sub(usize::from(m.first))?, *lit)))
             {
                 Some((i, lit)) if i < count => {
                     let mut lights = wanted.unwrap_or_else(|| leds::Lights::solid(vec![[0, 0, 0]; count]));
@@ -4317,16 +4342,6 @@ impl Worker {
             if only_brightness {
                 self.music_sent.insert(m.id.clone(), Instant::now());
             }
-            let Some(module) = self.deck.module(&m.id) else { continue };
-            let kind = module.kind();
-            let mut reports = Vec::new();
-            match &wanted {
-                None => reports.extend(report::led_mode(kind, LedTarget::All, LedMode::Rainbow, false)),
-                Some(lights) => reports.extend(leds_reports(kind, lights, before.flatten().as_ref())),
-            }
-            // sent on the LED thread, in order (the reports are the change from what went before)
-            led_sender().send((m.id.clone(), module, reports));
-            self.perf.leds += 1;
             let view = as_set.as_ref().map(|l| {
                 let mut v = leds::view(l);
                 for (led, r) in v.iter_mut().zip(&replaced) {
@@ -4341,6 +4356,20 @@ impl Worker {
                 }
                 v
             });
+            // no device (a test copy's virtual module): the window and the API still see what it shows
+            let Some(module) = self.deck.module(&m.id) else {
+                shown.push((m.id.clone(), view));
+                continue;
+            };
+            let kind = module.kind();
+            let mut reports = Vec::new();
+            match &wanted {
+                None => reports.extend(report::led_mode(kind, LedTarget::All, LedMode::Rainbow, false)),
+                Some(lights) => reports.extend(leds_reports(kind, lights, before.flatten().as_ref())),
+            }
+            // sent on the LED thread, in order (the reports are the change from what went before)
+            led_sender().send((m.id.clone(), module, reports));
+            self.perf.leds += 1;
             out.push((m.id.clone(), wanted.as_ref().map(|l| l.leds.iter().map(|led| format!("#{:02x}{:02x}{:02x}", led.rgb[0], led.rgb[1], led.rgb[2])).collect())));
             self.leds_sent.insert(m.id.clone(), wanted);
             self.leds_shown.insert(m.id.clone(), as_set);
@@ -4405,15 +4434,14 @@ impl Worker {
         self.highlight_shown.as_ref().filter(|(_, lit)| *lit).map(|(c, _)| c.as_str())
     }
 
-    /// The tour's highlight: blink it (or hold it still with reduced motion), redraw what changed.
+    /// The tour's highlight: blink it, redraw what changed.
     fn update_highlight(&mut self, now: Instant) {
         let want = {
             let mut s = self.lock();
             if s.highlight.as_ref().is_some_and(|(_, _, until)| now >= *until) {
                 s.highlight = None;
             }
-            let still = s.store.settings.reduced_motion == Some(true);
-            s.highlight.as_ref().map(|(c, from, _)| (c.clone(), still || (now.duration_since(*from).as_millis() / agents::PULSE.as_millis()).is_multiple_of(2)))
+            s.highlight.as_ref().map(|(c, from, _)| (c.clone(), (now.duration_since(*from).as_millis() / agents::PULSE.as_millis()).is_multiple_of(2)))
         };
         if want == self.highlight_shown {
             return;

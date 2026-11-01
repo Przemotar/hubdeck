@@ -2255,11 +2255,6 @@ button.chip.is-active {
     transform: rotate(360deg);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .eic.spin .i {
-    animation: none;
-  }
-}
 
 /* LED effect fields, test presets, macro recorder */
 .effect-fields {
@@ -2285,11 +2280,6 @@ button.chip.is-active {
 @keyframes rec {
   50% {
     opacity: 0.3;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rec-dot {
-    animation: none;
   }
 }
 
@@ -4150,20 +4140,6 @@ button.chip.is-active {
     transform: translate(calc(var(--dx) * 1.15), calc(var(--dy) + 46px)) rotate(var(--r)) scale(0.9);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .tour-foot.is-ready .tool.primary,
-  .tour-confetti i {
-    animation: none;
-  }
-  .tour-cheer-pill {
-    animation-duration: 0.01s;
-  }
-}
-.reduce-motion .tour-foot.is-ready .tool.primary,
-.reduce-motion .tour-confetti i,
-.reduce-motion .tour-face-gestures li .tour-gesture-mark {
-  animation: none;
-}
 .tour-focus {
   flex: 1;
   min-height: 0;
@@ -4607,16 +4583,6 @@ button.chip.is-active {
   }
 }
 
-/* Settings > Reduce motion: nothing in the window moves (the system's setting is taken the first time) */
-:root.reduce-motion *,
-:root.reduce-motion *::before,
-:root.reduce-motion *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-  scroll-behavior: auto !important;
-}
-
 /* the simplifications picked after the release audit (2026-10-13) */
 .tab.new-deck {
   display: inline-flex;
@@ -4687,11 +4653,6 @@ button.lib-foot:focus-visible span {
 .tour-making .i {
   width: 14px;
   height: 14px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tour-spin {
-    animation: none;
-  }
 }
 
 /* the tour's "One control, many jobs" and "Your dial, many faces" (owner's picks, 2026-10-14) */
@@ -4874,12 +4835,6 @@ button.lib-foot:focus-visible span {
     transform: scale(1.15);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .tour-face-gestures li.is-now .tour-gesture-mark,
-  .tour-face-gestures li.is-done .tour-gesture-mark {
-    animation: none;
-  }
-}
 @media (max-width: 520px) {
   .tour-face-gestures li {
     grid-template-columns: 28px minmax(0, 1fr);
@@ -4947,12 +4902,6 @@ button.lib-foot:focus-visible span {
 }
 .guide-actions {
   margin-top: 6px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .guide-spot,
-  .guide-card {
-    transition: none;
-  }
 }
 
 /* Get started (owner, 2026-10-14): the tour first, one assistant, the suggestion as its first chip */
@@ -5602,11 +5551,6 @@ button.lib-foot:focus-visible span {
 .prow.is-shown {
   border-radius: 8px;
   animation: focus-glow 1.6s ease-out 1;
-}
-.reduce-motion .prow.is-shown,
-.reduce-motion .chooser-group.is-focus > .chooser-group-head,
-.reduce-motion .focus-arrow {
-  animation: none;
 }
 .pill.is-new {
   color: var(--acc2);

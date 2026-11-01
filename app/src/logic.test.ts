@@ -64,6 +64,26 @@ describe("module placement", () => {
   });
 });
 
+describe("two modules of a kind", () => {
+  it("a new module's slot-table place never covers one the user arranged (2026-11-01)", () => {
+    // his dial moved by hand where the slot table puts knobs in 1-3-3
+    const dial = { ...mod("dial", "1-3-4"), id: "dial:x" };
+    const knobs1 = { ...mod("knobs", "1-4-3"), id: "knobs:A" };
+    const knobs2 = { ...mod("knobs", "1-3-3"), id: "knobs:B", first: 3 };
+    const table = placeModules([knobs2], {})[0];
+    const saved = { "dial@1-3-4": { col: table.col, row: table.row, rotation: 0 as const }, "knobs@1-4-3": { col: 0, row: 0, rotation: 0 as const } };
+    const placed = placeModules([dial, knobs1, knobs2], saved);
+    const d = placed.find((p) => p.module.id === "dial:x")!;
+    const k = placed.find((p) => p.module.id === "knobs:B")!;
+    expect(d.source).toBe("user");
+    expect(k.source).toBe("guess");
+    const overlap = !(k.col + k.cols <= d.col || d.col + d.cols <= k.col || k.row + k.rows <= d.row || d.row + d.rows <= k.row);
+    expect(overlap).toBe(false);
+    // the order stays the kinds' order
+    expect(placed.map((p) => p.module.kind)).toEqual(["dial", "knobs", "knobs"]);
+  });
+});
+
 describe("texts", () => {
   it("uses English unless Polish is picked, with Polish plurals", () => {
     setLanguage("en");

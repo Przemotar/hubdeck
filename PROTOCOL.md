@@ -222,6 +222,9 @@ Consequences:
   before it (`0xe00002c5`, kIOReturnExclusiveAccess). Every module's report descriptor is usage
   page 0x0C with opaque byte arrays (usage 0xFF00, report ids 01/02/03 and feature ids), no
   standard consumer usages, so the system's driver has nothing to act on in a shared open.
+- **The same pace on Windows** (2026-10-31, his PC, eight reports in flight, the installed app's log):
+  Lantern Hollow at 99 KB a picture took 46.5 ms to send (21.5 a second), at its lighter moments 27.6 ms
+  (24.6 a second, the engine's limit): ~2.1 MB/s, as on the Mac. Past it the picture's size sets the rate.
   HubDeck opens keys and dial shared with eight in flight (`mh-device` `pictures.rs`;
   `HUBDECK_PIPELINE=0` turns it off).
 - **No known way**: single LEDs inside a knob ring or along the base edge (the hardware has many,
