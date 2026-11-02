@@ -59,6 +59,22 @@ function tourView(focus: string) {
 // `&kit=faders`: the kit with faders instead of the dial and the knobs (screenshots of both kits)
 const FADERS_KIT = demoParam("kit") === "faders";
 
+/** Settings > Diagnostics in the demo: sample answers (firmware versions, brightness 100 and LED mode
+ * 9 as PROTOCOL.md records them; the reads never recorded say so). */
+type DiagRead = { name: string; id: number; hex: string | null; text: string | null; error: string | null; ms: number };
+const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
+const fw = (id: number, v: string): DiagRead => ({ name: "firmware", id, hex: ascii(v), text: v, error: null, ms: 1.8 });
+const val = (name: string, id: number, hex: string): DiagRead => ({ name, id, hex, text: null, error: null, ms: 1.2 });
+const none = (name: string, id: number): DiagRead => ({ name, id, hex: null, text: null, error: "no sample in the demo", ms: 0 });
+const m0 = (v: string, extra: DiagRead[]): DiagRead[] => [fw(0x2e, v), none("firmware parts", 0x2d), none("firmware parts 2", 0x2f), none("device info", 0x31), ...extra, none("stored config", 0x36)];
+const DIAG_READS: Record<string, DiagRead[]> = {
+  faders: m0("01.00.05.00", [val("brightness", 0x32, "64"), val("fader values", 0x33, "00 0c 64 32 00"), val("LED mode", 0x34, "09")]),
+  knobs: m0("01.00.05.00", [val("brightness", 0x32, "64"), val("LED mode", 0x34, "09")]),
+  rollers: m0("01.00.03.01", []),
+  keys: [fw(0x38, "02.00.01.00"), val("screen info", 0x3b, "14 03 05 0f e0 01 10 01 01 48 48"), val("backlight", 0x3c, "64")],
+  dial: [fw(0x48, "01.00.04.00"), val("screen info", 0x4b, "14 00 00 00 f0 00 f0 00 01 f0 f0"), val("backlight", 0x4c, "64")],
+};
+
 const deck: DeckSnapshot = {
   modules: [
     { id: "keys:DEMO-KEYS", kind: "keys", serial: "MHKD15DEMO0001", firmware: "02.00.01.00", slot: "2-3" },
@@ -129,6 +145,15 @@ let demoTemplates: { name: string; look: Record<string, unknown> }[] = [];
 const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   engine_state: () => state(),
   deck_snapshot: () => deck,
+  // Settings > Diagnostics: reads as the owner's modules answered them (session 44)
+  diag_read: ({ module }) => DIAG_READS[String(module).split(":")[0]] ?? [],
+  diag_hold: () => null,
+  diag_notes: () => ({
+    notes: deck.modules.map((m) => ({ at: Date.now() - 41 * 60_000, module: m.id, what: `attached: firmware ${m.firmware}` })),
+    counts: deck.modules.map((m) => ({ module: m.id, kind: "attached", count: 1 })),
+  }),
+  set_leds: () => null,
+  draw_jpeg: () => null,
   placements_get: () => placements,
   placement_set: ({ key, placement }) => {
     if (placement) placements[key as string] = placement as (typeof placements)[string];
@@ -212,7 +237,7 @@ const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
   twitch_status: () => [false, false],
   "plugin:app|version": () => "0.1.0",
   "plugin:opener|open_url": () => null,
-  update_settings_get: () => [true, true],
+  update_settings_get: () => [true, true, true],
   update_settings_set: () => null,
   // the key look editor's own templates, kept for the page's life
   look_templates_get: () => demoTemplates,

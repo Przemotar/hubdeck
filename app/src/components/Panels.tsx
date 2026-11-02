@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { askInWindow, confirmed, open, save } from "../confirm";
+import { askInWindow, confirmed, open, save, told } from "../confirm";
 import { invoke } from "@tauri-apps/api/core";
 import type { ControlRef, LiveState, ModuleKind } from "../deck";
 import { api, withUpright, type FrameCost, FX_OPTIONS, FX_TINT, fxName, GPU_KINDS, type FxKind, type FxLayer, SKIN_MOTION, type Skin, type Look, GAMES_ENABLED, pageReachable, setPreviewSalt, type AppInfo, type AppsState, type CrashReport, type LightSettings, LED_EFFECTS, METRICS, type EngineView, type GameSummary, type Imported, type Metric, type Moved, type PluginInfo, type LocalPlugin, type InstalledItem, type PresetSummary, type Profile, type ProfileSummary, type Screens, triedPresets, DISCORD, SAVER_SCENES, saverOf, knownScreens, SAVER_FROM_LOOK, saverPreset, PRESETS_HIDDEN, presetThumb, THEMES, themeTitle, layersOf } from "../engine";
@@ -8,6 +8,7 @@ import { NoneThumb, Thumb } from "./Thumb";
 import { AssistantPanel, refreshNudge, useNudge, useSetUp } from "./Assistant";
 import { InstalledPicker, pickImage } from "./Inspector";
 import { ModuleThumb } from "./DeckView";
+import { DiagnosticsSettings } from "./Diagnostics";
 import { demoParam } from "../demo/params";
 import { setTheme, useTheme, type Theme } from "../theme";
 import { osName, updates, useAppVersion, useUpdateAvailable, type UpdateInfo } from "../update";
@@ -334,7 +335,7 @@ async function editProfile(id: string, change: (p: Profile) => Profile) {
 }
 
 function deleteProfile(p: ProfileSummary) {
-  void confirmed(t("profile.confirmDelete", { name: p.name })).then((yes) => yes && api.deleteProfile(p.id).catch((e) => window.alert(String(e))));
+  void confirmed(t("profile.confirmDelete", { name: p.name })).then((yes) => yes && api.deleteProfile(p.id).catch((e) => told(t("error.deleteProfile"), localizeError(String(e)))));
 }
 
 /** True while HubDeck's own window has the focus. */
@@ -1042,6 +1043,20 @@ function HelpMenu() {
       .catch(() => "")
       .then((brief) => go(`${REPO}/issues/new?template=bug.yml${versionField}${brief ? `&diagnostics=${encodeURIComponent(brief)}` : ""}`));
   };
+  // without a GitHub account (owner's "1 a", 2026-11-01: the account is the biggest barrier to
+  // reports): the same short diagnostics go to the clipboard, the Discord opens, it is pasted in #help
+  const reportOnDiscord = () => {
+    const head = `HubDeck ${version ?? "?"}, ${osName()}`;
+    share
+      .diagnosticsBrief()
+      .catch(() => "")
+      .then((brief) => navigator.clipboard.writeText(brief ? `${head}
+${brief}` : head).catch(() => {}))
+      .then(() => {
+        go(DISCORD);
+        void told(t("help.discordReportCopied"), t("help.discordReportCopiedText"));
+      });
+  };
   return (
     <span className="pop-anchor help-menu" ref={ref}>
       <button className="tool ghost" aria-haspopup="menu" aria-expanded={open} title={t("help.title")} onClick={() => setOpen((o) => !o)}>
@@ -1079,6 +1094,13 @@ function HelpMenu() {
               <Icon name="sparkles" />
               <span className="menu-text">
                 <b>{t("whatsNew.menu")}</b>
+              </span>
+            </button>
+            <button role="menuitem" className="menu-row compact" onClick={reportOnDiscord}>
+              <Icon name="alert" />
+              <span className="menu-text">
+                <b>{t("help.discordReport")}</b>
+                <small>{t("help.discordReportHelp")}</small>
               </span>
             </button>
             <button role="menuitem" className="menu-row compact" onClick={() => go(DISCORD)}>
@@ -1267,7 +1289,8 @@ export function MusicPanel({ onClose }: { onClose: () => void }) {
           {t("music.on")}
         </label>
         <p className="help">{t("music.onHelp")}</p>
-        <MusicTuning l={l} setL={setL} save={save} />
+        {/* the tuning only while the lights follow the music (ROADMAP Next, 2026-11-01) */}
+        {on && <MusicTuning l={l} setL={setL} save={save} />}
       </section>
     </aside>
   );
@@ -2118,7 +2141,7 @@ export function ProfilePanel({ view, onClose }: { view: EngineView; onClose: () 
 }
 
 /** Settings of the whole app: language, look, screens, profiles folder, backups, connections, updates, help, about. */
-export type SettingsSection = "general" | "lights" | "screens" | "text" | "connections" | "plugins" | "backups" | "updates" | "help";
+export type SettingsSection = "general" | "lights" | "screens" | "text" | "connections" | "plugins" | "backups" | "updates" | "diagnostics" | "help";
 
 const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
   { id: "general", icon: "settings", label: "settings.general" },
@@ -2130,6 +2153,8 @@ const SETTINGS_SECTIONS: { id: SettingsSection; icon: string; label: Key }[] = [
   { id: "plugins", icon: "plug", label: "topbar.plugins" },
   { id: "backups", icon: "archive", label: "settings.backups" },
   { id: "updates", icon: "download", label: "updates.title" },
+  // check one module (owner, 2026-11-02, after a faders user's light stuck red)
+  { id: "diagnostics", icon: "gauge", label: "diag.title" },
   { id: "help", icon: "info", label: "settings.help" },
 ];
 
@@ -2186,6 +2211,7 @@ export function SettingsPanel({ live, view, section, onSection, onClose, onCalib
           {section === "plugins" && <PluginsList onBrowse={onBrowsePlugins} />}
           {section === "backups" && <Backups />}
           {section === "updates" && <UpdatesSettings />}
+          {section === "diagnostics" && <DiagnosticsSettings live={live} />}
           {section === "help" && (
             <>
               {(onTour || onBuild) && (
@@ -2497,13 +2523,13 @@ function UpdateCard({ info }: { info: UpdateInfo }) {
 /** Look for a new version at start or now; install only on request. */
 function UpdatesSettings() {
   useLanguage();
-  const [cfg, setCfg] = useState<[boolean, boolean] | null>(null);
+  const [cfg, setCfg] = useState<[boolean, boolean, boolean] | null>(null);
   const [result, setResult] = useState<"checking" | "latest" | UpdateInfo | { error: string } | null>(null);
   useEffect(() => {
-    updates.settings().then(setCfg, () => setCfg([false, false]));
+    updates.settings().then(setCfg, () => setCfg([false, false, false]));
   }, []);
   if (!cfg) return null;
-  const [enabled, atStart] = cfg;
+  const [enabled, atStart, notify] = cfg;
   // a build without updates: say so, no switch and button that cannot work
   if (!enabled)
     return (
@@ -2521,11 +2547,23 @@ function UpdatesSettings() {
           checked={atStart}
           disabled={!enabled}
           onChange={(e) => {
-            setCfg([enabled, e.target.checked]);
+            setCfg([enabled, e.target.checked, notify]);
             updates.setCheckAtStart(e.target.checked).catch(() => {});
           }}
         />
         {t("updates.atStart")}
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={notify}
+          disabled={!enabled || !atStart}
+          onChange={(e) => {
+            setCfg([enabled, atStart, e.target.checked]);
+            updates.setNotify(e.target.checked).catch(() => {});
+          }}
+        />
+        {t("updates.notify")}
       </label>
       <div className="row wrap">
         <button
@@ -2962,7 +3000,7 @@ export function PageBar({ view }: { view: EngineView }) {
             <span className="page-warn row">
               <Icon name="alert" />
               {t("pages.unreachable")}
-              <button className="tool small" title={t("pages.addWayHelp")} onClick={() => api.addWayToPage(profile.id, currentPage.id).catch((e) => window.alert(localizeError(String(e))))}>
+              <button className="tool small" title={t("pages.addWayHelp")} onClick={() => api.addWayToPage(profile.id, currentPage.id).catch((e) => told(t("error.addWay"), localizeError(String(e))))}>
                 {t("pages.addWay")}
               </button>
             </span>

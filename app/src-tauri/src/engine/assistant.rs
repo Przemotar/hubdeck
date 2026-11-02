@@ -109,6 +109,11 @@ pub async fn assistant_scan(app: AppHandle) -> Result<Scan, String> {
     let modules = kinds.attached.clone();
     let detached: Vec<String> = kinds.owned.into_iter().filter(|k| !kinds.attached.contains(k)).collect();
     let same = super::api::same_kind_text(&app);
+    let connections = {
+        let settings = app.state::<Engine>().lock().store.settings.clone();
+        connections_text(&settings, &|k| super::secrets::get(k).is_some())
+    };
+    let same = format!("{same}{connections}");
     let profiles: Vec<String> = {
         let engine = app.state::<Engine>();
         let s = engine.lock();
@@ -348,10 +353,59 @@ fn unknown_app(b: &super::profile::Binding) -> Option<String> {
     (!opens.is_empty() && !opens.contains([':', '\\', '/']) && !super::check::name_opens(&opens)).then_some(opens)
 }
 
+/// Services whose actions need a connection set up in HubDeck: the action's prefix and the name the
+/// window gives it (ROADMAP Next, 2026-11-01: a Spotify Like without a client id showed "connect
+/// Spotify first" on a key the assistant made). OBS and Streamlabs answer without a setup, so they
+/// are not here.
+const NEEDS_SETUP: [(&str, &str); 3] = [("spotify.", "Spotify"), ("ha.", "Home Assistant"), ("twitch.", "Twitch")];
+
+/// The service an action needs that is not connected here, if any.
+fn unconnected(action: &str, settings: &super::profile::Settings, has_secret: &dyn Fn(&str) -> bool) -> Option<&'static str> {
+    let (prefix, name) = NEEDS_SETUP.iter().find(|(prefix, _)| action.starts_with(prefix))?;
+    let ready = match *prefix {
+        "spotify." => settings.spotify_client_id.as_deref().is_some_and(|c| !c.trim().is_empty()) && has_secret("spotify"),
+        "ha." => settings.ha_url.as_deref().is_some_and(|u| !u.trim().is_empty()) && has_secret("homeassistant"),
+        _ => has_secret("twitch"),
+    };
+    (!ready).then_some(*name)
+}
+
+/// For the assistant's scan: which services are connected and which are not.
+fn connections_text(settings: &super::profile::Settings, has_secret: &dyn Fn(&str) -> bool) -> String {
+    let (on, off): (Vec<&str>, Vec<&str>) =
+        NEEDS_SETUP.iter().map(|(prefix, name)| (*name, unconnected(&format!("{prefix}x"), settings, has_secret).is_none())).fold((Vec::new(), Vec::new()), |(mut on, mut off), (name, ready)| {
+            if ready {
+                on.push(name)
+            } else {
+                off.push(name)
+            }
+            (on, off)
+        });
+    let list = |v: &[&str]| if v.is_empty() { "none".to_string() } else { v.join(", ") };
+    format!(
+        "\n- Services connected in HubDeck: {}; not connected: {} (never put a not-connected service's actions on keys; suggest connecting it in Settings > Connections instead)",
+        list(&on),
+        list(&off)
+    )
+}
+
 /// Save an idea's sketch as a draft; (draft id, controls left out with why).
 fn save_sketch(engine: &Engine, idea: &Idea) -> Result<(Option<String>, Vec<String>), String> {
-    let (p, dropped) = sketch_profile(idea);
-    let Some(p) = p else { return Ok((None, dropped)) };
+    let (p, mut dropped) = sketch_profile(idea);
+    let Some(mut p) = p else { return Ok((None, dropped)) };
+    // a key of a service that is not connected would only say "connect it first": left out, and
+    // the model is told why
+    {
+        let settings = engine.lock().store.settings.clone();
+        let has = |k: &str| super::secrets::get(k).is_some();
+        p.controls.retain(|id, b| match unconnected(&b.action, &settings, &has) {
+            Some(service) => {
+                dropped.push(format!("{id}: {} needs {service}, which is not connected in HubDeck (Settings > Connections)", b.action));
+                false
+            }
+            None => true,
+        });
+    }
     let id = p.id.clone();
     {
         let mut s = engine.lock();
@@ -1227,6 +1281,25 @@ mod tests {
         assert_eq!(choices, ["Streaming", "Coding", "Gaming"]);
         assert_eq!(split_choices("No buttons here."), ("No buttons here.".to_string(), vec![]));
         assert_eq!(split_choices("Broken <choices>a|b").1, Vec::<String>::new());
+    }
+
+    #[test]
+    fn services_that_are_not_connected() {
+        let mut s = super::super::profile::Settings::default();
+        let none = |_: &str| false;
+        assert_eq!(unconnected("spotify.like", &s, &none), Some("Spotify"));
+        assert_eq!(unconnected("ha.toggle", &s, &none), Some("Home Assistant"));
+        assert_eq!(unconnected("twitch.marker", &s, &none), Some("Twitch"));
+        assert_eq!(unconnected("core.media", &s, &none), None);
+        assert_eq!(unconnected("obs.record", &s, &none), None, "OBS answers without a setup");
+        // Spotify needs its client id and a sign-in
+        s.spotify_client_id = Some("abc".into());
+        assert_eq!(unconnected("spotify.like", &s, &none), Some("Spotify"));
+        assert_eq!(unconnected("spotify.like", &s, &|k| k == "spotify"), None);
+        s.ha_url = Some("http://homeassistant.local:8123".into());
+        assert_eq!(unconnected("ha.toggle", &s, &|k| k == "homeassistant"), None);
+        let text = connections_text(&s, &|k| k == "spotify");
+        assert!(text.contains("connected in HubDeck: Spotify;") && text.contains("not connected: Home Assistant, Twitch"), "{text}");
     }
 
     #[test]

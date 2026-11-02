@@ -1,17 +1,15 @@
-//! Home Assistant over its REST API with a long-lived access token: toggle devices, run scenes and
-//! scripts, set light brightness, call any service. A worker thread sends the calls and, every two
-//! seconds, reads the state of the entities shown on keys so they light up when a device is on.
+//! Home Assistant with a long-lived access token: toggle devices, run scenes and scripts, set light
+//! brightness, call any service (REST, from a worker thread). The states of the entities shown on
+//! keys come pushed over the WebSocket API (`ha_watch.rs`), so a key lights up when a device is on.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use serde_json::{Value, json};
 
 use super::Msg;
 
-const POLL: Duration = Duration::from_secs(2);
 const TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,6 +90,14 @@ pub fn missing() -> Vec<String> {
     MISSING.lock().map(|m| m.clone()).unwrap_or_default()
 }
 
+/// Of the entities `watched`, the ones Home Assistant does not have now are `missing`.
+pub fn set_missing(watched: &[String], missing: &[String]) {
+    if let Ok(mut m) = MISSING.lock() {
+        m.retain(|e| !watched.contains(e));
+        m.extend(missing.iter().cloned());
+    }
+}
+
 pub fn configure(url: String, token: Option<String>) {
     send(Cmd::Settings { url, token });
 }
@@ -123,14 +129,21 @@ pub fn is_on(state: &str) -> bool {
 
 fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Receiver<Cmd>) {
     let agent: ureq::Agent = crate::engine::calls::builder().timeout_global(Some(TIMEOUT)).build().into();
+    // the states of the entities on screen: pushed over the WebSocket (polled when it cannot be used)
+    let (watch_tx, watch_rx) = unbounded();
+    {
+        let (engine, agent) = (engine.clone(), agent.clone());
+        std::thread::Builder::new().name("homeassistant states".into()).spawn(move || super::ha_watch::run(engine, watch_rx, agent)).expect("spawn home assistant states thread");
+    }
     let mut watched: Vec<String> = Vec::new();
-    let mut last_poll = Instant::now() - POLL;
-    let mut known: HashMap<String, bool> = HashMap::new();
+    let tell_watcher = |url: &str, token: &Option<String>, watched: &[String]| {
+        let _ = watch_tx.send(super::ha_watch::Watch { url: url.to_string(), token: token.clone(), entities: watched.to_vec() });
+    };
     let error = |message: String| {
         let _ = engine.send(Msg::IntegrationError { source: "Home Assistant".into(), message });
     };
     loop {
-        match rx.recv_timeout(Duration::from_millis(250)) {
+        match rx.recv() {
             Ok(Cmd::Request(r)) => {
                 let Some(tok) = token.clone() else {
                     error("set the Home Assistant address and token in the profile panel under Connections".into());
@@ -140,7 +153,7 @@ fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Rece
                     Ok((path, body)) => {
                         let result = agent.post(format!("{}/api/services/{path}", url.trim_end_matches('/'))).header("Authorization", format!("Bearer {tok}")).send_json(&body);
                         match result {
-                            Ok(_) => last_poll = Instant::now() - POLL, // show the new state soon
+                            Ok(_) => {}
                             Err(ureq::Error::StatusCode(401)) => error("Home Assistant refused the token".into()),
                             Err(e) => error(format!("{path}: {e}")),
                         }
@@ -149,15 +162,16 @@ fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Rece
                 }
             }
             Ok(Cmd::Watch(list)) => {
-                watched = list;
-                known.retain(|k, _| watched.contains(k));
-                last_poll = Instant::now() - POLL;
+                if list != watched {
+                    watched = list;
+                    tell_watcher(&url, &token, &watched);
+                }
             }
             Ok(Cmd::Settings { url: u, token: t }) => {
                 url = u;
                 token = t;
-                known.clear();
                 super::names::forget("ha.");
+                tell_watcher(&url, &token, &watched);
             }
             Ok(Cmd::List) => {
                 let Some(tok) = token.clone() else { continue };
@@ -170,29 +184,7 @@ fn run(engine: Sender<Msg>, mut url: String, mut token: Option<String>, rx: Rece
                     }
                 }
             }
-            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
-            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return,
-        }
-        if watched.is_empty() || last_poll.elapsed() < POLL {
-            continue;
-        }
-        last_poll = Instant::now();
-        let Some(tok) = token.clone() else { continue };
-        for entity in &watched {
-            let response = agent.get(format!("{}/api/states/{entity}", url.trim_end_matches('/'))).header("Authorization", format!("Bearer {tok}")).call();
-            if let Ok(mut m) = MISSING.lock() {
-                let gone = matches!(response, Err(ureq::Error::StatusCode(404)));
-                m.retain(|e| e != entity);
-                if gone {
-                    m.push(entity.clone());
-                }
-            }
-            let Ok(mut response) = response else { continue };
-            let Ok(v) = response.body_mut().read_json::<Value>() else { continue };
-            let on = is_on(v["state"].as_str().unwrap_or(""));
-            if known.insert(entity.clone(), on) != Some(on) {
-                let _ = engine.send(Msg::IntegrationState { key: format!("ha:{entity}"), on });
-            }
+            Err(_) => return,
         }
     }
 }

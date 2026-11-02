@@ -535,6 +535,7 @@ impl Deck {
                 }
                 Event::Disconnected(id) => {
                     let key = module_key(&id);
+                    crate::module_check::note(&key, "gone", "");
                     fader_seen.retain(|k| !k.starts_with(&format!("{key}#")));
                     let mut inner = self.lock();
                     inner.faders.retain(|k, _| !k.starts_with(&format!("{key}#")));
@@ -546,6 +547,7 @@ impl Deck {
                     continue;
                 }
                 Event::Unresponsive(id) => {
+                    crate::module_check::note(&module_key(&id), "not answering", "");
                     self.lock().unresponsive.insert(id.kind.name().to_string(), ());
                     self.publish_snapshot(app);
                     continue;
@@ -613,6 +615,7 @@ impl Deck {
         {
             self.lock().orientation = Some(orientation_name(o));
         }
+        crate::module_check::note(&module_key(id), "attached", firmware.as_deref().map(|f| format!("firmware {f}")).unwrap_or_else(|| "no firmware answer".into()));
         let info = ModuleInfo { id: module_key(id), kind: id.kind.name(), serial: id.serial.clone(), firmware, slot: None, port_path: m.port_path.clone(), first: 0 };
         let mut inner = self.lock();
         inner.unresponsive.remove(id.kind.name());

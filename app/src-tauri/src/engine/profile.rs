@@ -701,6 +701,13 @@ pub struct Settings {
     /// Look for a new HubDeck version at start (never installs without the user).
     #[serde(default = "yes")]
     pub check_updates: bool,
+    /// A system notification when a new version is found, once a version (owner's "2 a",
+    /// 2026-11-01: people who never open the window stay on old versions).
+    #[serde(default = "yes")]
+    pub notify_updates: bool,
+    /// The version the last notification was about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notified_version: Option<String>,
     /// The deck's lights: one style, one brightness, what they react to.
     #[serde(default)]
     pub lights: LightSettings,
@@ -845,6 +852,8 @@ impl Default for Settings {
             profiles_dir: None,
             spotify_client_id: None,
             check_updates: true,
+            notify_updates: true,
+            notified_version: None,
             lights: LightSettings::default(),
             auto_profiles: true,
             offered: Vec::new(),

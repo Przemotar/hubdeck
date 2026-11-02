@@ -13,9 +13,10 @@ export interface UpdateInfo {
 const inTauri = () => "__TAURI_INTERNALS__" in window;
 
 export const updates = {
-  /** (updates set up in this build, check at start) */
-  settings: () => invoke<[boolean, boolean]>("update_settings_get"),
+  /** (updates set up in this build, check at start, a notification for a new version) */
+  settings: () => invoke<[boolean, boolean, boolean]>("update_settings_get"),
   setCheckAtStart: (checkAtStart: boolean) => invoke("update_settings_set", { checkAtStart }),
+  setNotify: (notify: boolean) => invoke("update_settings_set", { notify }),
   check: () => invoke<UpdateInfo | null>("update_check"),
   /** Downloads, installs and restarts; only on the user's request. */
   install: () => invoke("update_install"),

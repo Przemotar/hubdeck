@@ -38,6 +38,21 @@ pub fn set_default(input: bool, name: &str) -> Result<String, String> {
     Ok(d.name.clone())
 }
 
+/// Of two devices, the one to make the default: `b` while `a` is the default now, else `a`.
+pub fn pick_between<'a>(devices: &'a [Device], a: &str, b: &str) -> Result<&'a Device, String> {
+    let first = find(devices, a).ok_or_else(|| format!("no device named {a:?}"))?;
+    let second = find(devices, b).ok_or_else(|| format!("no device named {b:?}"))?;
+    Ok(if first.default { second } else { first })
+}
+
+/// A press of a key with two devices: switch to the other one; returns its name.
+pub fn switch_between(input: bool, a: &str, b: &str) -> Result<String, String> {
+    let devices = list(input)?;
+    let d = pick_between(&devices, a, b)?;
+    platform::set_default(&d.id)?;
+    Ok(d.name.clone())
+}
+
 /// Make the next (or previous) device the default; returns its name.
 pub fn cycle(input: bool, step: i32) -> Result<String, String> {
     let devices = list(input)?;
@@ -143,7 +158,20 @@ mod platform {
 
 #[cfg(test)]
 mod find_tests {
-    use super::{Device, find};
+    use super::{Device, find, pick_between};
+
+    #[test]
+    fn two_devices_take_turns() {
+        let dev = |id: &str, name: &str, default: bool| Device { id: id.into(), name: name.into(), default };
+        let now_speakers = [dev("{1}", "Speakers (Realtek)", true), dev("{2}", "Headphones (USB)", false)];
+        assert_eq!(pick_between(&now_speakers, "Speakers", "Headphones").unwrap().name, "Headphones (USB)");
+        let now_headphones = [dev("{1}", "Speakers (Realtek)", false), dev("{2}", "Headphones (USB)", true)];
+        assert_eq!(pick_between(&now_headphones, "Speakers", "Headphones").unwrap().name, "Speakers (Realtek)");
+        // a third device is the default: the first one comes
+        let other = [dev("{1}", "Speakers (Realtek)", false), dev("{2}", "Headphones (USB)", false), dev("{3}", "Monitor", true)];
+        assert_eq!(pick_between(&other, "Speakers", "Headphones").unwrap().name, "Speakers (Realtek)");
+        assert!(pick_between(&now_speakers, "Speakers", "TV").is_err());
+    }
 
     #[test]
     fn a_device_is_found_by_id_name_or_part_of_the_name() {

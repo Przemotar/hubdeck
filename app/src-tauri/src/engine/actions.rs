@@ -875,6 +875,8 @@ pub fn catalog() -> Vec<ActionDef> {
             params: vec![
                 p("kind", "Kind", ParamKind::Select { options: options(&[("output", "Speakers / headphones"), ("input", "Microphone")]) }, json!("output")),
                 ParamDef { help: Some("Leave empty to go to the next device on each press."), ..p("device", "Device", ParamKind::AudioDevice, json!("")) },
+                // one key for speakers and headphones (ROADMAP Next, 2026-11-01)
+                ParamDef { help: Some("A second device: each press switches between the two."), ..p("with", "Switch with", ParamKind::AudioDevice, json!("")) },
             ],
             icon: "headphones",
         },

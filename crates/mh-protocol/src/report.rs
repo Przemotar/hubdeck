@@ -202,6 +202,34 @@ pub fn query_id(kind: ModuleKind, query: Query) -> Option<u8> {
     })
 }
 
+/// Every feature report a module check reads, by name (Settings > Diagnostics). Only reads: the M0
+/// family (base, faders, knobs, rollers) answers any of them at any time; keys and dial only the
+/// ones verified on hardware, and only in software mode (`Module::query_raw` refuses otherwise:
+/// a read in hardware mode wedges them, PROTOCOL.md). The serial number is left out on purpose: a
+/// report the user pastes in public needs none.
+pub fn diagnostic_reads(kind: ModuleKind) -> &'static [(&'static str, u8)] {
+    use ModuleKind::*;
+    match kind {
+        Base => {
+            &[("firmware", 0x2E), ("firmware parts", 0x2D), ("firmware parts 2", 0x2F), ("device info", 0x31), ("brightness", 0x32), ("LED mode", 0x34), ("orientation", 0x35), ("stored config", 0x36)]
+        }
+        Faders => &[
+            ("firmware", 0x2E),
+            ("firmware parts", 0x2D),
+            ("firmware parts 2", 0x2F),
+            ("device info", 0x31),
+            ("brightness", 0x32),
+            ("fader values", 0x33),
+            ("LED mode", 0x34),
+            ("stored config", 0x36),
+        ],
+        Knobs => &[("firmware", 0x2E), ("firmware parts", 0x2D), ("firmware parts 2", 0x2F), ("device info", 0x31), ("brightness", 0x32), ("LED mode", 0x34), ("stored config", 0x36)],
+        Rollers => &[("firmware", 0x2E), ("firmware parts", 0x2D), ("firmware parts 2", 0x2F), ("device info", 0x31), ("stored config", 0x36)],
+        Keys => &[("firmware", 0x38), ("screen info", 0x3B), ("backlight", 0x3C)],
+        Dial => &[("firmware", 0x48), ("screen info", 0x4B), ("backlight", 0x4C)],
+    }
+}
+
 /// Payload of a feature report answer: `[id, len, payload...]` -> `payload`.
 pub fn feature_payload(answer: &[u8]) -> &[u8] {
     if answer.len() < 2 {
@@ -250,6 +278,18 @@ pub fn parse_screen_size(answer: &[u8]) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn module_checks_read_only_known_reports_and_never_the_serial() {
+        for kind in ModuleKind::ALL {
+            let reads = diagnostic_reads(kind);
+            assert!(!reads.is_empty(), "{kind:?}");
+            assert!(reads.iter().all(|(_, id)| Some(*id) != query_id(kind, Query::SerialNumber)), "{kind:?} reads its serial");
+        }
+        // keys and dial: only reads verified on their hardware (PROTOCOL.md)
+        assert_eq!(diagnostic_reads(ModuleKind::Keys).iter().map(|r| r.1).collect::<Vec<_>>(), [0x38, 0x3B, 0x3C]);
+        assert_eq!(diagnostic_reads(ModuleKind::Dial).iter().map(|r| r.1).collect::<Vec<_>>(), [0x48, 0x4B, 0x4C]);
+    }
 
     #[test]
     fn software_mode_bytes() {

@@ -396,7 +396,11 @@ help of AI; it does not chat or answer by itself.
 - Something does not work: **Feedback > Report a problem** in HubDeck's top bar opens
   [the form](https://github.com/Przemotar/hubdeck/issues/new?template=bug.yml) with your version,
   system, modules and the last errors filled in (addresses, keys and paths left out); you see it
-  all before sending. After a crash, the window offers **Report this crash** the same way.
+  all before sending. After a crash, the window offers **Report this crash** the same way. No
+  GitHub account: **Feedback > Report on Discord** copies the same and opens the Discord's #help.
+- A module acting up (a light stuck on one colour, a key or fader that does nothing):
+  **Settings > Diagnostics** tests its lights or screen and controls, shows what it reports and
+  whether it dropped off, and copies a report without serial numbers.
 - An idea: [suggest a feature](https://github.com/Przemotar/hubdeck/issues/new?template=feature.yml).
 - Questions, setups, profiles: [Discussions](https://github.com/Przemotar/hubdeck/discussions) or
   the [Discord](https://przemotar.github.io/hubdeck/discord).

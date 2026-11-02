@@ -127,6 +127,36 @@ for HubDeck's rainbow on knobs and faders now (`GET /api/leds`: 10 colors a seco
 looking at the deck that evening: "Te podsiweltnei dobrze dziala" (not a per-module check). Likely,
 not proven: the faders' firmware takes about 25 LED reports a second, not 50; HubDeck stays under 30.
 
+### Two modules of the same kind (2026-11-01)
+
+- The base takes the 15-key module in more than one slot (the owner tried it: his keys came back in
+  6-2-4, then 6-2-3). A user with two keys modules and two bases saw HubDeck give both the same pictures
+  and actions (issue #7, 2026-10-20): each module is its own HID device with its own serial, and every
+  module of a kind got the same reports.
+- HubDeck 0.2.1 gives a second knobs, faders or rollers module its own control numbers, remembered by
+  serial (`deck.rs` `assign_groups`); keys and the dial still mirror. Not tried on hardware with two
+  modules of one kind (one of each here); whether the base's USB carries two keys panels at full rate
+  is unknown (the PC sends ~2.1 MB/s to one).
+
+### Every M0 read on the owner's deck (2026-11-02, Settings > Diagnostics, `GET /api/modules/<id>/check`)
+
+Read while HubDeck ran, through its own handle; each answered in 45-48 ms (keys 31 ms), nothing wedged
+(keys, faders, rollers, base kept working). Payloads after `[id, len]`:
+
+| Read | Base (02.00.04.00) | Faders (01.00.05.00) | Rollers (01.00.03.01) | Reading |
+|---|---|---|---|---|
+| `0x2E` firmware | `12 54 4c 2f` + "02.00.04.00" | `54 e2 61 51` + "01.00.05.00" | `28 35 3e 25` + "01.00.03.01" | 4 bytes that differ per module (a checksum?), then the version |
+| `0x2D` firmware part | `90 ff ea ec` + "02.00.00.00" | `b1 b6 1e e3` + "01.00.00.00" | `b1 b6 1e e3` + "01.00.00.00" | likely the boot loader: the same bytes on faders and rollers |
+| `0x2F` firmware part 2 | the same as `0x2E` | the same as `0x2E` | the same as `0x2E` | |
+| `0x31` device info | 20 zero bytes | 20 zero bytes | 20 zero bytes | nothing in it on this firmware |
+| `0x32` brightness | `64` | `64 64 64 64 64` | (not read) | one per light: 100 each |
+| `0x33` fader values | | `27 3a 35 34 2e` (39 58 53 52 46) | | where the faders stood |
+| `0x34` LED mode | `09` | `09 09 09 09 09` | | one per light; **the saved mode, not the shown one**: the deck showed static orange (mode 1) at that moment |
+| `0x35` orientation | `35 00 01` (payload length 0, value after it) = horizontal | | | |
+| `0x36` stored config | `2b 67 7c 91 b0 00 00 00` twice | `a4 97 c1 a9 e4 00 00 00` twice | `15 32 c5 08 94 00 00 00` twice | 5 bytes and 3 zeros, repeated; differs per module; meaning unknown (not colours) |
+
+A module whose light ignores every colour (a faders user, 2026-11-02) can be compared against these.
+
 ## Blocked in the driver (`_FORBIDDEN` in `prototype/masterhub/driver.py`)
 
 Firmware update, serial number change, factory data write, recovery tests and factory reset. Firmware is updated only with the official app.

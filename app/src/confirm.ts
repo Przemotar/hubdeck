@@ -19,6 +19,8 @@ export interface Question {
   cancel?: string;
   /** The answer deletes or removes something: the OK button is red. */
   danger?: boolean;
+  /** Only something to read (an error): one button, no Cancel. */
+  notice?: boolean;
 }
 type Asked = Question & { answer: (yes: boolean) => void };
 
@@ -45,6 +47,12 @@ export function askInWindow(q: Question): Promise<boolean> {
 /** A question as one sentence, with a red Delete. */
 export function confirmed(message: string, ok: string = t("confirm.delete")): Promise<boolean> {
   return askInWindow({ title: message, ok, danger: true });
+}
+
+/** Something went wrong: said in the window, in its look, with one OK (not `window.alert`, a system
+ * box outside HubDeck's look; ROADMAP Now, 2026-11-01). */
+export function told(title: string, body?: string): Promise<void> {
+  return askInWindow({ title, body, ok: t("confirm.gotIt"), notice: true }).then(() => undefined);
 }
 
 /** The question shown now, for `ConfirmHost`. */

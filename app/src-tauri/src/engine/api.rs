@@ -89,6 +89,18 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
     let result: Answer = match (method, parts.as_slice()) {
         ("GET", ["catalog"]) => Ok(catalog()),
         ("GET", ["modules"]) => Ok(modules(app)),
+        // a module check (Settings > Diagnostics): every known read and what happened to it since
+        // the start; `id` is `kind:serial` as the window knows it (reads only)
+        ("GET", ["modules", id, "check"]) => {
+            let id = id.replace("%3A", ":").replace("%3a", ":");
+            match app.state::<Deck>().module(&id) {
+                Some(m) => {
+                    let (notes, counts) = crate::module_check::notes_of(&id);
+                    Ok(json!({"module": id, "reads": crate::module_check::read_all(&m), "notes": notes, "counts": counts.into_iter().map(|(k, n)| json!({"kind": k, "count": n})).collect::<Vec<_>>()}))
+                }
+                None => Err(not_found(format!("{id} is not connected"))),
+            }
+        }
         ("GET", ["apps"]) => Ok(apps()),
         ("GET", ["games"]) => Ok(games()),
         ("GET", ["spotify", "playlists"]) => Ok(match super::spotify::playlists(std::time::Duration::from_secs(6)) {

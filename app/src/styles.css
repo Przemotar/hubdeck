@@ -6033,3 +6033,314 @@ button.lib-foot:focus-visible span {
 .dl-icpick button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--bg2); color: var(--tx); display: grid; place-items: center; cursor: pointer; }
 .dl-icpick button.is-on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 30%, var(--bg2)); }
 @media (max-width: 1100px) { .dl-grid { grid-template-columns: minmax(0, 1fr); } .dl-elems { grid-template-columns: minmax(0, 1fr); } .dl-rail { position: static; flex-direction: row; flex-wrap: wrap; } }
+
+/* Settings > Diagnostics: check one module (owner, 2026-11-02) */
+.diag-body {
+  display: grid;
+  grid-template-columns: minmax(170px, 210px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .diag-body {
+    grid-template-columns: 1fr;
+  }
+}
+.diag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diag-mod {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+.diag-mod:hover {
+  background: var(--hov);
+}
+.diag-mod.is-active {
+  background: var(--accbg);
+  border-color: var(--accln);
+}
+.diag-thumb {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+.diag-thumb > * {
+  max-width: 34px;
+  max-height: 34px;
+}
+.diag-mod-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.diag-mod-text b {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.diag-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--tx3);
+}
+.diag-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+.diag-state.is-warn::before {
+  background: var(--warn);
+}
+.diag-state.is-bad {
+  color: var(--err);
+}
+.diag-state.is-bad::before {
+  background: var(--err);
+}
+.diag-check {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.diag-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.diag-head b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.diag-meta {
+  font-size: 12px;
+  color: var(--tx3);
+  font-family: var(--mono);
+}
+.diag-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--ln);
+  border-radius: var(--r);
+  background: var(--bg2);
+}
+.diag-block h4 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.diag-block .help {
+  margin: 0;
+}
+.diag-alert {
+  border-color: var(--errln);
+}
+.diag-alert p {
+  margin: 0;
+  color: var(--errtx);
+}
+.diag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.diag-swatches {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+.diag-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.diag-swatch i {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--ln2);
+  transition: background 0.15s;
+}
+.diag-swatch.is-screen i {
+  width: 64px;
+  height: 36px;
+}
+.diag-swatch small {
+  font-size: 10.5px;
+  color: var(--tx3);
+}
+.diag-now {
+  align-self: center;
+  font-size: 12px;
+  color: var(--tx2);
+}
+.diag-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ln);
+}
+.diag-ask p {
+  margin: 6px 0 0;
+}
+.diag-marks {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.diag-marks .chip.is-on {
+  color: var(--acctx);
+  background: var(--acc);
+  border-color: var(--acc);
+}
+.diag-verdict {
+  margin: 0;
+  font-size: 12.5px;
+}
+.diag-verdict.is-ok {
+  color: var(--ok);
+}
+.diag-verdict.is-bad {
+  color: var(--warn);
+}
+.diag-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.diag-controls.is-keys {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+}
+.diag-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--tx3);
+  font-size: 12px;
+}
+.diag-controls.is-faders .diag-control {
+  height: 72px;
+  align-items: end;
+  padding-bottom: 4px;
+}
+.diag-control small,
+.diag-control em {
+  position: relative;
+  font-style: normal;
+}
+.diag-control em {
+  font-size: 11px;
+}
+.diag-control.is-seen {
+  color: var(--ok);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 55%, transparent);
+}
+.diag-level {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--acc) 30%, transparent);
+  transition: height 0.08s linear;
+}
+.diag-reads {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.diag-reads th,
+.diag-reads td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--ln);
+  text-align: left;
+  vertical-align: top;
+}
+.diag-reads th {
+  width: 34%;
+  font-weight: 500;
+  color: var(--tx2);
+}
+.diag-reads td {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.diag-reads td.diag-ms {
+  width: 64px;
+  color: var(--tx3);
+  text-align: right;
+  white-space: nowrap;
+}
+.diag-reads tr.is-error td {
+  color: var(--err);
+}
+.diag-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.diag-notes li {
+  padding: 2px 0;
+  color: var(--tx2);
+}
+.diag-notes li.is-problem {
+  color: var(--warn);
+}
+.diag-notes time {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--tx3);
+  margin-right: 6px;
+}
+/* the check needs the room of a table: wider than the other sections */
+.settings-content > .sec.diag {
+  max-width: 1080px;
+}
+.diag-controls.is-faders .diag-control {
+  flex-direction: column;
+  gap: 0;
+}
+/* the base has no module drawing: a plate with its edge light */
+.diag-base {
+  display: block;
+  width: 30px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--base);
+  box-shadow: inset 0 0 0 1px var(--ln2), inset 0 -3px 0 color-mix(in srgb, var(--acc) 70%, transparent);
+}

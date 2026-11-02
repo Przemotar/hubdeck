@@ -158,7 +158,10 @@ Fixed on 2026-10-18: HubDeck sent an empty `application.platformVersion`; .NET p
 `Version` and stopped at start (Windows Display Settings, exit code 0xe0434352; the cause is in
 Windows' Application log under ".NET Runtime"). It is now the system's version as Stream Deck gives
 it (`10.0.19045`). Measured at start on the test copy: Focused App Volume 83 % and Audio Mixer
-26 % of one core (not checked over time yet).
+26 % of one core (not checked over time yet). **Over time, 2026-11-01** (a test copy of 0.2.1, each
+plugin connected with its action on a key, CPU every 10 s for 3 minutes): System Information 0 % (25 MB;
+the 42-50 % of October is gone), Focused Application Volume 5-8 % (68 MB; the 83 % was its start only),
+Audio Mixer 5 % in the first 10 s then 0 % (71 MB).
 
 | Plugin | System | Result |
 |---|---|---|

@@ -50,7 +50,7 @@ chrono = "0.4.40"
 iana-time-zone = "0.1.65"
 sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
 nvml-wrapper = "0.13.0"
-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 sha2 = "0.11.0"
 keyring = { version = "3", features = ["windows-native", "apple-native"] }
 ureq = { version = "3.4.2", features = ["json"] }
@@ -61,6 +61,7 @@ rodio = "0.20"
 # its own .tar.gz code) and pulled in zip 4 with RUSTSEC-2026-0367..0369 (2026-10-17)
 tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]

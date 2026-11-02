@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.2
+
+- **Settings > Diagnostics: check a module yourself.** Pick a module and run its test: every light
+  (or the whole screen) shows red, green, blue and white and goes out, then each light comes on alone.
+  If one stays another colour while the module takes every command, it is the module's hardware, not
+  HubDeck. Below it: the controls light up as you move them, what the module reports (firmware and its
+  saved settings), and what happened to it in the last hour (disconnects, failed pictures). **Copy
+  report** or **Report on Discord** sends all of it, without serial numbers. Nothing is saved to the
+  module.
+- **Report on Discord** in Feedback: no GitHub account needed. Your version, system, modules and last
+  errors go to the clipboard; paste them in #help.
+- **A new version tells you it is out** with a notification (Settings > Updates).
+- **Errors show in HubDeck's own window**, not in a system message box.
+- **Home Assistant keys change the moment the light or switch does**: HubDeck now listens to Home
+  Assistant instead of asking every 2 seconds.
+- **Audio device: Switch with.** Give the key a second device and one press switches between them,
+  speakers and headphones for example.
+- The deck assistant no longer suggests keys for services you have not connected.
+- The music tuning in Lights shows only while the lights follow the music.
+
 ## 0.2.1
 
 - **Two modules of the same kind on one base** (#7): a second knobs, faders or rollers module gets

@@ -31,6 +31,7 @@ pub mod games;
 mod gestures;
 pub mod gpu;
 pub mod guard;
+pub mod ha_watch;
 pub mod homeassistant;
 pub(crate) mod hotkey;
 pub mod house;
@@ -1479,7 +1480,9 @@ fn picture_sender(screen: Screen) -> &'static PictureSender {
                 };
                 let Some((id, module, reports)) = next else { continue };
                 let started = Instant::now();
-                match module.send_all(&reports) {
+                // Settings > Diagnostics tests this module now: its test pictures stay
+                let result = if crate::module_check::held(&id) { Err(None) } else { module.send_all(&reports).map_err(Some) };
+                match result {
                     Ok(()) => {
                         let (n, us) = &PICTURES_SENT[i];
                         n.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1491,8 +1494,10 @@ fn picture_sender(screen: Screen) -> &'static PictureSender {
                         }
                         us.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
                     }
-                    Err(e) => {
+                    Err(None) => {}
+                    Err(Some(e)) => {
                         log::warn!("{name} {id}: {e}");
+                        crate::module_check::note(&id, "picture failed", &e);
                         picture_failed().lock().unwrap_or_else(|e| e.into_inner()).insert(id);
                     }
                 }
@@ -1617,8 +1622,15 @@ fn led_sender() -> &'static LedSender {
             let (mut since, mut sent, mut busy) = (Instant::now(), 0u32, Duration::ZERO);
             for (id, module, reports) in rx {
                 let started = Instant::now();
+                // Settings > Diagnostics tests this module now: its test colours stay (the engine
+                // sends everything again when the test ends)
+                if crate::module_check::held(&id) {
+                    done_with(&left, &id);
+                    continue;
+                }
                 if let Err(e) = module.send_all(&reports) {
                     log::warn!("leds {id}: {e}");
+                    crate::module_check::note(&id, "lights failed", &e);
                     failures.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
                 }
                 busy += started.elapsed();

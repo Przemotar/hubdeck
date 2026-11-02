@@ -322,6 +322,9 @@ async function soak() {
   }
   report("soak memory", slope <= LIMITS.growthMbPerMin && peak <= LIMITS.peakMb, `${rows[0].mb.toFixed(1)} -> ${rows.at(-1).mb.toFixed(1)} MB, growth ${slope.toFixed(2)} MB/min after the first minute (limit ${LIMITS.growthMbPerMin}), peak ${peak.toFixed(1)} MB (limit ${LIMITS.peakMb})`);
   report("soak CPU", cpuAvg <= LIMITS.cpuAvgPct, `average ${cpuAvg.toFixed(1)} %, peak ${cpuPeak.toFixed(1)} % of one core (limit ${LIMITS.cpuAvgPct} average); ${csv}`);
+  // one soak swings with the PC's own load (2026-11-01: the same build 14.3-22.8 %): over the limit,
+  // compare with the last release in turns before blaming the code
+  if (cpuAvg > LIMITS.cpuAvgPct) console.log("  over the limit: compare with the last release on this PC: powershell -File scripts/gate-ab.ps1 -Baseline <last> -Candidate <this>");
 }
 
 // --- 4. restarts ---------------------------------------------------------------------------

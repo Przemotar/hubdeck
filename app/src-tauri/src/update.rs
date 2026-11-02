@@ -148,15 +148,57 @@ pub async fn update_rollback(app: AppHandle, version: String) -> Result<(), Stri
 
 /// (updates set up in this build, "Check for updates at start").
 #[tauri::command]
-pub fn update_settings_get(app: AppHandle, engine: State<'_, Engine>) -> (bool, bool) {
-    (enabled(&app), engine.lock().store.settings.check_updates)
+pub fn update_settings_get(app: AppHandle, engine: State<'_, Engine>) -> (bool, bool, bool) {
+    let s = engine.lock();
+    (enabled(&app), s.store.settings.check_updates, s.store.settings.notify_updates)
 }
 
+/// Settings > Updates: look at start, and a notification when a new version is out.
 #[tauri::command]
-pub fn update_settings_set(engine: State<'_, Engine>, check_at_start: bool) -> Result<(), String> {
+pub fn update_settings_set(engine: State<'_, Engine>, check_at_start: Option<bool>, notify: Option<bool>) -> Result<(), String> {
     let mut s = engine.lock();
-    s.store.settings.check_updates = check_at_start;
+    if let Some(on) = check_at_start {
+        s.store.settings.check_updates = on;
+    }
+    if let Some(on) = notify {
+        s.store.settings.notify_updates = on;
+        log::info!("update notifications {}", if on { "on" } else { "off" });
+    }
     s.store.save_settings().map_err(|e| e.to_string())
+}
+
+/// Whether a version found deserves a notification: the switch is on and this version was not
+/// told yet (once a version, whatever the restarts and the checks every 6 hours).
+fn should_notify(on: bool, told: Option<&str>, found: &str) -> bool {
+    on && told != Some(found)
+}
+
+/// The system's notification for a new version (Windows' toast, macOS' banner). A click starts
+/// HubDeck again, and the running copy shows its window (the single-instance hand-over), where the
+/// update waits. Never in a test copy: it would come up on the owner's screen.
+fn notify_new_version(app: &AppHandle, version: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if crate::automation::get().is_some() {
+        return;
+    }
+    let polish = app.state::<Engine>().lock().store.settings.language == "pl";
+    let (title, body) = if polish {
+        (format!("HubDeck {version} jest gotowy"), "Otwórz HubDecka, żeby go zaktualizować.".to_string())
+    } else {
+        (format!("HubDeck {version} is ready"), "Open HubDeck to update.".to_string())
+    };
+    match app.notification().builder().title(title).body(body).show() {
+        Ok(()) => {
+            log::info!("update notification shown for {version}");
+            let engine = app.state::<Engine>();
+            let mut s = engine.lock();
+            s.store.settings.notified_version = Some(version.to_string());
+            if let Err(e) = s.store.save_settings() {
+                log::warn!("saving the notified version: {e}");
+            }
+        }
+        Err(e) => log::warn!("update notification: {e}"),
+    }
 }
 
 /// A newer version found by the last check, kept for the window and the tray: the window is
@@ -196,6 +238,13 @@ pub fn check_at_start(app: &AppHandle) {
                             let new = AVAILABLE.lock().unwrap_or_else(|e| e.into_inner()).replace(info.clone()).as_ref() != Some(&info);
                             if new {
                                 log::info!("HubDeck {} is available", info.version);
+                                let notify = {
+                                    let s = app.state::<Engine>().lock().store.settings.clone();
+                                    should_notify(s.notify_updates, s.notified_version.as_deref(), &info.version)
+                                };
+                                if notify {
+                                    notify_new_version(&app, &info.version);
+                                }
                                 let _ = app.emit(AVAILABLE_EVENT, info);
                                 crate::tray::refresh(&app);
                             }
@@ -213,6 +262,14 @@ pub fn check_at_start(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_version_is_told_once() {
+        assert!(should_notify(true, None, "0.2.2"));
+        assert!(!should_notify(true, Some("0.2.2"), "0.2.2"), "not again after a restart or the next check");
+        assert!(should_notify(true, Some("0.2.2"), "0.2.3"));
+        assert!(!should_notify(false, None, "0.2.2"), "the switch off");
+    }
 
     #[test]
     fn the_previous_release_is_the_newest_older_published_one() {

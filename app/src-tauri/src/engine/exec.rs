@@ -492,10 +492,12 @@ impl Executor {
 
             ("core.audioDevice", InputEvent::Press(true) | InputEvent::Turn(_)) => {
                 let input_dev = param_str(p, "kind") == "input";
-                let name = match (input, param_str(p, "device").trim()) {
-                    (InputEvent::Turn(d), _) => audiodev::cycle(input_dev, d.signum() as i32)?,
-                    (_, "") => audiodev::cycle(input_dev, 1)?,
-                    (_, device) => audiodev::set_default(input_dev, device)?,
+                let name = match (input, param_str(p, "device").trim(), param_str(p, "with").trim()) {
+                    (InputEvent::Turn(d), _, _) => audiodev::cycle(input_dev, d.signum() as i32)?,
+                    (_, "", _) => audiodev::cycle(input_dev, 1)?,
+                    (_, device, "") => audiodev::set_default(input_dev, device)?,
+                    // two devices: the one that is not the default now
+                    (_, device, with) => audiodev::switch_between(input_dev, device, with)?,
                 };
                 out.feedback = Some(Feedback { value: None, caption: name });
             }

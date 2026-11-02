@@ -33,9 +33,11 @@ export function ConfirmHost() {
           </ul>
         )}
         <div className="confirm-foot">
-          <button type="button" className="tool ghost" onClick={() => q.answer(false)}>
-            {q.cancel ?? t("confirm.cancel")}
-          </button>
+          {!q.notice && (
+            <button type="button" className="tool ghost" onClick={() => q.answer(false)}>
+              {q.cancel ?? t("confirm.cancel")}
+            </button>
+          )}
           <button type="button" ref={okRef} className={`tool${q.danger ? " is-danger" : " primary"}`} onClick={() => q.answer(true)}>
             {q.ok}
           </button>

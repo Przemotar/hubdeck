@@ -588,7 +588,7 @@ function ParamField({
       field = <NamedField id={id} value={str} onChange={onChange} what={def.what} arg={def.what === "obs.filter" ? String(siblings?.source ?? "") : undefined} />;
       break;
     case "audioDevice":
-      field = <AudioDeviceField id={id} value={str} onChange={onChange} empty={def.key === "device" ? undefined : t("audio.keep")} />;
+      field = <AudioDeviceField id={id} value={str} onChange={onChange} empty={def.key === "device" ? undefined : def.key === "with" ? t("audio.noSecond") : t("audio.keep")} />;
       break;
     case "midiPort":
       field = <MidiPortField id={id} value={str} onChange={onChange} />;

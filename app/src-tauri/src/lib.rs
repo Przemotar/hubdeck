@@ -4,6 +4,7 @@ mod automation;
 mod deck;
 mod engine;
 mod guard;
+mod module_check;
 mod output;
 mod placements;
 mod system;
@@ -277,6 +278,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().arg(HIDDEN_ARG).build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(Deck::default())
         .setup(move |app| {
             let _ = engine::exec::APP.set(app.handle().clone());
@@ -375,6 +377,9 @@ pub fn run() {
             output::draw_jpeg,
             output::fill_screen,
             output::set_leds,
+            module_check::diag_read,
+            module_check::diag_hold,
+            module_check::diag_notes,
             engine::commands::engine_state,
             engine::commands::engine_redraw,
             engine::commands::timer_stop,
