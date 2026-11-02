@@ -1308,7 +1308,8 @@ mod tests {
         let idea = Idea { title: "Two knobs".into(), deck: Some(json!({"knobs": vec![knob.clone(); 14], "keys": vec![knob; 16]})), ..Idea::default() };
         let p = sketch_profile(&idea).0.expect("a draft");
         assert!(p.controls.contains_key("knobs.5") && p.controls.contains_key("knobs.11"), "a second (and more) knobs module's controls");
-        assert!(!p.controls.contains_key("knobs.12") && !p.controls.contains_key("keys.15"), "up to four knobs modules, one set of keys");
+        assert!(!p.controls.contains_key("knobs.12"), "up to four knobs modules");
+        assert!(p.controls.contains_key("keys.15"), "a sixteenth key goes to a second keys module (2026-11-02)");
     }
 
     #[test]

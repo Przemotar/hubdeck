@@ -182,7 +182,7 @@ function Preview({ profile, page, module, turn, onPress }: { profile?: string; p
   );
 }
 
-export function DeckLook({ view, keysModule, keysTurn = 0, onClose }: { view: EngineView; keysModule?: string; keysTurn?: number; onClose: () => void }) {
+export function DeckLook({ view, keysModule, keysCount = 15, keysTurn = 0, onClose }: { view: EngineView; keysModule?: string; keysCount?: number; keysTurn?: number; onClose: () => void }) {
   useLanguage();
   const profile = view.profile;
   const page = view.state?.page ?? null;
@@ -339,8 +339,8 @@ export function DeckLook({ view, keysModule, keysTurn = 0, onClose }: { view: En
   };
 
   // the key style of the page shown: worn by the keys themselves (the profile changes at once;
-  // Discard puts the keys back)
-  const ids = profile ? Array.from({ length: 15 }, (_, i) => controlId("keys", i, page)).filter((id) => profile.controls[id]) : [];
+  // Discard puts the keys back); a second keys module's keys too (Key 16-30, 2026-11-02)
+  const ids = profile ? Array.from({ length: keysCount }, (_, i) => controlId("keys", i, page)).filter((id) => profile.controls[id]) : [];
   const looks = ids.map((id) => profile?.controls[id].look ?? {});
   const skin = looks.length && looks.every((l) => l.skin === looks[0].skin) ? (looks[0].skin ?? null) : null;
   const wear = (s: Skin | undefined) => {

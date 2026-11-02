@@ -38,6 +38,20 @@ const quit = async () => {
   if (running()) throw new Error("HubDeck did not quit within 15 s");
 };
 
+// the modules attached now (the API's kinds): the same must come back after the update (2026-11-02:
+// a fixed keys, dial, base failed on a day the dial was not attached)
+const before = await (async () => {
+  try {
+    const token = fs.readFileSync(path.join(data, "api-token"), "utf8").trim();
+    const port = fs.readFileSync(path.join(data, "api-http-port"), "utf8").trim();
+    const r = await fetch(`http://127.0.0.1:${port}/api/modules`, { headers: { Authorization: `Bearer ${token}` } });
+    return (await r.json()).attached ?? [];
+  } catch {
+    return [];
+  }
+})();
+const expected = before.length ? before : ["keys", "dial", "base"];
+
 // 1. the older release, installed
 await quit();
 execFileSync(setup, ["/S"]);
@@ -89,7 +103,7 @@ await sleep(12000);
 const real = read(realLog).slice(from);
 check("the installed app is now the newest", starting(want).test(real), real.match(/HubDeck [\d.]+ starting/)?.[0] ?? "no start line");
 const modules = [...new Set([...real.matchAll(/connected (keys|dial|knobs|rollers|base|faders) /g)].map((m) => m[1]))];
-check("every module of the deck back", ["keys", "dial", "base"].every((m) => modules.includes(m)), modules.join(", "));
+check("every module of the deck back", expected.every((m) => modules.includes(m)), `${modules.join(", ")}; before: ${expected.join(", ")}`);
 const errors = real.split("\n").filter((l) => l.includes("[ERROR]"));
 check("no errors in its log", errors.length === 0, errors[0]?.slice(0, 160) ?? "");
 check("nothing came up on the owner's screen", ...screenClean(copy));

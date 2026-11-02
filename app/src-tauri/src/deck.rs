@@ -30,20 +30,22 @@ pub struct ModuleInfo {
     pub slot: Option<String>,
     #[serde(skip)]
     pub port_path: Option<Vec<u8>>,
-    /// The number of its first control: 0, or for a second module of the same kind of knobs,
-    /// faders or rollers the numbers after (`knobs.3` .. `knobs.5`). Each module keeps its numbers
+    /// The number of its first control: 0, or for a second module of the same kind the numbers
+    /// after (`knobs.3` .. `knobs.5`, `keys.15` .. `keys.29`, `dial.1`). Each module keeps its numbers
     /// (remembered by serial number in `module-numbers.json`), so taking one off never hands its
     /// actions to another (owner, 2026-11-01: "co jak ktoś wepnie modul nr 1, a potem taki sam modul
-    /// nr 2, a potem ten nr 1 odepnie?"). A second keys module or dial shows the same as the first (0).
+    /// nr 2, a potem ten nr 1 odepnie?"); every kind works this way since 2026-11-02 (owner: "dodać
+    /// te obsługę wielu modułów tego samego typu dla każdego z modułów").
     pub first: u16,
 }
 
-/// Kinds whose second module gets controls of its own (keys and the dial mirror the first).
-const OWN_CONTROLS: [ModuleKind; 3] = [ModuleKind::Knobs, ModuleKind::Faders, ModuleKind::Rollers];
+/// Kinds whose second module gets controls of its own: every kind with controls (the base has none).
+/// The living deck's scene and the screensaver are shared by keys modules; their keys are not.
+const OWN_CONTROLS: [ModuleKind; 5] = [ModuleKind::Keys, ModuleKind::Knobs, ModuleKind::Faders, ModuleKind::Rollers, ModuleKind::Dial];
 
 /// The group of every attached module (by id; its first control is `group * control_count`): a
 /// module keeps the group it had (`remembered`) unless an attached one took it first; a new one
-/// gets the lowest group free. Keys, the dial and the base are always 0. Modules are taken in
+/// gets the lowest group free. The base is always 0. Modules are taken in
 /// the order of their port paths, so the result does not depend on the order they came in.
 fn assign_groups<'a>(modules: impl Iterator<Item = &'a ModuleInfo>, remembered: &BTreeMap<String, u16>) -> BTreeMap<String, u16> {
     let mut by_kind: BTreeMap<&'static str, Vec<&ModuleInfo>> = BTreeMap::new();
@@ -90,6 +92,11 @@ fn numbered(ui: UiEvent, first: u16) -> UiEvent {
         UiEvent::KnobDown { module, index } => UiEvent::KnobDown { module, index: at(index) },
         UiEvent::KnobUp { module, index } => UiEvent::KnobUp { module, index: at(index) },
         UiEvent::Roller { module, index, delta } => UiEvent::Roller { module, index: at(index), delta },
+        UiEvent::KeyDown { module, index } => UiEvent::KeyDown { module, index: at(index) },
+        UiEvent::KeyUp { module, index } => UiEvent::KeyUp { module, index: at(index) },
+        UiEvent::Dial { module, index, delta } => UiEvent::Dial { module, index: at(index), delta },
+        UiEvent::DialDown { module, index } => UiEvent::DialDown { module, index: at(index) },
+        UiEvent::DialUp { module, index } => UiEvent::DialUp { module, index: at(index) },
         other => other,
     }
 }
@@ -135,17 +142,60 @@ pub fn base_turn(orientation: Option<&str>, turn_override: Option<i32>) -> i32 {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum UiEvent {
-    Snapshot { deck: DeckSnapshot },
-    KeyDown { module: String, index: u8 },
-    KeyUp { module: String, index: u8 },
-    Fader { module: String, index: u8, value: u8 },
-    Knob { module: String, index: u8, delta: i8 },
-    KnobDown { module: String, index: u8 },
-    KnobUp { module: String, index: u8 },
-    Roller { module: String, index: u8, delta: i8 },
-    Dial { module: String, delta: i8 },
-    DialDown { module: String },
-    DialUp { module: String },
+    Snapshot {
+        deck: DeckSnapshot,
+    },
+    KeyDown {
+        module: String,
+        index: u8,
+    },
+    KeyUp {
+        module: String,
+        index: u8,
+    },
+    Fader {
+        module: String,
+        index: u8,
+        value: u8,
+    },
+    Knob {
+        module: String,
+        index: u8,
+        delta: i8,
+    },
+    KnobDown {
+        module: String,
+        index: u8,
+    },
+    KnobUp {
+        module: String,
+        index: u8,
+    },
+    Roller {
+        module: String,
+        index: u8,
+        delta: i8,
+    },
+    /// `index` 0 is the first dial (`dial`), 1 a second one (`dial.1`).
+    Dial {
+        module: String,
+        index: u8,
+        delta: i8,
+    },
+    DialDown {
+        module: String,
+        index: u8,
+    },
+    DialUp {
+        module: String,
+        index: u8,
+    },
+}
+
+/// The control id of dial `index`: the first is `dial` (every profile made before a second dial
+/// was possible names it so), a second `dial.1`.
+pub fn dial_id(index: u8) -> String {
+    if index == 0 { "dial".into() } else { format!("dial.{index}") }
 }
 
 /// UI event -> (control id, engine input), e.g. ("keys.4", Press(true)).
@@ -158,9 +208,9 @@ fn engine_input(ev: &UiEvent) -> Option<(String, InputEvent)> {
         UiEvent::KnobDown { index, .. } => (format!("knobs.{index}"), InputEvent::Press(true)),
         UiEvent::KnobUp { index, .. } => (format!("knobs.{index}"), InputEvent::Press(false)),
         UiEvent::Roller { index, delta, .. } => (format!("rollers.{index}"), InputEvent::Turn(*delta)),
-        UiEvent::Dial { delta, .. } => ("dial".into(), InputEvent::Turn(*delta)),
-        UiEvent::DialDown { .. } => ("dial".into(), InputEvent::Press(true)),
-        UiEvent::DialUp { .. } => ("dial".into(), InputEvent::Press(false)),
+        UiEvent::Dial { index, delta, .. } => (dial_id(*index), InputEvent::Turn(*delta)),
+        UiEvent::DialDown { index, .. } => (dial_id(*index), InputEvent::Press(true)),
+        UiEvent::DialUp { index, .. } => (dial_id(*index), InputEvent::Press(false)),
         UiEvent::Snapshot { .. } => return None,
     })
 }
@@ -460,10 +510,10 @@ impl Deck {
         let events = match (kind, gesture) {
             ("keys", "press") => vec![UiEvent::KeyDown { module: module.clone(), index }, UiEvent::KeyUp { module, index }],
             ("knobs", "press") => vec![UiEvent::KnobDown { module: module.clone(), index }, UiEvent::KnobUp { module, index }],
-            ("dial", "press") => vec![UiEvent::DialDown { module: module.clone() }, UiEvent::DialUp { module }],
+            ("dial", "press") => vec![UiEvent::DialDown { module: module.clone(), index }, UiEvent::DialUp { module, index }],
             ("knobs", "turn") => vec![UiEvent::Knob { module, index, delta }],
             ("rollers", "turn") => vec![UiEvent::Roller { module, index, delta }],
-            ("dial", "turn") => vec![UiEvent::Dial { module, delta }],
+            ("dial", "turn") => vec![UiEvent::Dial { module, index, delta }],
             ("faders", "slide") => vec![UiEvent::Fader { module, index, value: value.clamp(0, 100) as u8 }],
             _ => return Err(format!("{kind} cannot {gesture}")),
         };
@@ -565,18 +615,25 @@ impl Deck {
                 Event::KnobDown { module, index } => UiEvent::KnobDown { module: module_key(&module), index },
                 Event::KnobUp { module, index } => UiEvent::KnobUp { module: module_key(&module), index },
                 Event::Roller { module, index, delta } => UiEvent::Roller { module: module_key(&module), index, delta },
-                Event::Dial { module, delta } => UiEvent::Dial { module: module_key(&module), delta },
-                Event::DialDown { module } => UiEvent::DialDown { module: module_key(&module) },
-                Event::DialUp { module } => UiEvent::DialUp { module: module_key(&module) },
+                Event::Dial { module, delta } => UiEvent::Dial { module: module_key(&module), index: 0, delta },
+                Event::DialDown { module } => UiEvent::DialDown { module: module_key(&module), index: 0 },
+                Event::DialUp { module } => UiEvent::DialUp { module: module_key(&module), index: 0 },
             };
-            // a second knobs, faders or rollers module: its controls numbered after the first's
+            // a second module of a kind: its controls numbered after the first's
             let ui = {
                 let inner = self.lock();
                 let module = match &ui {
-                    UiEvent::Fader { module, .. } | UiEvent::Knob { module, .. } | UiEvent::KnobDown { module, .. } | UiEvent::KnobUp { module, .. } | UiEvent::Roller { module, .. } => {
-                        Some(module.clone())
-                    }
-                    _ => None,
+                    UiEvent::Fader { module, .. }
+                    | UiEvent::Knob { module, .. }
+                    | UiEvent::KnobDown { module, .. }
+                    | UiEvent::KnobUp { module, .. }
+                    | UiEvent::Roller { module, .. }
+                    | UiEvent::KeyDown { module, .. }
+                    | UiEvent::KeyUp { module, .. }
+                    | UiEvent::Dial { module, .. }
+                    | UiEvent::DialDown { module, .. }
+                    | UiEvent::DialUp { module, .. } => Some(module.clone()),
+                    UiEvent::Snapshot { .. } => None,
                 };
                 let first = module.map_or(0, |m| inner.first(&m));
                 numbered(ui, first)
@@ -654,11 +711,15 @@ mod tests {
         // knobs.0 .. knobs.2 still work for someone who owns one
         let three = module(ModuleKind::Knobs, "C", &[1, 4, 3]);
         assert_eq!(assign_groups([&three].into_iter(), &remembered)["knobs:C"], 0);
-        // keys and the dial mirror: always 0
+        // keys and the dial too (2026-11-02): a second keys module is keys.15 .. keys.29, a second dial dial.1
         let k1 = module(ModuleKind::Keys, "K1", &[2, 3]);
         let k2 = module(ModuleKind::Keys, "K2", &[3, 3]);
         let g = assign_groups([&k1, &k2].into_iter(), &BTreeMap::new());
-        assert_eq!((g["keys:K1"], g["keys:K2"]), (0, 0));
+        assert_eq!((g["keys:K1"], g["keys:K2"]), (0, 1));
+        assert_eq!(first_of("keys", 1), 15);
+        assert_eq!(first_of("dial", 1), 1);
+        let base = module(ModuleKind::Base, "B", &[1]);
+        assert_eq!(assign_groups([&base].into_iter(), &BTreeMap::new())["base:B"], 0);
         assert_eq!(first_of("faders", 1), 5);
         assert_eq!(first_of("rollers", 2), 4);
     }
@@ -668,7 +729,11 @@ mod tests {
         let ui = numbered(UiEvent::Knob { module: "knobs:B".into(), index: 1, delta: 1 }, 3);
         assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("knobs.4"));
         let ui = numbered(UiEvent::KeyDown { module: "keys:K2".into(), index: 4 }, 15);
-        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("keys.4"), "keys are never renumbered");
+        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("keys.19"), "a second keys module's keys go on from 15");
+        let ui = numbered(UiEvent::Dial { module: "dial:D2".into(), index: 0, delta: 1 }, 1);
+        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("dial.1"));
+        let ui = numbered(UiEvent::DialDown { module: "dial:D1".into(), index: 0 }, 0);
+        assert_eq!(engine_input(&ui).map(|(c, _)| c).as_deref(), Some("dial"), "the first dial keeps its old name");
     }
 
     use super::*;

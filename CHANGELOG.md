@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.3
+
+- **A second keys module and a second dial get controls of their own** (#7): the second keys module
+  is Key 16-30 and the second dial is Dial 2, set up in the window like the first. Each module keeps
+  its actions by its serial number, as knobs, faders and rollers already did in 0.2.1. The living
+  deck's preset and the screensaver stay on the first keys module; the second shows its keys, and
+  goes dark while the screensaver runs. Not tried yet on a deck with two keys modules or two dials:
+  tell us how it goes.
+- With two keys modules the living deck no longer runs twice as fast, and neither module misses
+  pictures (they shared one queue before).
+- Settings > Diagnostics asks you to mark a light even if only part of it did something else.
+
 ## 0.2.2
 
 - **Settings > Diagnostics: check a module yourself.** Pick a module and run its test: every light

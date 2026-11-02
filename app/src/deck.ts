@@ -40,8 +40,8 @@ export type DeckEvent =
   | { type: "keyDown" | "keyUp" | "knobDown" | "knobUp"; module: string; index: number }
   | { type: "fader"; module: string; index: number; value: number }
   | { type: "knob" | "roller"; module: string; index: number; delta: number }
-  | { type: "dial"; module: string; delta: number }
-  | { type: "dialDown" | "dialUp"; module: string };
+  | { type: "dial"; module: string; index?: number; delta: number }
+  | { type: "dialDown" | "dialUp"; module: string; index?: number };
 
 /** A control on the deck, e.g. `{ module: "keys:MH…", kind: "keys", index: 5 }`. */
 export interface ControlRef {
@@ -119,19 +119,19 @@ function reduce(state: LiveState, ev: DeckEvent): LiveState {
         lastTouched: touched(state, ev.module, "knobs", ev.index),
       };
     case "dial": {
-      const key = controlKey(ev.module, 0);
+      const key = controlKey(ev.module, ev.index ?? 0);
       return {
         ...state,
         counters: { ...state.counters, [key]: (state.counters[key] ?? 0) + ev.delta },
-        lastTouched: touched(state, ev.module, "dial", 0),
+        lastTouched: touched(state, ev.module, "dial", ev.index ?? 0),
       };
     }
     case "dialDown":
     case "dialUp":
       return {
         ...state,
-        pressedKeys: { ...state.pressedKeys, [controlKey(ev.module, 0)]: ev.type === "dialDown" },
-        lastTouched: touched(state, ev.module, "dial", 0),
+        pressedKeys: { ...state.pressedKeys, [controlKey(ev.module, ev.index ?? 0)]: ev.type === "dialDown" },
+        lastTouched: touched(state, ev.module, "dial", ev.index ?? 0),
       };
   }
 }

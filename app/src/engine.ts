@@ -1284,7 +1284,8 @@ export function pageReachable(profile: { pages?: { id: string }[]; controls: Rec
 }
 
 export function controlId(kind: ModuleKind, index: number, page: string | null = null, gesture: Gesture = "tap") {
-  const base = kind === "dial" ? "dial" : `${kind}.${index}`;
+  // the first dial is `dial`; a second one `dial.1` (deck.rs `dial_id`)
+  const base = kind === "dial" ? (index ? `dial.${index}` : "dial") : `${kind}.${index}`;
   const paged = page && kind === "keys" ? `${page}/${base}` : base;
   return gesture === "tap" ? paged : `${paged}:${gesture}`;
 }

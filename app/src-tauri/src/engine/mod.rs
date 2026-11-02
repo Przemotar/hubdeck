@@ -1339,6 +1339,10 @@ static PICTURES_BYTES: [std::sync::atomic::AtomicU64; 2] = [std::sync::atomic::A
 /// Key panel pictures sent since start (the Living deck panel's live rate, `deck_rate`).
 static KEYS_SENT_TOTAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Key panel pictures sent by keys module (group) since the last `Perf` note: with two keys modules
+/// the log says each one's rate, so a user with two can tell whether the base keeps up.
+static KEYS_SENT_BY_MODULE: [std::sync::atomic::AtomicU64; api::SAME_KIND_MODULES] = [const { std::sync::atomic::AtomicU64::new(0) }; api::SAME_KIND_MODULES];
+
 /// Where the key panel's frames spend their time since the window last asked ([`frame_cost`]):
 /// the frame cost debugger in the Living deck panel (owner, 2026-10-27: "debugger który pokaże
 /// mi ile każdy z efektów/laerów dodane ms na obliczenia i co sklada sie na te \"ciężkie
@@ -1459,16 +1463,28 @@ fn mirror_only() -> bool {
     crate::automation::get().is_some()
 }
 
-fn picture_sender(screen: Screen) -> &'static PictureSender {
-    static SENDERS: [std::sync::OnceLock<PictureSender>; 2] = [std::sync::OnceLock::new(), std::sync::OnceLock::new()];
+/// Senders made so far, by screen and group (a second keys module or dial is group 1).
+static SENDERS: [[std::sync::OnceLock<PictureSender>; api::SAME_KIND_MODULES]; 2] = [const { [const { std::sync::OnceLock::new() }; api::SAME_KIND_MODULES] }; 2];
+
+/// Pictures for one module go through a sender of its own: two keys modules shared one slot, so the
+/// picture of one replaced the other's waiting one and a module lost frames (found 2026-11-02, from
+/// the code, while giving a second keys module keys of its own).
+fn picture_sender(screen: Screen, group: usize) -> &'static PictureSender {
     let i = screen as usize;
-    SENDERS[i].get_or_init(|| {
+    let group = group.min(api::SAME_KIND_MODULES - 1);
+    SENDERS[i][group].get_or_init(|| {
         let slot: Arc<(Mutex<Option<Picture>>, std::sync::Condvar)> = Arc::new((Mutex::new(None), std::sync::Condvar::new()));
         let mine = slot.clone();
         let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let busy_flag = busy.clone();
-        let name = if i == 0 { "keys pictures" } else { "dial pictures" };
-        let spawned = std::thread::Builder::new().name(name.into()).spawn(move || {
+        let name = match (i, group) {
+            (0, 0) => "keys pictures".to_string(),
+            (0, g) => format!("keys {} pictures", g + 1),
+            (_, 0) => "dial pictures".to_string(),
+            (_, g) => format!("dial {} pictures", g + 1),
+        };
+        let thread_name = name.clone();
+        let spawned = std::thread::Builder::new().name(name.clone()).spawn(move || {
             let (lock, wake) = &*mine;
             loop {
                 let next = {
@@ -1490,6 +1506,7 @@ fn picture_sender(screen: Screen) -> &'static PictureSender {
                         PICTURES_BYTES[i].fetch_add(bytes as u64, std::sync::atomic::Ordering::Relaxed);
                         if i == 0 {
                             KEYS_SENT_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            KEYS_SENT_BY_MODULE[group].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             frame_cost_sent(started.elapsed());
                         }
                         us.fetch_add(started.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
@@ -1509,10 +1526,15 @@ fn picture_sender(screen: Screen) -> &'static PictureSender {
             }
         });
         if let Err(e) = spawned {
-            log::warn!("{name} thread: {e}");
+            log::warn!("{thread_name} thread: {e}");
         }
         PictureSender { slot, busy }
     })
+}
+
+/// A picture waits to go out to any module of `screen` (see [`PictureSender::waiting`]).
+fn pictures_waiting(screen: Screen) -> bool {
+    SENDERS[screen as usize].iter().filter_map(|s| s.get()).any(PictureSender::waiting)
 }
 
 /// What the deck really got while things moved: pictures of the key panel and the dial, LED
@@ -1550,11 +1572,17 @@ impl Perf {
         let keys_kb = PICTURES_BYTES[0].swap(0, std::sync::atomic::Ordering::Relaxed) as f32 / 1024.0 / keys_sent.max(1) as f32;
         PICTURES_BYTES[1].store(0, std::sync::atomic::Ordering::Relaxed);
         let (dial_sent, dial_us) = sent(1);
+        let by_module: Vec<u64> = KEYS_SENT_BY_MODULE.iter().map(|n| n.swap(0, std::sync::atomic::Ordering::Relaxed)).collect();
+        let by_module = if by_module.iter().skip(1).any(|n| *n > 0) {
+            format!(" (by keys module: {})", by_module.iter().map(|n| format!("{:.1}/s", *n as f32 / secs)).collect::<Vec<_>>().join(", "))
+        } else {
+            String::new()
+        };
         if self.panel + self.dial >= 30 {
             let ms = |d: Duration, n: u32| if n == 0 { 0.0 } else { d.as_secs_f32() * 1000.0 / n as f32 };
             let send_ms = |us: u64, n: u64| if n == 0 { 0.0 } else { us as f32 / 1000.0 / n as f32 };
             log::info!(
-                "deck: keys {:.1}/s sent of {:.1} drawn ({:.1} ms to draw, of it {:.1} painting; {:.1} to send, {:.0} KB each), dial {:.1}/s of {:.1} ({:.1} ms, {:.1}), LEDs {:.1}/s, engine busy {:.0} %",
+                "deck: keys {:.1}/s sent of {:.1} drawn ({:.1} ms to draw, of it {:.1} painting; {:.1} to send, {:.0} KB each){by_module}, dial {:.1}/s of {:.1} ({:.1} ms, {:.1}), LEDs {:.1}/s, engine busy {:.0} %",
                 keys_sent as f32 / secs,
                 self.panel as f32 / secs,
                 ms(self.panel_time, self.panel),
@@ -1985,7 +2013,7 @@ impl Worker {
             let pacing = self.keys_waiting || self.canvas.as_ref().is_some_and(|c| c.busy());
             let wait = if pacing {
                 let gap = (self.keys_moved + self.keys_every()).saturating_duration_since(now);
-                let poll = if picture_sender(Screen::Keys).waiting() { Duration::from_millis(4) } else { gap };
+                let poll = if pictures_waiting(Screen::Keys) { Duration::from_millis(4) } else { gap };
                 wait.min(gap.max(poll)).max(Duration::from_millis(2))
             } else {
                 wait
@@ -2243,8 +2271,10 @@ impl Worker {
         // a key shows at once that its press arrived (owner's pick 1a, 2026-10-16)
         if let (Some(index), InputEvent::Press(true)) = (control.strip_prefix("keys.").and_then(|i| i.parse::<usize>().ok()), event) {
             self.press_flash = Some((index, Instant::now()));
-            if let Some(c) = &mut self.canvas {
-                c.press(index);
+            // the scene is on the main keys module only: a second module's key does not reach it
+            let main_first = self.deck.snapshot().modules.iter().filter(|m| m.kind == "keys").map(|m| usize::from(m.first)).min().unwrap_or(0);
+            if let (Some(c), Some(key)) = (&mut self.canvas, index.checked_sub(main_first).filter(|k| *k < 15)) {
+                c.press(key);
             }
             self.redraw_keys();
         }
@@ -2849,20 +2879,30 @@ impl Worker {
         };
         // what keys' rules and label values read, once for this drawing (the lock is free here)
         let ruled = self.rules_now();
+        // the keys module with the lowest numbers is the main one: the living deck's preset and the
+        // screensaver show there, and the window mirrors it live; a second keys module shows its own
+        // keys without the scene, and goes dark while the screensaver runs (owner, 2026-11-02: "ten
+        // drugi panel zostaje jako dodatkowy ale bez presetu")
+        let mirror_first = snapshot.modules.iter().filter(|m| m.kind == "keys").map(|m| usize::from(m.first)).min().unwrap_or(0);
         for m in snapshot.modules.iter().filter(|m| m.kind == "keys") {
             // a test copy's virtual keys have no module: their picture is drawn for the window only
             let module = self.deck.module(&m.id);
             if module.is_none() && !mirror_only() {
                 continue;
             }
+            // a second keys module shows keys.15 .. keys.29 (owner, 2026-11-02); its pictures go
+            // through a sender of its own
+            let first = usize::from(m.first);
+            let keys_group = first / 15;
+            let main_keys = first == mirror_first;
             let rotation = self.content_rotation(m.kind, m.slot.as_deref(), snapshot.turn, &user);
             let mut looks: Vec<Look> = (0..15)
                 .map(|i| {
                     let mut look = profile
                         .as_ref()
-                        .and_then(|p| p.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))))
+                        .and_then(|p| p.controls.get(&control_id(page.as_deref(), &format!("keys.{}", first + i))))
                         .map(|b| {
-                            let id = control_id(page.as_deref(), &format!("keys.{i}"));
+                            let id = control_id(page.as_deref(), &format!("keys.{}", first + i));
                             let state = self
                                 .plugin_looks
                                 .get(&id)
@@ -2922,8 +2962,8 @@ impl Worker {
                     look
                 })
                 .collect();
-            // a question: its options on the first keys, the other keys dark
-            if let Some(prompt) = self.lock().prompt.clone().filter(Prompt::waiting) {
+            // a question: its options on the first keys, the other keys dark (on the first keys module)
+            if let Some(prompt) = self.lock().prompt.clone().filter(|p| first == 0 && p.waiting()) {
                 looks = (0..15)
                     .map(|i| match prompt.options.get(i) {
                         Some(option) => Look { label: Some(option.clone()), bg: Some("#2b2540".into()), fg: Some("#ffffff".into()), ..Look::default() },
@@ -2940,19 +2980,20 @@ impl Worker {
             }
             // a press just arrived, and the keys whose last press failed
             if let Some((i, _)) = self.press_flash
-                && let Some(look) = looks.get_mut(i)
+                && let Some(look) = i.checked_sub(first).and_then(|i| looks.get_mut(i))
             {
                 look.pressed = true;
             }
             for (i, look) in looks.iter_mut().enumerate() {
-                let place = format!("{}|{}", profile.as_ref().map_or("", |p| p.id.as_str()), control_id(page.as_deref(), &format!("keys.{i}")));
+                let place = format!("{}|{}", profile.as_ref().map_or("", |p| p.id.as_str()), control_id(page.as_deref(), &format!("keys.{}", first + i)));
                 look.failed = self.failed_keys.contains_key(&place);
             }
             // the tour points at a key: it turns white (the label and icon stay readable)
-            if let Some(look) = self.lit_highlight().and_then(|c| c.strip_prefix("keys.")?.parse::<usize>().ok()).and_then(|i| looks.get_mut(i)) {
+            if let Some(look) = self.lit_highlight().and_then(|c| c.strip_prefix("keys.")?.parse::<usize>().ok()?.checked_sub(first)).and_then(|i| looks.get_mut(i)) {
                 *look = Look { bg: Some(HIGHLIGHT.into()), fg: Some("#111018".into()), icon_color: None, style: None, image: None, ..look.clone() };
             }
-            let game_screen = self.arcade.as_ref().map(|a| a.screen(Instant::now()));
+            // a game plays on the first keys module; a second one keeps its keys
+            let game_screen = self.arcade.as_ref().filter(|_| first == 0).map(|a| a.screen(Instant::now()));
             // the screensaver: the living deck's layers of its scene on black keys
             let saver_effect = if self.saver_on && game_screen.is_none() { Some(self.saver_pick().0) } else { None };
             let saver_scene = saver_effect.as_deref().and_then(|e| self.lock().saver_effects(e));
@@ -3015,7 +3056,9 @@ impl Worker {
                     // canvas goes between its background and its content
                     let trial = profile.as_ref().and_then(|p| self.lock().shown_effects(p).cloned());
                     let fx = saver_scene.as_ref().or(trial.as_ref()).filter(|e| e.active() && !self.blanked && game_panel.is_none());
-                    if let Some(fx) = fx {
+                    // a second keys module: plain keys, the main module's scene left as it is
+                    let scene = main_keys && fx.is_some();
+                    if let Some(fx) = fx.filter(|_| main_keys) {
                         match &mut self.canvas {
                             // the same layers: their options may have moved (a slider), live
                             Some(c) if c.is_for(fx) => c.update(fx),
@@ -3043,18 +3086,18 @@ impl Worker {
                             }
                         }
                         self.canvas_page = Some(here);
-                    } else {
+                    } else if main_keys {
                         self.canvas = None;
                     }
                     let mut looks = looks;
-                    if self.canvas.is_some() {
+                    if scene && self.canvas.is_some() {
                         for l in &mut looks {
                             l.t = l.t.max(0.0001);
                         }
                     }
                     let t = render::panel_tiles(&looks, rotation, &geometry);
                     let mut sig = t.iter().map(|t| t.svg.as_str()).collect::<String>();
-                    if let Some(c) = &mut self.canvas {
+                    if scene && let Some(c) = &mut self.canvas {
                         let places: Vec<canvas::KeyPlace> = (0..15)
                             .map(|i| {
                                 let (x, y, w, h) = geometry.key_rect(i);
@@ -3078,10 +3121,10 @@ impl Worker {
             // picture at the square the deck shows a key image in, at the full quality (2026-10-26:
             // the whole panel at 98 took 55-58 ms to send and 22.7 % of a core)
             if let Some(t) = &tiles {
-                let painted = self.renderer.panel_pixmap_with(t, self.canvas.as_mut());
+                let painted = self.renderer.panel_pixmap_with(t, if main_keys { self.canvas.as_mut() } else { None });
                 let paint = drawing.elapsed();
                 self.perf.paint_time += paint;
-                let layer_costs = self.canvas.as_mut().map(|c| c.costs()).unwrap_or_default();
+                let layer_costs = if main_keys { self.canvas.as_mut().map(|c| c.costs()).unwrap_or_default() } else { Default::default() };
                 match painted {
                     Ok(pixmap) => {
                         let keys = self.sent_panels.get(&m.id).and_then(|old| render::changed_keys(old, pixmap.data(), &geometry));
@@ -3096,21 +3139,21 @@ impl Worker {
                                     }
                                 }
                                 if !reports.is_empty() {
-                                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), reports);
+                                    picture_sender(Screen::Keys, keys_group).send(m.id.clone(), module.clone(), reports);
                                 }
                                 if let Some(old) = self.sent_panels.get_mut(&m.id) {
                                     render::copy_key_slots(old, pixmap.data(), &keys);
                                 }
                                 // the window's mirror needs the whole picture, only while it is open;
                                 // its JPEG is made when it goes to the window
-                                if window {
+                                if window && first == mirror_first {
                                     self.mirror_keys_pixmap(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &pixmap, &geometry);
                                 }
                                 Ok(None)
                             }
                             _ => render::encode_jpeg(&pixmap, quality.unwrap_or(render::KEY_QUALITY)).map(|jpeg| {
                                 if let Some(module) = &module {
-                                    picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
+                                    picture_sender(Screen::Keys, keys_group).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
                                 }
                                 self.sent_panels.insert(m.id.clone(), pixmap.data().to_vec());
                                 Some(jpeg)
@@ -3122,7 +3165,7 @@ impl Worker {
                         match result {
                             Ok(jpeg) => {
                                 self.sent.insert(m.id.clone(), svg);
-                                if let Some(jpeg) = jpeg {
+                                if let Some(jpeg) = jpeg.filter(|_| first == mirror_first) {
                                     self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
                                 }
                             }
@@ -3141,10 +3184,13 @@ impl Worker {
                 // sent on the keys' own thread, so the dial and the next frame do not wait for USB
                 Ok(jpeg) => {
                     if let Some(module) = &module {
-                        picture_sender(Screen::Keys).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
+                        picture_sender(Screen::Keys, keys_group).send(m.id.clone(), module.clone(), report::panel_image(&jpeg, module.output_len));
                     }
                     self.sent.insert(m.id.clone(), svg);
-                    self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
+                    // the window mirrors one keys module (the lowest numbers); another shows its keys' looks there
+                    if first == mirror_first {
+                        self.mirror_keys(profile.as_ref().map(|p| p.id.as_str()), page.as_deref(), &m.id, &jpeg, &geometry);
+                    }
                 }
                 Err(e) => log::warn!("draw keys: {e}"),
             }
@@ -3181,7 +3227,7 @@ impl Worker {
             let page = s.page.clone();
             s.active_profile().is_some_and(|p| {
                 p.controls.get("dial").is_some_and(|b| b.action == actions::NOW_PLAYING)
-                    || (0..15).any(|i| p.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.action == actions::NOW_PLAYING))
+                    || (0..self.keys_on_deck()).any(|i| p.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.action == actions::NOW_PLAYING))
             })
         };
         if shown {
@@ -3238,7 +3284,7 @@ impl Worker {
             match s.active_profile() {
                 Some(p) => (
                     matches!(p.panel, Some(profile::PanelContent::Graph { .. }))
-                        || (0..15).any(|i| p.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.action == actions::MONITOR)),
+                        || (0..self.keys_on_deck()).any(|i| p.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.action == actions::MONITOR)),
                     p.controls.get("dial").is_some_and(|b| b.action == actions::MONITOR),
                 ),
                 None => (false, false),
@@ -3659,9 +3705,10 @@ impl Worker {
         };
         let Some(profile) = profile else { return false };
         // a toggle's first steps too: their state tells which side the toggle is on
-        let mut wanted: Vec<String> = (0..15)
+        let dials = self.dial_ids();
+        let mut wanted: Vec<String> = (0..self.keys_on_deck())
             .filter_map(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))))
-            .chain(profile.controls.get("dial"))
+            .chain(dials.iter().filter_map(|d| profile.controls.get(d)))
             .flat_map(|b| std::iter::once(b.clone()).chain(if b.action == actions::TOGGLE { toggle_first(b) } else { Vec::new() }))
             .filter_map(|b| Self::state_key(&b))
             .collect();
@@ -3926,7 +3973,7 @@ impl Worker {
         let mut names: Vec<String> = match &profile.panel {
             Some(profile::PanelContent::Picture { image }) => vec![image.clone()],
             Some(profile::PanelContent::Clock | profile::PanelContent::Graph { .. }) => Vec::new(),
-            None => (0..15).filter_map(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}")))?.look.image.clone()).collect(),
+            None => (0..self.keys_on_deck()).filter_map(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}")))?.look.image.clone()).collect(),
         };
         let dial_image = profile.controls.get("dial").and_then(|b| b.look.image.clone());
         names.extend(dial_image.clone());
@@ -3945,7 +3992,7 @@ impl Worker {
         }
         // keys with built-in motion on this page: a new picture at the moving keys' pace
         if profile.panel.is_none()
-            && (0..15)
+            && (0..self.keys_on_deck())
                 .any(|i| profile.controls.get(&control_id(page.as_deref(), &format!("keys.{i}"))).is_some_and(|b| b.look.motion.is_some() || b.look_on.as_ref().is_some_and(|l| l.motion.is_some())))
         {
             keys_due = true;
@@ -3973,7 +4020,7 @@ impl Worker {
         // second, 21 sent, a third of the drawing thrown away; 2026-10-26: drawing only after the
         // send held a 38 ms send and a 6.5 ms drawing to 16.5 a second)
         if keys_due || self.keys_waiting {
-            if picture_sender(Screen::Keys).waiting() || now.duration_since(self.keys_moved) < self.keys_every() {
+            if pictures_waiting(Screen::Keys) || now.duration_since(self.keys_moved) < self.keys_every() {
                 keys_due = false;
                 self.keys_waiting = true;
             } else {
@@ -4022,7 +4069,7 @@ impl Worker {
         let mut dial_live = false;
         let mut finished: Vec<(String, String)> = Vec::new();
         let ruled = self.rules_now();
-        for (i, control) in (0..15).map(|i| (Some(i), control_id(page.as_deref(), &format!("keys.{i}")))).chain(std::iter::once((None, "dial".to_string()))) {
+        for (i, control) in (0..self.keys_on_deck()).map(|i| (Some(i), control_id(page.as_deref(), &format!("keys.{i}")))).chain(self.dial_ids().into_iter().map(|d| (None, d))) {
             let Some(b) = profile.controls.get(&control) else { continue };
             if i.is_some() && (!b.look.rules.is_empty() || b.look.label.as_deref().is_some_and(|l| l.contains('{'))) {
                 let (sample, track, mic_muted, foreground) = &ruled;
@@ -4200,7 +4247,8 @@ impl Worker {
                     let s = self.lock();
                     (s.active.clone().unwrap_or_default(), s.page.clone())
                 };
-                let seen = |(p, c): &(String, String)| *p == active && (c == "dial" || (0..15).any(|i| control_id(page.as_deref(), &format!("keys.{i}")) == *c));
+                let keys_n = self.keys_on_deck();
+                let seen = |(p, c): &(String, String)| *p == active && (c == "dial" || c.starts_with("dial.") || (0..keys_n).any(|i| control_id(page.as_deref(), &format!("keys.{i}")) == *c));
                 self.timers.iter().any(|(k, t)| t.running() && t.finished(Instant::now()) && !seen(k))
             },
             in_call: self.in_call.is_some(),
@@ -4685,38 +4733,60 @@ impl Worker {
         }
     }
 
+    /// How many keys the attached keys modules show: 15 a module (`keys.15` .. `keys.29` on a second
+    /// one); 15 without a keys module, so a profile's keys still count.
+    fn keys_on_deck(&self) -> usize {
+        self.deck.snapshot().modules.iter().filter(|m| m.kind == "keys").map(|m| usize::from(m.first) + 15).max().unwrap_or(15).max(15)
+    }
+
+    /// The control ids of the attached dials (`dial`, `dial.1`); `dial` alone without one.
+    fn dial_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.deck.snapshot().modules.iter().filter(|m| m.kind == "dial").map(|m| crate::deck::dial_id(u8::try_from(m.first).unwrap_or(0))).collect();
+        if !ids.iter().any(|d| d == "dial") {
+            ids.insert(0, "dial".into());
+        }
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
     fn redraw_dial(&mut self) {
         let snapshot = self.deck.snapshot();
         let user = self.app.state::<Placements>().all();
         let profile = self.lock().active_profile().cloned();
         for m in snapshot.modules.iter().filter(|m| m.kind == "dial") {
+            // a second dial shows its own control, `dial.1` (owner, 2026-11-02); the first stays `dial`
+            let dial_ctl = crate::deck::dial_id(u8::try_from(m.first).unwrap_or(0));
             let module = self.deck.module(&m.id);
             if module.is_none() && !mirror_only() {
                 continue;
             }
             let rotation = self.content_rotation(m.kind, m.slot.as_deref(), snapshot.turn, &user);
-            let stored = profile.as_ref().and_then(|p| p.controls.get("dial"));
+            let stored = profile.as_ref().and_then(|p| p.controls.get(dial_ctl.as_str()));
             // the dial's Now playing names its music app: its song shows and its player is steered
             media::prefer(stored.filter(|b| b.action == actions::NOW_PLAYING).map_or("", |b| actions::param_str(&b.params, "player")));
             // the dial gallery draws the look it is on, as that look's own setting would
             let shown = stored.filter(|b| b.action == gallery::ACTION).map(|_| gallery::at(self.gallery));
             let binding = shown.as_ref().map(|f| &f.binding).or(stored);
-            let mut look = self.plugin_look("dial", binding.map(|b| b.look_for(self.state_of(b))).unwrap_or_default());
+            let mut look = self.plugin_look(&dial_ctl, binding.map(|b| b.look_for(self.state_of(b))).unwrap_or_default());
             if let Some(b) = binding {
-                look = self.sd_look("dial", b, look);
+                look = self.sd_look(&dial_ctl, b, look);
             }
             // a Stream Deck encoder action on the dial: its feedback stays on the screen
-            let sd_face = binding.filter(|b| plugins::is_plugin_action(&b.action)).and_then(|_| self.plugin_looks.get("dial")).and_then(|p| p.feedback.clone());
+            let sd_face = binding.filter(|b| plugins::is_plugin_action(&b.action)).and_then(|_| self.plugin_looks.get(dial_ctl.as_str())).and_then(|p| p.feedback.clone());
             // the plugin's own picture, or the dial's look set to the cover of what plays now
             let sd_cover = binding.filter(|b| plugins::is_plugin_action(&b.action)).and_then(|b| {
-                self.plugin_looks.get("dial").and_then(|p| p.cover.clone()).or_else(|| (b.look.image.as_deref() == Some(images::COVER_REF)).then(|| images::uri(images::COVER_REF)).flatten())
+                self.plugin_looks
+                    .get(dial_ctl.as_str())
+                    .and_then(|p| p.cover.clone())
+                    .or_else(|| (b.look.image.as_deref() == Some(images::COVER_REF)).then(|| images::uri(images::COVER_REF)).flatten())
             });
             self.current_frame(&mut look);
             // with modes, the dial names the current one
             if let Some(b) = binding.filter(|b| b.action == actions::MODES) {
                 let modes = actions::modes(&b.params);
                 if !modes.is_empty() {
-                    look.label = Some(modes[self.modes.get("dial").copied().unwrap_or(0) % modes.len()].label.clone());
+                    look.label = Some(modes[self.modes.get(dial_ctl.as_str()).copied().unwrap_or(0) % modes.len()].label.clone());
                     look.icon = None;
                 }
             }
@@ -4743,7 +4813,7 @@ impl Worker {
                     }
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::MONITOR) => {
-                    let (metric, v) = binding.and_then(|b| self.monitor_value("dial", b)).expect("monitor binding");
+                    let (metric, v) = binding.and_then(|b| self.monitor_value(&dial_ctl, b)).expect("monitor binding");
                     // temperatures fill the ring up to 100 °C
                     render::dial_svg(&look, Some((v.map(|v| v / 100.0), metric.name())), rotation)
                 }
@@ -4761,13 +4831,13 @@ impl Worker {
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::POMODORO) => {
                     let b = binding.expect("checked");
                     let fresh = timer::pomodoro_of(&b.params);
-                    let pomo = self.pomodoros.get("dial").unwrap_or(&fresh);
+                    let pomo = self.pomodoros.get(dial_ctl.as_str()).unwrap_or(&fresh);
                     let polish = self.lock().store.settings.language.starts_with("pl");
                     render::pomodoro_dial_svg(&look, pomo, Instant::now(), pomo.phase(polish), rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == actions::CLOCK || b.action == actions::TIMER) => {
                     let b = binding.expect("checked");
-                    let face = self.live_face("dial", b, Instant::now()).unwrap_or_default();
+                    let face = self.live_face(&dial_ctl, b, Instant::now()).unwrap_or_default();
                     let look = if face.done { b.look_for(Some(true)) } else { look };
                     render::time_dial_svg(&look, &face.main, face.second.as_deref(), face.ring, rotation)
                 }
@@ -4775,7 +4845,7 @@ impl Worker {
                     let b = binding.expect("checked");
                     let reading = live::value_key(&b.params).and_then(|k| self.values.get(&k)).and_then(|r| serde_json::from_str::<live::Reading>(r).ok());
                     let polish = self.lock().store.settings.language.starts_with("pl");
-                    let view = self.weather_view.get("dial").copied().unwrap_or_default();
+                    let view = self.weather_view.get(dial_ctl.as_str()).copied().unwrap_or_default();
                     render::weather_dial_svg(&look, reading.as_ref().and_then(|r| r.forecast.as_ref()), reading.as_ref().and_then(|r| r.num), view, saver::clock(), polish, rotation)
                 }
                 (None, None) if value.is_none() && binding.is_some_and(|b| b.action == live::ACTION) => {
@@ -4821,7 +4891,7 @@ impl Worker {
                 None => svg,
             };
             // the tour points at the dial: a white ring around its edge
-            let svg = if self.lit_highlight() == Some("dial") { render::with_ring(&svg, HIGHLIGHT) } else { svg };
+            let svg = if self.lit_highlight() == Some(dial_ctl.as_str()) { render::with_ring(&svg, HIGHLIGHT) } else { svg };
             // lights to the music: a ring that flashes with the edge
             let ring = self.music_glow.clone().filter(|_| self.music_running && self.lock().store.settings.lights.music_dial);
             let svg = match ring {
@@ -4869,7 +4939,7 @@ impl Worker {
             match jpeg {
                 Ok(jpeg) => {
                     if let Some(module) = &module {
-                        picture_sender(Screen::Dial).send(m.id.clone(), module.clone(), report::dial_image(&jpeg, module.output_len));
+                        picture_sender(Screen::Dial, usize::from(m.first)).send(m.id.clone(), module.clone(), report::dial_image(&jpeg, module.output_len));
                     }
                     self.sent.insert(m.id.clone(), svg);
                     self.mirror_dial(profile.as_ref().map(|p| p.id.as_str()), &m.id, &jpeg);

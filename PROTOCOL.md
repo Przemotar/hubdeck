@@ -157,6 +157,14 @@ Read while HubDeck ran, through its own handle; each answered in 45-48 ms (keys 
 
 A module whose light ignores every colour (a faders user, 2026-11-02) can be compared against these.
 
+That user's faders (0.2.2's report, 2026-11-02; part of fader 1's light red from power-on, on a charger
+too, ignoring every colour while the rest of that light follows): `0x2E`/`0x2D`/`0x2F` byte for byte the
+same as the owner's (the 4 leading bytes too), so the firmware is the same; `0x32` `00 00 00 00 00`
+(the owner's 100 each); `0x34` `09` x5 like the owner's; `0x36` `a0 9b 85 be e4 00 00 00 b4 e4 e1 f3 e4
+00 00 00`: the two halves differ, where every module of the owner's has two equal halves. HubDeck never
+sends the brightness command (`02 2E`) and every colour and mode it sends has save = 0, so the saved
+brightness 0 and the changed config came from elsewhere (the official app or the firmware itself).
+
 ## Blocked in the driver (`_FORBIDDEN` in `prototype/masterhub/driver.py`)
 
 Firmware update, serial number change, factory data write, recovery tests and factory reset. Firmware is updated only with the official app.

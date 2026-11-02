@@ -277,7 +277,7 @@ fn binding_schema() -> Value {
     })
 }
 
-const CONTROL_HELP: &str = "Control id: keys.0 .. keys.14 (5 per row, 3 rows, from the top left), dial, knobs.0 .. knobs.2, faders.0 .. faders.4, rollers.0 .. rollers.1. Add :hold or :double for a hold (500 ms) or double press of keys, knobs and the dial (keys.3:hold). Keys on an extra page: <page id>/keys.N (add_page first).";
+const CONTROL_HELP: &str = "Control id: keys.0 .. keys.14 (5 per row, 3 rows, from the top left), dial, knobs.0 .. knobs.2, faders.0 .. faders.4, rollers.0 .. rollers.1; a second module of a kind goes on from the first's numbers (keys.15 .. keys.29, knobs.3 .., dial.1: see list_modules). Add :hold or :double for a hold (500 ms) or double press of keys, knobs and the dial (keys.3:hold). Keys on an extra page: <page id>/keys.N (add_page first).";
 
 fn tool(name: &str, title: &str, description: &str, properties: Value, required: &[&str], read_only: bool) -> Value {
     json!({

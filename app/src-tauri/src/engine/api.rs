@@ -221,14 +221,14 @@ pub fn handle(app: &AppHandle, method: &str, path: &str, body: &str) -> Option<(
 /// Controls of each kind, as the API and the profile file name them.
 pub const CONTROLS: [(&str, usize); 5] = [("keys", 15), ("dial", 1), ("knobs", 3), ("faders", 5), ("rollers", 2)];
 
-/// How many modules of one kind of knobs, faders or rollers a profile can name controls for: a
-/// second one goes on from the first's numbers (`knobs.3` .. `knobs.5`; owner, 2026-11-01). Keys and
-/// the dial mirror the first module, so they keep their own count.
+/// How many modules of one kind a profile can name controls for: a second one goes on from the
+/// first's numbers (`knobs.3` .. `knobs.5`, owner 2026-11-01; `keys.15` .. `keys.29` and `dial.1` since
+/// 2026-11-02).
 pub const SAME_KIND_MODULES: usize = 4;
 
 /// The highest number + 1 a control of `kind` can have in a profile.
-pub fn numbered_up_to(kind: &str, count: usize) -> usize {
-    if matches!(kind, "knobs" | "faders" | "rollers") { count * SAME_KIND_MODULES } else { count }
+pub fn numbered_up_to(_kind: &str, count: usize) -> usize {
+    count * SAME_KIND_MODULES
 }
 
 /// Key looks (`look.style`).
@@ -259,7 +259,7 @@ pub fn same_kind_text(app: &AppHandle) -> String {
         }
         firsts.sort_unstable();
         parts.push(match kind {
-            "keys" | "dial" => format!("{} {kind} modules (they show the same: one set of {kind})", firsts.len()),
+            "dial" => format!("{} dials ({})", firsts.len(), firsts.iter().map(|f| crate::deck::dial_id(*f as u8)).collect::<Vec<_>>().join(", ")),
             _ => format!("{} {kind} modules ({})", firsts.len(), firsts.iter().map(|f| format!("{kind}.{f} .. {kind}.{}", f + count - 1)).collect::<Vec<_>>().join(", ")),
         });
     }
@@ -270,7 +270,7 @@ pub fn same_kind_text(app: &AppHandle) -> String {
 fn numbering(app: &AppHandle) -> Value {
     let mut out = serde_json::Map::new();
     if let Some(deck) = app.try_state::<Deck>() {
-        for m in deck.snapshot().modules.iter().filter(|m| matches!(m.kind, "knobs" | "faders" | "rollers")) {
+        for m in deck.snapshot().modules.iter().filter(|m| m.kind != "base") {
             if let Some(list) = out.entry(m.kind).or_insert_with(|| json!([])).as_array_mut() {
                 list.push(json!(m.first));
             }
@@ -290,7 +290,7 @@ fn modules(app: &AppHandle) -> Value {
             "knobs": "knobs.0 .. knobs.2: 3 knobs that turn and press, each with an LED ring",
             "faders": "faders.0 .. faders.4: 5 faders (absolute 0..1), each with an LED",
             "rollers": "rollers.0 .. rollers.1: 2 rollers that turn (no press, no LED)",
-            "sameKind": "a second knobs, faders or rollers module goes on from the first's numbers in the order of their slots (knobs.3 .. knobs.5, faders.5 .. faders.9, rollers.2 .. rollers.3); a second keys module or dial shows the same as the first",
+            "sameKind": "a second module of a kind goes on from the first's numbers (knobs.3 .. knobs.5, faders.5 .. faders.9, rollers.2 .. rollers.3, keys.15 .. keys.29, dial.1); each module keeps its numbers by its serial number; keys modules share the living deck's scene and the screensaver",
         },
         "numbering": numbering(app),
     })
@@ -362,8 +362,10 @@ pub fn control_kind(id: &str, pages: &[super::profile::Page]) -> Result<&'static
     };
     let (name, count) = CONTROLS.iter().find(|(k, _)| *k == kind).copied().ok_or_else(|| format!("{id}: unknown control (keys.N, dial, knobs.N, faders.N, rollers.N)"))?;
     match (name, index) {
+        // the first dial is `dial`; a second one `dial.1` (and so on)
         ("dial", None) => {}
-        ("dial", Some(_)) => return Err(format!("{id}: the dial is just `dial`")),
+        ("dial", Some(i)) if i.parse::<usize>().is_ok_and(|i| (1..SAME_KIND_MODULES).contains(&i)) && !i.starts_with('+') => {}
+        ("dial", Some(_)) => return Err(format!("{id}: the first dial is `dial`, a second one `dial.1`")),
         (_, Some(i)) if i.parse::<usize>().is_ok_and(|i| i < numbered_up_to(name, count)) && !i.starts_with('+') => {}
         _ => return Err(format!("{id}: {name} are numbered {name}.0 .. {name}.{}", numbered_up_to(name, count) - 1)),
     }
@@ -1065,13 +1067,21 @@ mod tests {
             "faders.19",
             "rollers.7",
             "knobs.4:hold",
+            // a second keys module and dial (2026-11-02)
+            "keys.15",
+            "keys.59",
+            "tools/keys.29",
+            "dial.1",
+            "dial.3:hold",
         ] {
             assert!(control_kind(ok, &pages).is_ok(), "{ok}");
         }
         for bad in [
-            "keys.15",
+            "keys.60",
             "keys",
             "dial.0",
+            "dial.4",
+            "tools/dial.1",
             "knobs.12",
             "faders.20",
             "rollers.8",

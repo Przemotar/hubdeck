@@ -336,7 +336,8 @@ export default function App() {
         <main className="workspace">
           <DeckLook
             view={view}
-            keysModule={live.deck.modules.find((m) => m.kind === "keys")?.id}
+            keysModule={[...live.deck.modules].filter((m) => m.kind === "keys").sort((a, b) => (a.first ?? 0) - (b.first ?? 0))[0]?.id}
+            keysCount={Math.max(15, ...live.deck.modules.filter((m) => m.kind === "keys").map((m) => (m.first ?? 0) + 15))}
             keysTurn={(placeModules(live.deck.modules, saved).find((p) => p.module.kind === "keys")?.rotation ?? 0) + live.deck.turn}
             onClose={() => setLivingOpen(false)}
           />
@@ -425,7 +426,7 @@ export default function App() {
           />
           {ctlMenu && (
             <ControlMenu
-              title={`${t(`control.${ctlMenu.c.kind}` as Key)}${ctlMenu.c.kind === "dial" ? "" : ` ${ctlMenu.c.index + 1}`}`}
+              title={`${t(`control.${ctlMenu.c.kind}` as Key)}${ctlMenu.c.kind === "dial" && ctlMenu.c.index === 0 ? "" : ` ${ctlMenu.c.index + 1}`}`}
               x={ctlMenu.x}
               y={ctlMenu.y}
               isSet={isSet(ctlMenu.c)}

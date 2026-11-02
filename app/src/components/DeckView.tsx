@@ -344,7 +344,7 @@ function caption(b: Binding | undefined): string | undefined {
   return words[b.action] ? t(words[b.action]) : undefined;
 }
 
-const nameOf = (kind: ModuleKind, i: number, look?: Look) => `${t(`control.${kind}`)}${kind === "dial" ? "" : ` ${i + 1}`}${look?.label ? ` · ${look.label}` : ""}`;
+const nameOf = (kind: ModuleKind, i: number, look?: Look) => `${t(`control.${kind}`)}${kind === "dial" && i === 0 ? "" : ` ${i + 1}`}${look?.label ? ` · ${look.label}` : ""}`;
 
 /** A module housing: glossy black, rounded, a lit bevel around its top face and a light-grey accent on one short side. */
 function ModuleBody({ ctx, w, h }: { ctx: Ctx; w: number; h: number }) {
@@ -453,11 +453,13 @@ function Keys({ ctx }: { ctx: Ctx }) {
       {range(15).map((i) => {
         const x = KX0 + (i % 5) * (KW + KGX);
         const y = KY0 + Math.floor(i / 5) * (KH + KGY);
-        const cid = controlId("keys", i, page ?? null);
+        // a second keys module shows Key 16-30 (owner, 2026-11-02)
+        const n = (m.first ?? 0) + i;
+        const cid = controlId("keys", n, page ?? null);
         const look = ctx.liveLooks[cid] ?? profile?.controls[cid]?.look;
-        const pressed = live.pressedKeys[controlKey(m.id, i)];
+        const pressed = live.pressedKeys[controlKey(m.id, n)];
         return (
-          <Ctl key={i} ctx={ctx} index={i} kind="keys" label={nameOf("keys", i, look)} badge={[x + KW - 3, y + 3]} ring={(cls) => <rect className={cls} x={x - 4} y={y - 4} width={KW + 8} height={KH + 8} rx="13" />}>
+          <Ctl key={i} ctx={ctx} index={n} kind="keys" label={nameOf("keys", n, look)} badge={[x + KW - 3, y + 3]} ring={(cls) => <rect className={cls} x={x - 4} y={y - 4} width={KW + 8} height={KH + 8} rx="13" />}>
             <g transform={`translate(${x} ${y + (pressed ? 1.2 : 0)})`}>
               {/* a small glass cube: its shadow, then its dark sides showing below and to the right */}
               {!pressed && <rect x="0.5" y="3.5" width={KW + 2} height={KH + 2} rx="9" fill="#000" opacity=".55" filter={`url(#${id("soft")})`} />}
@@ -469,13 +471,13 @@ function Keys({ ctx }: { ctx: Ctx }) {
                   <rect x={KP} y={KP} width={KW - 2 * KP} height={KH - 2 * KP} rx="9" fill="#2a2733" />
                   <rect x={KW / 2 - 8} y={KP} width="16" height="5" fill="#c4b5fd" />
                   <text className="dk-face-num is-big" x={KW / 2} y={KH / 2 + 9} textAnchor="middle" transform={`rotate(${ctx.upright} ${KW / 2} ${KH / 2})`}>
-                    {i + 1}
+                    {n + 1}
                   </text>
                 </>
               ) : (
                 <KeyFace
                   ctx={ctx}
-                  i={i}
+                  i={n}
                   look={look}
                   mirror={
                     // while the deck shows its screensaver, the window shows what the keys do
@@ -585,12 +587,15 @@ const DIAL_TOP = 76;
 
 function Dial({ ctx }: { ctx: Ctx }) {
   const { m, live, profile, arranging, id } = ctx;
-  const look = ctx.liveLooks.dial ?? profile?.controls.dial?.look;
+  // a second dial is its own control, `dial.1` (owner, 2026-11-02)
+  const index = m.first ?? 0;
+  const cid = controlId("dial", index);
+  const look = ctx.liveLooks[cid] ?? profile?.controls[cid]?.look;
   const preview = usePreview("dial", look && (look.label || look.icon) ? look : profile ? { label: profile.name } : undefined);
   // what the hardware shows right now (the clock's time, a live value, a cover), when this profile
   // is the one on the deck; the saved look's preview otherwise
   const frame = useDialFrame(profile?.id, m.id);
-  const k = controlKey(m.id, 0);
+  const k = controlKey(m.id, index);
   const turns = live.counters[k] ?? 0;
   const pressed = !!live.pressedKeys[k];
   const [cx, cy] = [100, 100];
@@ -602,7 +607,7 @@ function Dial({ ctx }: { ctx: Ctx }) {
       <rect x="16" y="16" width="168" height="168" rx="22" fill={`url(#${id("bevel")})`} />
       <rect x="16.5" y="16.5" width="167" height="167" rx="21.5" fill="none" stroke="#fff" strokeOpacity=".12" />
       <rect x="20" y="20" width="160" height="160" rx="19" fill={`url(#${id("mod")})`} />
-      <Ctl ctx={ctx} index={0} kind="dial" label={nameOf("dial", 0, look)} badge={[cx + 62, cy - 62]} ring={(cls) => <circle className={cls} cx={cx} cy={cy} r="88" />}>
+      <Ctl ctx={ctx} index={index} kind="dial" label={nameOf("dial", index, look)} badge={[cx + 62, cy - 62]} ring={(cls) => <circle className={cls} cx={cx} cy={cy} r="88" />}>
         <circle cx={cx} cy={cy + 3} r="84" fill="#000" opacity=".65" filter={`url(#${id("soft")})`} />
         {/* knurled side of the turning cylinder */}
         <circle cx={cx} cy={cy} r="83" fill={`url(#${id("knurl")})`} />
@@ -1266,7 +1271,7 @@ function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdg
       <button key={controlKey(c.module, c.index)} className={`dk-chip${isSel ? " is-selected" : ""}`} onClick={() => onSelect(c)}>
         <i className={led ? `dk-fx-${led.effect}` : undefined} style={{ background: color ?? "var(--tx3, #6c6b7b)", color: color ?? "transparent" }} />
         {t(`control.${c.kind}`)}
-        {c.kind === "dial" ? "" : ` ${c.index + 1}`}
+        {c.kind === "dial" && c.index === 0 ? "" : ` ${c.index + 1}`}
         {(look?.label || value) && <b>{[look?.label, value].filter(Boolean).join(" ")}</b>}
       </button>
     );
@@ -1274,7 +1279,7 @@ function LedStrip({ live, profile, leds, edge, placed, selected, onSelect, onEdg
   // the controls' chips are gone: the drawing names what each knob, roller and fader does
   for (const p of SHOW_CONTROL_CHIPS ? placed : []) {
     const m = p.module;
-    if (m.kind === "dial") chips.push(chip({ module: m.id, kind: "dial", index: 0 }, null));
+    if (m.kind === "dial") chips.push(chip({ module: m.id, kind: "dial", index: m.first ?? 0 }, null));
     if (m.kind === "knobs") {
       const colors = ledColors(profile, "knobs", false, leds?.[m.id], m.first ?? 0);
       for (const i of [0, 1, 2]) chips.push(chip({ module: m.id, kind: "knobs", index: (m.first ?? 0) + i }, colors[i]));

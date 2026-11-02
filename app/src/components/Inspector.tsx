@@ -1407,7 +1407,7 @@ export function Inspector({ live, selected, view, fresh, onDismissFresh, onOpenP
     );
   }
   const module = live.deck.modules.find((m) => m.id === selected.module);
-  const name = selected.kind === "dial" ? t("control.dial") : `${t(`control.${selected.kind}`)} ${selected.index + 1}`;
+  const name = selected.kind === "dial" && selected.index === 0 ? t("control.dial") : `${t(`control.${selected.kind}`)} ${selected.index + 1}`;
   // a hold or double press is a press: only actions that react to one
   const fitting = (view.catalog?.actions ?? []).filter((a) => (activeGesture === "tap" ? actionFits(a, selected.kind) : a.inputs.includes("press"))).map(localizeAction);
   const found = draft ? view.catalog?.actions.find((a) => a.id === draft.action) : undefined;
