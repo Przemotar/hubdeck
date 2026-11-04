@@ -1390,7 +1390,10 @@ mod tests {
         assert!(read_line(r#"{"type":"result","subtype":"success","is_error":false,"result":"ok"}"#).end, "a result ends the turn");
         let line: Value = serde_json::from_str(&input_line("hi \"you\"\nok")).unwrap();
         assert_eq!((line["type"].as_str(), line["message"]["content"].as_str()), (Some("user"), Some("hi \"you\"\nok")));
-        assert!(catalog_text().contains("core.hotkey") && catalog_text().contains("Spotify"));
+        assert!(catalog_text().contains("core.hotkey"));
+        // the shipped shortcut packs are Windows and macOS data
+        #[cfg(any(windows, target_os = "macos"))]
+        assert!(catalog_text().contains("Spotify"));
     }
 
     /// The installed apps HubDeck knows on this computer (run by hand: prints the list).

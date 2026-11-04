@@ -170,7 +170,7 @@ mod tests {
         let mac = cfg!(target_os = "macos");
         assert_eq!(is_checked("Cmd+Shift+3", &[]), mac, "the Mac's screenshot");
         assert_eq!(is_checked("Ctrl+Cmd+Q", &[]), mac, "the Mac's lock screen");
-        assert_eq!(is_checked("Win+L", &[]), !mac, "Windows' lock");
+        assert_eq!(is_checked("Win+L", &[]), cfg!(windows), "Windows' lock");
         assert_eq!(is_destructive("Cmd+Q", &[]), mac);
         // one name for an app on both systems
         assert_eq!(for_apps(&["Google Chrome.app".into()]).len(), for_apps(&["chrome.exe".into()]).len());

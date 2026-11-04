@@ -95,6 +95,35 @@ fn mac_extra(lower: &str) -> Option<u16> {
     })
 }
 
+/// Linux key names enigo has but the shared list does not map: Insert, the lock keys and the
+/// keypad (whose keys games tell apart from the main digits).
+#[cfg(target_os = "linux")]
+fn linux_extra(lower: &str) -> Option<Key> {
+    Some(match lower {
+        "insert" | "ins" => Key::Insert,
+        "capslock" => Key::CapsLock,
+        "numlock" => Key::Numlock,
+        "scrolllock" => Key::ScrollLock,
+        "pause" | "break" => Key::Pause,
+        "numadd" => Key::Add,
+        "numsubtract" => Key::Subtract,
+        "nummultiply" => Key::Multiply,
+        "numdivide" => Key::Divide,
+        "numdecimal" => Key::Decimal,
+        "num0" => Key::Numpad0,
+        "num1" => Key::Numpad1,
+        "num2" => Key::Numpad2,
+        "num3" => Key::Numpad3,
+        "num4" => Key::Numpad4,
+        "num5" => Key::Numpad5,
+        "num6" => Key::Numpad6,
+        "num7" => Key::Numpad7,
+        "num8" => Key::Numpad8,
+        "num9" => Key::Numpad9,
+        _ => return None,
+    })
+}
+
 fn modifier(name: &str) -> Option<Key> {
     Some(match name {
         "ctrl" | "control" => Key::Control,
@@ -167,6 +196,8 @@ fn key(name: &str) -> Option<Key> {
         // own key codes (kVK_ANSI_Keypad*)
         #[cfg(target_os = "macos")]
         other if mac_extra(other).is_some() => Key::Other(u32::from(mac_extra(other)?)),
+        #[cfg(target_os = "linux")]
+        other if linux_extra(other).is_some() => linux_extra(other)?,
         _ => {
             let mut chars = name.chars();
             match (chars.next(), chars.next()) {

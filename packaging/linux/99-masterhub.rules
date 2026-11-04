@@ -1,0 +1,4 @@
+# Cooler Master MasterHUB (VID 0x2516). The modules are vendor-defined HID (usage page 0xFF00)
+# and get no hidraw node, so HubDeck opens them through libusb: the USB device nodes have to be
+# writable by the user at the desk.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"

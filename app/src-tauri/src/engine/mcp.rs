@@ -1253,17 +1253,24 @@ mod tests {
         let media = json!({"action": "core.media", "params": {"command": "playPause"}});
         assert!(assistant_call(&api, "set_control", &json!({"profile": "mine", "control": "keys.0", "binding": media})).unwrap_err().contains("own profiles"));
         assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.0", "binding": media})).is_ok());
-        let end = json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}});
-        assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1", "binding": end})).unwrap_err().contains("hold"), "Spotify's log out on a press");
-        assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1:hold", "binding": end})).is_ok());
+        // the shipped shortcut packs are Windows and macOS data
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let end = json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}});
+            assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1", "binding": end})).unwrap_err().contains("hold"), "Spotify's log out on a press");
+            assert!(assistant_call(&api, "set_control", &json!({"profile": "d1", "control": "keys.1:hold", "binding": end})).is_ok());
+        }
         assert!(assistant_call(&api, "try_on_deck", &json!({"id": "mine"})).is_err());
         assert!(assistant_call(&api, "activate_profile", &json!({"id": "d1"})).is_err());
         assistant_call(&api, "create_profile", &json!({"name": "X", "replace": "mine"})).unwrap();
         let sent = api.calls.lock().unwrap().iter().rev().find(|(m, p, _)| m == "POST" && p == "/api/profiles").and_then(|c| c.2.clone()).unwrap();
         assert!(sent.get("replace").is_none() && sent["draft"] == true && sent["assistant"] == true, "{sent}");
         assert!(assistant_call(&api, "create_profile", &json!({"name": "X", "controls": {"keys.0": {"action": "core.run", "params": {"command": "x"}}}})).is_err());
-        let spotify = assistant_call(&api, "list_shortcuts", &json!({"app": "Spotify.exe"})).unwrap();
-        assert!(spotify[0]["text"].as_str().unwrap().contains("Like song"));
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let spotify = assistant_call(&api, "list_shortcuts", &json!({"app": "Spotify.exe"})).unwrap();
+            assert!(spotify[0]["text"].as_str().unwrap().contains("Like song"));
+        }
     }
 
     /// Answers like the app, and remembers what was asked.
