@@ -33,7 +33,11 @@ fn main() {
         return;
     }
     for d in &found {
+        // hidapi's Linux libusb backend does not expose the usage page and usage
+        #[cfg(not(target_os = "linux"))]
         println!("found: path {:?} usage page {:#x} usage {:#x} interface {} serial {:?}", d.path(), d.usage_page(), d.usage(), d.interface_number(), d.serial_number());
+        #[cfg(target_os = "linux")]
+        println!("found: path {:?} interface {} serial {:?}", d.path(), d.interface_number(), d.serial_number());
     }
     let dev = match found[0].open_device(&api) {
         Ok(d) => d,

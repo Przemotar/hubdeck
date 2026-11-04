@@ -157,6 +157,17 @@ On macOS 14 and older, right-click HubDeck in Applications and choose *Open* als
 shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
 app asks for it with a button. Setting one app's own volume (macOS 14.2 or later) asks once for
 System Audio Recording: HubDeck plays that app's sound at the level you set and records nothing.
+**Linux** (x86-64, experimental): there is no installer yet. Build it from the source (below) and
+let your user open the deck's USB ids:
+
+```sh
+sudo install -m 644 packaging/linux/99-masterhub.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+The whole deck works: keys, dial, knobs, faders, rollers and the base's light. The integrations that
+need a platform's own APIs (per-app volume, media with cover art, app icons, the app in front,
+monitor brightness) are not wired up on Linux yet and say so when used.
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
@@ -166,7 +177,7 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 |---|---|---|
 | Windows 10 and 11 | built and tested by CI | checked before every release (modules, window, a soak of memory and CPU) |
 | macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-30, a build after 0.1.12 |
-| Linux | not supported | |
+| Linux (experimental) | built and tested by CI | checked on a real deck: every module found, keys and dial drawn, LEDs (2026-11-04) |
 
 Something wrong on a Mac? Please [open an issue](https://github.com/Przemotar/hubdeck/issues): Mac
 reports are checked on a deck first.
@@ -181,7 +192,8 @@ reports are checked on a deck first.
 - Elgato Marketplace plugins with copy protection do not run, also when the Stream Deck app has
   them (Elgato keeps their files encrypted on disk); the catalog says which ones come only through
   Elgato's app. Plugins from their authors' own pages run.
-- Twitch sign-in is off until the app registration is done. Linux is not supported.
+- Twitch sign-in is off until the app registration is done. Linux support is new: the platform
+  integrations listed above are not wired up there yet.
 - A module that drops off USB when you press it (Windows plays its unplug sound, the keys go blank
   for a moment) has a loose contact with the base: take it off and put it back firmly.
 
@@ -362,7 +374,9 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 
 You need Rust (1.90 or later), Node 22 or later with pnpm, and on Windows the Visual Studio C++
 build tools (the "Desktop development with C++" workload); on macOS the Xcode command line tools
-(`xcode-select --install`).
+(`xcode-select --install`); on Linux the WebKitGTK 4.1, GTK 3, libsoup 3, libusb 1.0 and ALSA
+development packages (Fedora: `webkit2gtk4.1-devel gtk3-devel libsoup3-devel libusb1-devel
+alsa-lib-devel libappindicator-gtk3-devel`).
 
 ```
 cd app

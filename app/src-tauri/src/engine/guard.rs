@@ -142,16 +142,21 @@ mod tests {
         assert!(check_json("keys.0:hold", &json!({"action": "core.hotkey", "params": {"keys": "Alt+F4"}}), &none).is_ok());
         assert!(check_json("keys.0", &json!({"action": "core.hotkey", "params": {"keys": "Ctrl+Z"}}), &none).is_ok());
         assert!(check_json("knobs.0", &json!({"action": "core.hotkey", "params": {"clockwise": "Ctrl+W"}}), &none).is_err());
-        // Spotify's Log out has the same keys on both systems
-        let spotify = vec!["Spotify.exe".to_string()];
-        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &spotify).is_err(), "Spotify's log out");
-        assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &none).is_ok());
+        // the shipped shortcut packs are Windows and macOS data
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let spotify = vec!["Spotify.exe".to_string()];
+            assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &spotify).is_err(), "Spotify's log out");
+            assert!(check_json("keys.1", &json!({"action": "core.hotkey", "params": {"keys": "Alt+Shift+F6"}}), &none).is_ok());
+        }
         let nested = json!({"action": "core.multi", "params": {"steps": [{"action": "core.media", "params": {}}, {"action": "core.hotkey", "params": {"keys": "Ctrl+Q"}}]}});
         assert!(check_json("keys.2", &nested, &none).is_err(), "a step of a multi-action");
         assert!(check_json("keys.3", &json!({"action": "core.text", "params": {"text": "gg\n"}}), &none).is_err());
         assert!(check_json("keys.3", &json!({"action": "twitch.clearChat"}), &none).is_err());
     }
 
+    // the shipped shortcut packs are Windows and macOS data
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn shortcuts_outside_the_packs_are_listed() {
         let spotify = vec!["Spotify.exe".to_string()];

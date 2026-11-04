@@ -14,6 +14,11 @@ thiserror.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# The modules are vendor-defined HID (usage page 0xFF00) and get no hidraw node on Linux; the
+# libusb backend opens /dev/bus/usb nodes instead (a udev rule has to allow the vendor id).
+hidapi = { workspace = true, features = ["linux-static-libusb"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_HumanInterfaceDevice", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
 
