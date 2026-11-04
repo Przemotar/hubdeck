@@ -64,6 +64,10 @@ tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# the virtual keyboard (engine/uinput.rs): a /dev/uinput device, so keystrokes reach Wayland wins
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 # the #[interface] macro (IPolicyConfig for the default audio device) refers to windows_core
 windows-core = "0.62"

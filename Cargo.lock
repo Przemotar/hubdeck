@@ -2482,6 +2482,7 @@ dependencies = [
  "image",
  "jpeg-encoder",
  "keyring",
+ "libc",
  "libloading 0.8.9",
  "log",
  "mh-device",

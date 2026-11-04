@@ -296,6 +296,7 @@ pub fn send_game(enigo: &mut Enigo, text: &str, hold: std::time::Duration) -> Re
 }
 
 #[cfg(not(windows))]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn send_game(enigo: &mut Enigo, text: &str, _hold: std::time::Duration) -> Result<(), String> {
     send(enigo, text)
 }

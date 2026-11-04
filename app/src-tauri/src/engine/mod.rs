@@ -84,6 +84,8 @@ mod test_presets;
 mod timer;
 pub mod tour;
 pub mod twitch;
+#[cfg(target_os = "linux")]
+mod uinput;
 pub mod usage;
 pub mod vjoy;
 pub mod volume;

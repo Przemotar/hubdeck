@@ -509,7 +509,95 @@ mod platform {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+mod platform {
+    use std::path::PathBuf;
+
+    use super::Item;
+
+    /// The `applications` folders of this account, the system and Flatpak.
+    fn dirs() -> Vec<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let mut dirs = Vec::new();
+        if let Some(data) = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.as_ref().map(|h| h.join(".local/share"))) {
+            dirs.push(data.join("applications"));
+        }
+        let data_dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+        for dir in data_dirs.split(':').filter(|d| !d.is_empty()) {
+            dirs.push(PathBuf::from(dir).join("applications"));
+        }
+        if let Some(home) = &home {
+            dirs.push(home.join(".local/share/flatpak/exports/share/applications"));
+        }
+        dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+        dirs
+    }
+
+    pub fn start_menu_apps() -> Vec<Item> {
+        let mut items = Vec::new();
+        for dir in dirs() {
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&path) else { continue };
+                if let Some(item) = parse(&text) {
+                    items.push(item);
+                }
+            }
+        }
+        items
+    }
+
+    /// Flatpak and the store are the same `.desktop` folders on Linux.
+    pub fn store_apps() -> Vec<Item> {
+        Vec::new()
+    }
+
+    fn parse(text: &str) -> Option<Item> {
+        let mut name = None;
+        let mut exec = None;
+        let mut icon = None;
+        let mut application = false;
+        let mut hidden = false;
+        let mut in_entry = false;
+        for line in text.lines() {
+            let line = line.trim();
+            if line.starts_with('[') {
+                in_entry = line == "[Desktop Entry]";
+                continue;
+            }
+            if !in_entry {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else { continue };
+            let value = value.trim();
+            match key.trim() {
+                "Name" if name.is_none() => name = Some(value.to_string()),
+                "Exec" if exec.is_none() => exec = Some(value.to_string()),
+                "Icon" if icon.is_none() => icon = Some(value.to_string()),
+                "Type" => application = value == "Application",
+                "NoDisplay" | "Hidden" | "Terminal" if value.eq_ignore_ascii_case("true") => hidden = true,
+                _ => {}
+            }
+        }
+        let (name, exec) = (name?, exec?);
+        if !application || hidden || name.trim().is_empty() {
+            return None;
+        }
+        let mut words = exec.split_whitespace();
+        let program = words.next()?.to_string();
+        // %U, %f and the like are placeholders the launcher fills in; they are not arguments
+        let args: Vec<&str> = words.filter(|w| !w.starts_with('%')).collect();
+        let target = if args.is_empty() { program.clone() } else { format!("{program} {}", args.join(" ")) };
+        let exe = program.rsplit('/').next().unwrap_or(&program).to_string();
+        Some(Item { name, target, exe, source: "startMenu".into(), cover: None, logo: icon.and_then(|i| super::super::appicon::path(&i)).unwrap_or_default(), icon: None, dir: String::new() })
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod platform {
     pub fn start_menu_apps() -> Vec<super::Item> {
         Vec::new()

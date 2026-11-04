@@ -14,6 +14,12 @@ pub fn png(path: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// The file an icon name points at, from the icon themes and `/usr/share/pixmaps`.
+#[cfg(target_os = "linux")]
+pub fn path(name: &str) -> Option<String> {
+    platform::path(name)
+}
+
 #[cfg(windows)]
 mod platform {
     use std::io::Cursor;
@@ -121,7 +127,75 @@ mod platform {
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+mod platform {
+    use std::path::{Path, PathBuf};
+
+    /// The file this account and the system have for an icon name, best first.
+    pub fn path(name: &str) -> Option<String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return None;
+        }
+        if Path::new(name).is_file() {
+            return Some(name.to_string());
+        }
+        candidates(name).into_iter().find(|p| p.is_file()).map(|p| p.to_string_lossy().to_string())
+    }
+
+    fn candidates(name: &str) -> Vec<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let mut roots = Vec::new();
+        if let Some(home) = &home {
+            roots.push(home.join(".local/share/icons"));
+            roots.push(home.join(".icons"));
+            roots.push(home.join(".local/share/flatpak/exports/share/icons"));
+        }
+        roots.push(PathBuf::from("/usr/share/icons"));
+        roots.push(PathBuf::from("/usr/share/pixmaps"));
+        roots.push(PathBuf::from("/var/lib/flatpak/exports/share/icons"));
+        let themes = ["hicolor", "Adwaita", "breeze", "breeze-dark", "Papirus"];
+        let sizes = ["256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "scalable"];
+        let mut out = Vec::new();
+        for root in roots {
+            for theme in themes {
+                for size in sizes {
+                    for ext in ["png", "svg", "xpm"] {
+                        out.push(root.join(theme).join(size).join("apps").join(format!("{name}.{ext}")));
+                    }
+                }
+            }
+            for ext in ["png", "svg", "xpm"] {
+                out.push(root.join(format!("{name}.{ext}")));
+            }
+        }
+        out
+    }
+
+    pub fn png(name: &str) -> Result<Vec<u8>, String> {
+        let file = path(name).ok_or_else(|| format!("no icon for {name:?}"))?;
+        let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+        if file.ends_with(".svg") {
+            return rasterize(&bytes);
+        }
+        let image = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.to_rgba8();
+        let mut out = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        Ok(out.into_inner())
+    }
+
+    /// SVG icons are drawn at 128 px, the size a key shows.
+    fn rasterize(svg: &[u8]) -> Result<Vec<u8>, String> {
+        let tree = resvg::usvg::Tree::from_data(svg, &resvg::usvg::Options::default()).map_err(|e| e.to_string())?;
+        let size = 128.0;
+        let scale = resvg::tiny_skia::Transform::from_scale(size / tree.size().width(), size / tree.size().height());
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(128, 128).ok_or("cannot make the icon canvas")?;
+        resvg::render(&tree, scale, &mut pixmap.as_mut());
+        pixmap.encode_png().map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod platform {
     pub fn png(_path: &str) -> Result<Vec<u8>, String> {
         Err("app icons are not available on this system yet".into())
