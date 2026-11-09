@@ -593,6 +593,7 @@
 "look.auto": "自動",
 "look.labelSize": "ラベルのサイズ",
 "look.iconSize": "アイコンのサイズ",
+"look.iconFlip": "アイコンを左右反転",
 "look.size.small": "小",
 "look.size.large": "大",
 "look.style.flat": "フラット",

@@ -1039,6 +1039,9 @@ fn key_parts_plain(look: &Look) -> (String, String, String) {
         }
         return (under, body, over);
     }
+    if let Some((first, second, first_on)) = &look.pair {
+        return (under, icon_pair(first, second, *first_on, PAIR_ON, &fg, PAIR_OFF_OPACITY, true), over);
+    }
     let emoji = look.icon.as_deref().and_then(|i| i.strip_prefix(EMOJI_PREFIX)).filter(|e| !e.trim().is_empty());
     let icon_name = look.icon.as_deref().filter(|n| icon_svg(n).is_some());
     let scale = match look.icon_size.as_deref() {
@@ -1052,12 +1055,14 @@ fn key_parts_plain(look: &Look) -> (String, String, String) {
         let (x, y) = ((x + (size - new) / 2.0).clamp(2.0, s - 2.0 - new), (y + (size - new) / 2.0).clamp(2.0, s - 2.0 - new));
         // moved by hand in the full editor
         let (x, y) = (x + look.icon_dx.clamp(-36, 36) as f32, y + look.icon_dy.clamp(-36, 36) as f32);
-        match (&logo, emoji, icon_name) {
+        let drawn = match (&logo, emoji, icon_name) {
             (Some(uri), _, _) => logo_image(uri, x, y, new),
             (None, Some(e), _) => emoji_mark(e, x, y, new),
             (None, None, Some(i)) => icon(i, x, y, new, &ic),
             _ => String::new(),
-        }
+        };
+        // mirrored around its own centre, so it stays where it was placed
+        if look.icon_flip && !drawn.is_empty() { format!(r#"<g transform="matrix(-1 0 0 1 {} 0)">{drawn}</g>"#, 2.0 * x + new) } else { drawn }
     };
     let has_mark = logo.is_some() || emoji.is_some() || icon_name.is_some();
     let size = look.label_size.map(|px| (px as f32).clamp(6.0, 30.0));
@@ -1099,6 +1104,49 @@ fn key_parts_plain(look: &Look) -> (String, String, String) {
         (_, false, true) => String::new(),
     };
     (under, body, over)
+}
+
+/// The device in use on a two-icon key: green, as HubDeck's other "this is live" states (a live
+/// OBS scene) and the Audio Switcher plugin, in the house look's soft tone
+/// (`house::icon_color(130.0)`; owner's "1 a", 2026-11-02).
+const PAIR_ON: &str = "#79ec8c";
+/// How strongly the icon not in use shows on a two-icon key (the label's color, dimmed).
+const PAIR_OFF_OPACITY: f32 = 0.45;
+
+/// Two icons on a key (`Look::pair`), as the Audio Switcher plugin draws its key: the first at the
+/// top left, the second at the bottom right; the one in use big in `on` with a soft light under
+/// it, the other small in `off` at `off_opacity`, its line as thick as the big one's. No
+/// background of its own: the key's shows through.
+fn icon_pair(first: &str, second: &str, first_on: bool, on: &str, off: &str, off_opacity: f32, glow: bool) -> String {
+    let (big, small) = (42.0, 24.0);
+    // a line of about 3 key pixels on both (a 24 px icon drawn with 2 would look thin beside the big one)
+    let line = |size: f32| 3.0 * 24.0 / size;
+    let lit = |name: &str, x: f32, y: f32| {
+        let light = if glow {
+            let id = format!("kpair{}", &on.trim_start_matches('#'));
+            format!(
+                r#"<defs><radialGradient id="{id}"><stop offset="0" stop-color="{on}" stop-opacity="0.32"/><stop offset="0.55" stop-color="{on}" stop-opacity="0.1"/><stop offset="1" stop-color="{on}" stop-opacity="0"/></radialGradient></defs><circle cx="{}" cy="{}" r="{}" fill="url(#{id})"/>"#,
+                x + big / 2.0,
+                y + big / 2.0 + 1.0,
+                big * 0.62
+            )
+        } else {
+            String::new()
+        };
+        light + &stroked_icon(name, x, y, big, on, line(big))
+    };
+    let dim = |name: &str, x: f32, y: f32| format!(r#"<g opacity="{off_opacity}">{}</g>"#, stroked_icon(name, x, y, small, off, line(small)));
+    if first_on { lit(first, 4.0, 4.0) + &dim(second, 72.0 - 5.0 - small, 72.0 - 5.0 - small) } else { dim(first, 5.0, 5.0) + &lit(second, 72.0 - 4.0 - big, 72.0 - 4.0 - big) }
+}
+
+/// A line icon at `size` px with its line `stroke` wide on the icon's 24 px grid.
+fn stroked_icon(name: &str, x: f32, y: f32, size: f32, color: &str, stroke: f32) -> String {
+    match icon_body(name) {
+        Some(body) if !name.starts_with(GAME_PREFIX) => {
+            format!(r#"<g transform="translate({x} {y}) scale({s})" fill="none" stroke="{color}" stroke-width="{stroke}" stroke-linecap="round" stroke-linejoin="round">{body}</g>"#, s = size / 24.0)
+        }
+        _ => icon(name, x, y, size, color),
+    }
 }
 
 /// `Look::icon` of an emoji: `emoji:🎵`.
@@ -2031,6 +2079,82 @@ mod tests {
         pixmap.save_png(std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT")).unwrap();
     }
 
+    #[test]
+    fn a_two_device_key_draws_both_icons_in_the_house_green() {
+        assert_eq!(PAIR_ON, super::super::house::icon_color(130.0));
+        let look = Look { bg: Some("#1b1a20".into()), icon_color: Some("#79d9ec".into()), pair: Some(("headphones".into(), "volume-2".into(), true)), ..Look::default() };
+        let svg = key_svg(&look, 0);
+        assert_eq!(svg.matches(r##"stroke="#79ec8c""##).count(), 1, "the device in use, in green");
+        assert!(svg.contains(r#"<g opacity="0.45">"#), "the other one dimmed");
+        assert!(!svg.contains("#79d9ec"), "not the key's own icon color");
+    }
+
+    /// The owner's Key 13 as the deck draws it, both states, 3x and 1x:
+    /// `HUBDECK_OUT=<png> cargo test -p hubdeck owners_key_13 -- --ignored`.
+    #[test]
+    #[ignore]
+    fn owners_key_13() {
+        let s = KEY_PX as f32;
+        let mut out = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}"><rect width="100%" height="100%" fill="#0e0d12"/>"##, s * 2.0 + 30.0, s + 20.0);
+        for (i, on) in [true, false].iter().enumerate() {
+            let look = Look {
+                bg: Some("#1b1a20".into()),
+                fg: Some("#e6e4ee".into()),
+                icon_color: Some("#79d9ec".into()),
+                icon: Some("headphones".into()),
+                pair: Some(("headphones".into(), "volume-2".into(), *on)),
+                ..Look::default()
+            };
+            out += &format!(r#"<svg x="{}" y="10" width="{s}" height="{s}">{}</svg>"#, 10.0 + i as f32 * (s + 10.0), key_body(&look, 0));
+        }
+        out += "</svg>";
+        let tree = usvg::Tree::from_str(&out, &usvg::Options::default()).unwrap();
+        let size = tree.size().to_int_size();
+        let path = std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT");
+        for k in [3u32, 1] {
+            let mut pixmap = tiny_skia::Pixmap::new(size.width() * k, size.height() * k).unwrap();
+            resvg::render(&tree, tiny_skia::Transform::from_scale(k as f32, k as f32), &mut pixmap.as_mut());
+            pixmap.save_png(path.replace(".png", &format!("-{k}x.png"))).unwrap();
+        }
+    }
+
+    /// Two-icon audio keys in three color variants, both states, on the owner's key color and a
+    /// light one: `HUBDECK_OUT=<png> cargo test -p hubdeck audio_pair_variants -- --ignored`.
+    #[test]
+    #[ignore]
+    fn audio_pair_variants() {
+        let s = KEY_PX as f32;
+        let variants = [("#79ec8c", "#e6e4ee", 0.45, true), ("#3ddc5a", "#e6e4ee", 0.45, true), ("#3ddc5a", "#ff453a", 0.9, false)];
+        let bgs = ["#1b1a20", "#3b2a4a"];
+        let (gap, pad) = (14.0, 14.0);
+        let cols = variants.len() * 2;
+        let w = pad * 2.0 + cols as f32 * (s + gap) - gap + (variants.len() - 1) as f32 * 20.0;
+        let h = pad * 2.0 + bgs.len() as f32 * (s + gap) - gap;
+        let mut out = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}"><rect width="100%" height="100%" fill="#0e0d12"/>"##);
+        for (v, (on, off, op, glow)) in variants.iter().enumerate() {
+            for (r, bg) in bgs.iter().enumerate() {
+                for (k, first_on) in [true, false].iter().enumerate() {
+                    let x = pad + (v * 2 + k) as f32 * (s + gap) + v as f32 * 20.0;
+                    let y = pad + r as f32 * (s + gap);
+                    let look = Look { bg: Some((*bg).into()), ..Look::default() };
+                    let (under, _, over) = key_parts_plain(&look);
+                    out += &format!(r#"<svg x="{x}" y="{y}" width="{s}" height="{s}">{under}{}{over}</svg>"#, icon_pair("headphones", "volume-2", *first_on, on, off, *op, *glow));
+                }
+            }
+        }
+        out += "</svg>";
+        let tree = usvg::Tree::from_str(&out, &usvg::Options::default()).unwrap();
+        let size = tree.size().to_int_size();
+        let mut pixmap = tiny_skia::Pixmap::new(size.width() * 3, size.height() * 3).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::from_scale(3.0, 3.0), &mut pixmap.as_mut());
+        let out_path = std::env::var("HUBDECK_OUT").expect("HUBDECK_OUT");
+        pixmap.save_png(&out_path).unwrap();
+        // and at the deck's own size (a key is 72 px on the module)
+        let mut real = tiny_skia::Pixmap::new(size.width(), size.height()).unwrap();
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut real.as_mut());
+        real.save_png(out_path.replace(".png", "-1x.png")).unwrap();
+    }
+
     /// App icons over the whole key, as they were (with the icon's own margin) and trimmed:
     /// `HUBDECK_ICONS=<data dir> HUBDECK_OUT=<png> cargo test -p hubdeck app_icons_before_after -- --ignored`
     /// with the images named in `HUBDECK_IMAGES` (comma-separated "file:label").
@@ -2372,6 +2496,10 @@ mod tests {
         let moved = key_svg(&Look { icon_dx: 6, icon_dy: -4, label_dx: -3, label_dy: 2, ..base.clone() }, 0);
         assert_ne!(plain, moved);
         assert!(moved.contains(r#"translate(-3 2)"#));
+        // mirrored around the icon's own centre (issue #10): an icon of 30 at x 21 maps 21..51 to 51..21
+        let flipped = key_svg(&Look { icon_flip: true, ..base.clone() }, 0);
+        assert!(flipped.contains(r#"<g transform="matrix(-1 0 0 1 72 0)">"#), "{flipped}");
+        assert!(!key_svg(&Look { icon_flip: true, icon: None, ..base.clone() }, 0).contains("matrix(-1"), "nothing to mirror without an icon");
         // a font the computer has is used for this key only; one it lacks is the deck's
         let font = deck_fonts().into_iter().find(|f| f != FONT_FAMILY).expect("a system font");
         let own = key_svg(&Look { font: Some(font.clone()), ..base.clone() }, 0);

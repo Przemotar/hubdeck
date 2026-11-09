@@ -2288,6 +2288,18 @@ impl OnGpu {
 impl Effect for OnGpu {
     fn step(&mut self, input: &Inputs) -> bool {
         self.t = input.t;
+        // the card was lost (a sleep, a driver reset): the layer is made again on a new one, its own
+        // state anew; until then the scene draws without it (issue #15)
+        if self.layer.is_stale() && (input.t - self.checked).abs() > 2.0 {
+            self.checked = input.t;
+            let name = if self.up { format!("{}-up", self.kind) } else { self.kind.to_string() };
+            if let Some(mut fresh) = Self::new(&name) {
+                fresh.layer.aux = self.layer.aux;
+                fresh.checked = input.t;
+                *self = fresh;
+                log::info!("living deck: {name} made again on the graphics card");
+            }
+        }
         // a look being tried: its file changed, so it is compiled again (its own state starts anew)
         if let Some((file, time, state)) = &self.source
             && (input.t - self.checked).abs() > 0.7
@@ -3517,6 +3529,49 @@ mod tests {
         }
         let broken: Vec<&str> = GPU_KINDS.iter().copied().filter(|k| OnGpu::new(k).is_none()).collect();
         assert!(broken.is_empty(), "GPU layers that do not compile: {broken:?}");
+    }
+
+    /// A layer whose card the driver lost (a sleep, issue #15) draws nothing, without a panic, and
+    /// is made again on a new card a couple of seconds later; skipped where there is no card (CI).
+    #[test]
+    fn a_layer_on_a_lost_card_is_made_again() {
+        if crate::engine::gpu::get().is_none() {
+            return;
+        }
+        let keys = places();
+        let mask = vec![0u8; W * H];
+        let input = |t: f32| Inputs {
+            t,
+            dt: 1.0 / 24.0,
+            keys: &keys,
+            down: (0.0, 1.0),
+            tint: [1.0, 1.0, 1.0],
+            strength: 0.6,
+            mask: &mask,
+            speed: 1.0,
+            density: 1.0,
+            wind: 0.0,
+            light: [240.0, -60.0, 120.0, 1.0],
+            icons: &mask,
+            rare: [0.5; 15],
+            moving: false,
+            left: false,
+        };
+        let mut e = OnGpu::new("nebula").expect("nebula");
+        e.layer.lose_for_test();
+        assert!(e.layer.is_stale());
+        let base: Vec<u8> = (0..W * H).flat_map(|_| [0x1b, 0x1a, 0x20, 255]).collect();
+        let mut panel = base.clone();
+        e.step(&input(0.0));
+        e.under(&input(0.0), &mut panel);
+        e.over(&input(0.0), &mut panel);
+        assert_eq!(panel, base, "a lost card draws nothing");
+        assert!(!crate::engine::gpu::draw_chain(&[(&e.layer, &input(0.0))], &mut panel, false), "a chain on a lost card is not drawn");
+        e.step(&input(3.0));
+        assert!(!e.layer.is_stale(), "made again on the card in use");
+        e.under(&input(3.0), &mut panel);
+        e.over(&input(3.0), &mut panel);
+        assert_ne!(panel, base, "the new layer draws");
     }
 
     /// An upright copy lying down draws what its original draws, frame by frame, a press included

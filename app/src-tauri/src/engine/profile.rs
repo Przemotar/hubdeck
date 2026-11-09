@@ -111,6 +111,10 @@ pub struct Look {
     pub icon_dx: i8,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub icon_dy: i8,
+    /// The key's icon (or emoji, or picture drawn as an icon) mirrored left to right (issue #10,
+    /// killa8boll, 2026-11-01: "an option to flip an icon horizontally").
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub icon_flip: bool,
     /// The label moved from its place, in key pixels.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub label_dx: i8,
@@ -140,6 +144,11 @@ pub struct Look {
     /// How far in from the key's edges a skin keeps the label, px (neon's tube). Never saved.
     #[serde(skip)]
     pub inset: f32,
+    /// Two icons instead of one, (first, second, the first in use): the one in use big and in the
+    /// icon's color, the other small and dim, as the Audio Switcher plugin draws its key but on
+    /// the key's own background (an audio key with a second device; owner, 2026-11-02). Never saved.
+    #[serde(skip)]
+    pub pair: Option<(String, String, bool)>,
 }
 
 /// A saved key look of the icon editor.

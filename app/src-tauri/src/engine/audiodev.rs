@@ -16,18 +16,60 @@ pub fn list(input: bool) -> Result<Vec<Device>, String> {
 }
 
 /// The device a saved value names: its system id (what Stream Deck's Audio Switcher keeps, and
-/// what a converted key carries), else the same name, else a name that contains it (all
-/// case-insensitive).
+/// what a converted key carries), else the same name, else the same name without Windows'
+/// numbering (see [`plain`]), else a name that contains it (all case-insensitive).
 pub fn find<'a>(devices: &'a [Device], wanted: &str) -> Option<&'a Device> {
     let wanted = wanted.trim().to_lowercase();
     if wanted.is_empty() {
         return None;
     }
+    let bare = plain(&wanted);
     devices
         .iter()
         .find(|d| d.id.to_lowercase() == wanted)
         .or_else(|| devices.iter().find(|d| d.name.to_lowercase() == wanted))
+        .or_else(|| devices.iter().find(|d| plain(&d.name) == bare))
         .or_else(|| devices.iter().find(|d| d.name.to_lowercase().contains(&wanted)))
+        .or_else(|| devices.iter().find(|d| plain(&d.name).contains(&bare)))
+}
+
+/// Does a saved device value name one of these names or system ids (as [`find`] would)?
+pub fn known(names_or_ids: &[String], wanted: &str) -> bool {
+    let devices: Vec<Device> = names_or_ids.iter().map(|n| Device { id: n.clone(), name: n.clone(), default: false }).collect();
+    find(&devices, wanted).is_some()
+}
+
+/// A device name lowercased and without the number Windows puts before a name it has seen twice:
+/// "Głośniki (2 — Realtek(R) Audio)", "1 - BenQ EW277HDR (...)". The number comes and goes when
+/// Windows installs the devices again (the owner's upgrade to Windows 11, 2026-11-01: "2 — "
+/// was gone and his key found no speakers).
+pub fn plain(name: &str) -> String {
+    let c: Vec<char> = name.trim().to_lowercase().chars().collect();
+    let mut out = String::with_capacity(name.len());
+    let mut i = 0;
+    while i < c.len() {
+        if i == 0 || c[i - 1] == '(' {
+            let mut j = i;
+            while j < c.len() && c[j].is_ascii_digit() {
+                j += 1;
+            }
+            let digits = j > i;
+            while j < c.len() && c[j] == ' ' {
+                j += 1;
+            }
+            if digits && j < c.len() && matches!(c[j], '—' | '–' | '-') {
+                j += 1;
+                while j < c.len() && c[j] == ' ' {
+                    j += 1;
+                }
+                i = j;
+                continue;
+            }
+        }
+        out.push(c[i]);
+        i += 1;
+    }
+    out
 }
 
 /// Make the device `name` names (see [`find`]) the default for every role.
@@ -183,6 +225,22 @@ mod find_tests {
         assert_eq!(find(&devices, "ultragear").unwrap().name, "LG ULTRAGEAR (NVIDIA High Definition Audio)");
         assert!(find(&devices, "fifine").is_none());
         assert!(find(&devices, " ").is_none());
+    }
+
+    #[test]
+    fn windows_numbering_does_not_lose_the_device() {
+        let d = |id: &str, name: &str| Device { id: id.into(), name: name.into(), default: false };
+        // the owner's speakers before and after the upgrade to Windows 11 (2026-11-01), new ids
+        let after = [d("{0ddeae63}", "Głośniki (Realtek(R) Audio)"), d("{b378d7b1}", "Interfejs SPDIF (FiiO USB DAC-E10)")];
+        assert_eq!(find(&after, "Głośniki (2 — Realtek(R) Audio)").unwrap().id, "{0ddeae63}");
+        let before = [d("{9c79ccff}", "Głośniki (2 — Realtek(R) Audio)"), d("{2a748d9b}", "1 - BenQ EW277HDR (NVIDIA High Definition Audio)")];
+        assert_eq!(find(&before, "Głośniki (Realtek(R) Audio)").unwrap().id, "{9c79ccff}");
+        assert_eq!(find(&before, "BenQ EW277HDR (NVIDIA High Definition Audio)").unwrap().id, "{2a748d9b}");
+        // a number that is part of the name stays
+        assert_eq!(super::plain("Realtek HD Audio 2nd output (Realtek(R) Audio)"), "realtek hd audio 2nd output (realtek(r) audio)");
+        assert_eq!(super::plain("Speakers (2- USB Audio)"), "speakers (usb audio)");
+        assert!(super::known(&["Głośniki (Realtek(R) Audio)".into()], "Głośniki (2 — Realtek(R) Audio)"));
+        assert!(!super::known(&["Głośniki (Realtek(R) Audio)".into()], "Słuchawki (USB)"));
     }
 }
 

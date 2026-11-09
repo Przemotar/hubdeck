@@ -102,13 +102,18 @@ pub fn issues(p: &Profile, env: &Env) -> Vec<Issue> {
         {
             flag(format!("Its plugin is not installed: {plugin}"));
         }
-        let device = param("device");
-        if (b.action == "core.audioDevice" || b.action == "core.sound")
-            && !device.is_empty()
-            && let Some(list) = &env.audio_devices
-            && !list.iter().any(|d| d.eq_ignore_ascii_case(&device))
-        {
-            flag(format!("No audio device named {device}"));
+        // the device and the second one a key switches with (found as a press finds them)
+        let devices = if b.action == "core.audioDevice" {
+            vec![param("device"), param("with")]
+        } else if b.action == "core.sound" {
+            vec![param("device")]
+        } else {
+            Vec::new()
+        };
+        if let Some(list) = &env.audio_devices {
+            for device in devices.into_iter().filter(|d| !d.is_empty() && !super::audiodev::known(list, d)) {
+                flag(format!("No audio device named {device}"));
+            }
         }
         let port = param("port");
         if b.action.starts_with("midi.")
@@ -164,6 +169,9 @@ mod tests {
         p.controls.insert("keys.1".into(), bind("core.launch", json!({"target": "https://example.com"})));
         p.controls.insert("keys.2".into(), bind("core.run", json!({"command": "notepad.exe"})));
         p.controls.insert("keys.3".into(), bind("core.audioDevice", json!({"kind": "output", "device": "Old Headset"})));
+        // Windows' numbering came off the name: still the same speakers; a second device that is gone is named
+        p.controls.insert("keys.15".into(), bind("core.audioDevice", json!({"kind": "output", "device": "Speakers (2 — Realtek)"})));
+        p.controls.insert("keys.16".into(), bind("core.audioDevice", json!({"kind": "output", "device": "Speakers (Realtek)", "with": "Old Headset"})));
         p.controls.insert("knobs.0".into(), bind("midi.cc", json!({"port": "loopMIDI Port", "cc": 1})));
         let mut pic = bind("core.media", json!({}));
         pic.look.image = Some("gone.png".into());
@@ -193,7 +201,7 @@ mod tests {
         p.controls.insert("dial".into(), bind("com.here/com.here.ping", json!({})));
         let all = issues(&p, &env);
         let found: Vec<&str> = all.iter().map(|i| i.control.as_str()).collect();
-        assert_eq!(found, ["keys.0", "keys.10", "keys.12", "keys.14", "keys.3", "keys.4", "keys.6", "keys.8"], "URLs, names that open, existing ports, scenes and inputs are fine");
+        assert_eq!(found, ["keys.0", "keys.10", "keys.12", "keys.14", "keys.16", "keys.3", "keys.4", "keys.6", "keys.8"], "URLs, names that open, existing ports, scenes and inputs are fine");
         assert_eq!(needs(&p), (true, true));
     }
 }

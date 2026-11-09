@@ -18,7 +18,9 @@
 //! (optional, one thread a panel pixel). The bench (`prototype/gpu-bench`, 2026-10-26, RTX 3060 Ti):
 //! the panel up, a heavy wave field and back in 1.5 ms where the CPU took 9.1.
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use super::render::{PANEL_H, PANEL_W};
 
@@ -26,30 +28,107 @@ const W: usize = PANEL_W as usize;
 const H: usize = PANEL_H as usize;
 const PRESSES: usize = 16;
 
-/// The card, made once on first use (0.7-1 s); None when there is none (or it failed): GPU layers
+/// The card, made on first use (0.7-1 s); None when there is none (or it failed): GPU layers
 /// then draw nothing and the window says so.
 pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// Set when the driver lost the device (a sleep, a driver update or reset): nothing more is
+    /// sent to it, and [`get`] makes a new one (issue #15, 2026-11-09: HubDeck ended 93 s after
+    /// the PC woke, with no error of its own in the log).
+    lost: Arc<AtomicBool>,
 }
 
+impl Gpu {
+    fn is_lost(&self) -> bool {
+        self.lost.load(Ordering::SeqCst)
+    }
+}
+
+/// The card in use, and when a lost one may be made again.
+struct Current {
+    gpu: Option<&'static Gpu>,
+    tried: bool,
+    next_try: Option<Instant>,
+}
+
+/// A lost card is made again at most this often (making one blocks for about a second).
+const RETRY: Duration = Duration::from_secs(10);
+
 pub fn get() -> Option<&'static Gpu> {
-    static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
-    GPU.get_or_init(|| {
-        // a test copy can act as a PC without a card (the panel's "no graphics card" line)
-        if std::env::var_os("HUBDECK_NO_GPU").is_some() {
-            return None;
+    static CURRENT: Mutex<Current> = Mutex::new(Current { gpu: None, tried: false, next_try: None });
+    let mut current = CURRENT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(gpu) = current.gpu {
+        if !gpu.is_lost() {
+            return Some(gpu);
         }
-        let started = std::time::Instant::now();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })).ok()?;
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
-        let info = adapter.get_info();
-        let name = format!("{} ({:?})", info.name, info.backend);
-        log::info!("living deck: GPU {name} ready in {} ms", started.elapsed().as_millis());
-        Some(Gpu { device, queue })
-    })
-    .as_ref()
+        // the old device stays allocated (a few small objects; layers made on it may still hold it)
+        current.gpu = None;
+        current.next_try = Some(Instant::now());
+        // programs compiled on the lost device cannot run on a new one
+        compiled().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+    let now = Instant::now();
+    let retry = current.next_try.is_some_and(|at| now >= at);
+    if current.tried && !retry {
+        return None;
+    }
+    current.tried = true;
+    let made = make();
+    current.next_try = if made.is_none() && current.next_try.is_some() { Some(now + RETRY) } else { None };
+    current.gpu = made.map(|g| &*Box::leak(Box::new(g)));
+    current.gpu
+}
+
+fn make() -> Option<Gpu> {
+    // a test copy can act as a PC without a card (the panel's "no graphics card" line)
+    if std::env::var_os("HUBDECK_NO_GPU").is_some() {
+        return None;
+    }
+    let started = Instant::now();
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })).ok()?;
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
+    let info = adapter.get_info();
+    let name = format!("{} ({:?})", info.name, info.backend);
+    let lost = Arc::new(AtomicBool::new(false));
+    let flag = lost.clone();
+    device.set_device_lost_callback(move |reason, message| {
+        // a device dropped on purpose reports too; only a real loss counts
+        if !matches!(reason, wgpu::DeviceLostReason::Destroyed) {
+            log::warn!("living deck: the graphics card was lost ({reason:?}: {message}); scenes go on without it until it is made again");
+            flag.store(true, Ordering::SeqCst);
+        }
+    });
+    // wgpu's default handler panics, and a panic ends HubDeck: an error is logged instead
+    let flag = lost.clone();
+    device.on_uncaptured_error(Box::new(move |e| {
+        let lost = matches!(e, wgpu::Error::OutOfMemory { .. });
+        log::warn!("living deck: GPU error{}: {e}", if lost { " (the card is made again)" } else { "" });
+        if lost {
+            flag.store(true, Ordering::SeqCst);
+        }
+    }));
+    log::info!("living deck: GPU {name} ready in {} ms", started.elapsed().as_millis());
+    Some(Gpu { device, queue, lost })
+}
+
+/// Waits for `slice` to be mapped; false when the card did not answer or the map failed (the
+/// mapped range must not be read then: it panics).
+fn mapped(gpu: &Gpu, slice: &wgpu::BufferSlice) -> bool {
+    let done = Arc::new(Mutex::new(None));
+    let result = done.clone();
+    slice.map_async(wgpu::MapMode::Read, move |r| *result.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.is_ok()));
+    if gpu.device.poll(wgpu::PollType::Wait).is_err() {
+        gpu.lost.store(true, Ordering::SeqCst);
+        return false;
+    }
+    let ok = done.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(false);
+    if !ok {
+        log::warn!("living deck: a picture could not be read back from the graphics card");
+        gpu.lost.store(true, Ordering::SeqCst);
+    }
+    ok
 }
 
 /// What every shader layer gets each frame (WGSL `Frame`, 16-byte aligned).
@@ -403,6 +482,9 @@ impl ShaderLayer {
 
     pub fn step(&mut self, input: &super::canvas::Inputs, steps: u32) {
         let Some(pipeline) = &self.step else { return };
+        if self.gpu.is_lost() {
+            return;
+        }
         let q = &self.gpu.queue;
         let presses: Vec<[f32; 4]> = std::mem::take(&mut self.presses);
         self.write_keys(input);
@@ -429,6 +511,20 @@ impl ShaderLayer {
         q.submit([enc.finish()]);
     }
 
+    /// Moves the layer onto a card of its own that the driver "lost", leaving the one in use (and
+    /// the other tests on it) alone.
+    #[cfg(test)]
+    pub fn lose_for_test(&mut self) {
+        let gpu = make().expect("a card");
+        gpu.lost.store(true, Ordering::SeqCst);
+        self.gpu = Box::leak(Box::new(gpu));
+    }
+
+    /// Made on a card the driver has lost since: it draws nothing and should be made again.
+    pub fn is_stale(&self) -> bool {
+        self.gpu.is_lost()
+    }
+
     pub fn has_under(&self) -> bool {
         self.under.is_some()
     }
@@ -445,6 +541,9 @@ impl ShaderLayer {
     /// The panel through the layer's `under` or `over` program, in place (up to the card and back).
     pub fn draw(&mut self, input: &super::canvas::Inputs, panel: &mut [u8], over: bool) {
         let Some(pipeline) = (if over { &self.over } else { &self.under }) else { return };
+        if self.gpu.is_lost() {
+            return;
+        }
         let q = &self.gpu.queue;
         q.write_buffer(&self.frame, 0, bytemuck::bytes_of(&self.frame(input, 0)));
         self.write_keys(input);
@@ -464,8 +563,7 @@ impl ShaderLayer {
         enc.copy_buffer_to_buffer(&self.dst, 0, &self.back, 0, (W * H * 4) as u64);
         q.submit([enc.finish()]);
         let slice = self.back.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        if self.gpu.device.poll(wgpu::PollType::Wait).is_err() {
+        if !mapped(self.gpu, &slice) {
             return;
         }
         panel.copy_from_slice(&slice.get_mapped_range());
@@ -481,6 +579,10 @@ impl ShaderLayer {
 pub fn draw_chain(chain: &[(&ShaderLayer, &super::canvas::Inputs)], panel: &mut [u8], over: bool) -> bool {
     let Some((first, _)) = chain.first() else { return true };
     let gpu = first.gpu;
+    // a layer made on a card lost since then (all of a chain are made on the same one)
+    if gpu.is_lost() || chain.iter().any(|(l, _)| !std::ptr::eq(l.gpu, gpu)) {
+        return false;
+    }
     let q = &gpu.queue;
     q.write_buffer(&first.src, 0, panel);
     for (layer, input) in chain {
@@ -509,8 +611,7 @@ pub fn draw_chain(chain: &[(&ShaderLayer, &super::canvas::Inputs)], panel: &mut 
     q.submit([enc.finish()]);
     let last = chain[chain.len() - 1].0;
     let slice = last.back.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    if gpu.device.poll(wgpu::PollType::Wait).is_err() {
+    if !mapped(gpu, &slice) {
         return false;
     }
     panel.copy_from_slice(&slice.get_mapped_range());

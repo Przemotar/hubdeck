@@ -62,6 +62,8 @@ export interface Look {
   /** The icon and the label moved by hand in the full editor, key pixels (-36..36). */
   iconDx?: number;
   iconDy?: number;
+  /** The key's icon mirrored left to right (issue #10). */
+  iconFlip?: boolean;
   labelDx?: number;
   labelDy?: number;
   /** Looks by conditions, in order: while one holds, its look's fields win (`rules.rs`). */

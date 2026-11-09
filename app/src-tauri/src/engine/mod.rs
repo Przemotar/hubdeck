@@ -1688,6 +1688,24 @@ fn schedule_steps(start: Instant, params: &serde_json::Value) -> Vec<(Instant, B
 }
 
 /// The steps of a toggle's first press as bindings (their state tells which side is on).
+/// The two icons of an audio key with a second device ("Switch with"): its own icon for the first
+/// device (headphones when it has none) and a speaker for the second, as the Audio Switcher
+/// plugin draws them (owner, 2026-11-02: "ulepszyć u nas ten przycisk żeby wyglądał jak tamten").
+fn audio_pair(binding: &Binding) -> Option<(String, String)> {
+    let p = &binding.params;
+    let both = binding.action == "core.audioDevice" && !actions::param_str(p, "device").trim().is_empty() && !actions::param_str(p, "with").trim().is_empty();
+    both.then(|| {
+        let input = actions::param_str(p, "kind") == "input";
+        let first = binding.look.icon.clone().filter(|i| render::icon_svg(i).is_some()).unwrap_or_else(|| if input { "mic" } else { "headphones" }.into());
+        let second = match (input, first.as_str()) {
+            (true, _) => "mic",
+            (false, "volume-2") => "headphones",
+            _ => "volume-2",
+        };
+        (first, second.to_string())
+    })
+}
+
 fn toggle_first(binding: &Binding) -> Vec<Binding> {
     actions::steps_at(&binding.params, "first").into_iter().map(|s| Binding { action: s.action, params: s.params, look: Look::default(), accel: false, look_on: None, swap_turns: false }).collect()
 }
@@ -2910,10 +2928,16 @@ impl Worker {
                                 .map(|n| n == 1)
                                 .or_else(|| (b.action == actions::TOGGLE).then(|| self.toggle_on(&toggle_key(profile.as_ref().map(|p| p.id.as_str()), &id), b)))
                                 .or_else(|| self.state_of(b));
-                            // a Stream Deck action's state picks its picture, it is not HubDeck's red "on"
-                            let shown_state = if sdplugins::is_sd_action(&b.action) { None } else { state };
+                            // a Stream Deck action's state picks its picture, it is not HubDeck's red "on";
+                            // nor is a key of two audio devices': both its icons say which one is in use
+                            let pair = audio_pair(b);
+                            let shown_state = if sdplugins::is_sd_action(&b.action) || pair.is_some() { None } else { state };
                             let look = self.plugin_look(&id, self.now_playing_look(b, b.look_for(shown_state)));
                             let look = self.sd_look(&id, b, look);
+                            let look = match pair {
+                                Some((first, second)) => Look { pair: Some((first, second, state == Some(true))), ..look },
+                                None => look,
+                            };
                             if b.action == actions::AGENT {
                                 let slot = (actions::param_f64(&b.params, "slot", 1.0).max(1.0) as usize) - 1;
                                 return self.fleet.key_look(slot, &look, Instant::now(), self.fleet_sweep);

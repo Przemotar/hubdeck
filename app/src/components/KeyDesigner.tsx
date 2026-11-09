@@ -225,6 +225,10 @@ export function KeyDesigner({ look, onChange, others, onApplyTo, appIcon }: { lo
             ]}
             onChange={(iconSize) => onChange({ ...look, iconSize })}
           />
+          <label className="check">
+            <input type="checkbox" checked={!!look.iconFlip} onChange={(e) => onChange({ ...look, iconFlip: e.target.checked || undefined })} />
+            {t("look.iconFlip")}
+          </label>
           <p className="help">{t("designer.iconHelp")}</p>
           {appIcon && (
             <button className="tool small align-start" onClick={appIcon}>

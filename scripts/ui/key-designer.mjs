@@ -102,6 +102,17 @@ try {
   check("Color: a flat key that keeps the matte finish", l.style === undefined && l.gloss === "matte", JSON.stringify(l));
   check("the preview draws the matte finish", /kmatte/.test(await preview()));
 
+  // Icon: mirrored left to right and back (issue #10)
+  await tab("Icon");
+  await win.getByLabel("Mirror the icon").check();
+  await sleep(900);
+  check("Mirror the icon is kept", (await look()).iconFlip === true, JSON.stringify(await look()));
+  check("the preview draws the icon mirrored", /matrix\(-1 0 0 1/.test(await preview()));
+  await shot("2b-icon-mirrored");
+  await win.getByLabel("Mirror the icon").uncheck();
+  await sleep(900);
+  check("unticked, the mirror is gone from the profile and the preview", (await look()).iconFlip === undefined && !/matrix\(-1 0 0 1/.test(await preview()), JSON.stringify(await look()));
+
   // Label: a shadow
   await tab("Label");
   await win.getByRole("radiogroup", { name: "Text effect" }).getByRole("radio", { name: "Shadow" }).click();
@@ -209,7 +220,7 @@ try {
     await sleep(400);
     for (const name of ["Templates", "Background", "Icon", "Label", "Extras"]) {
       await tab(name);
-      const cut = (await clipped(win)).filter((x) => /Templates|Background|Icon|Label|Extras|Color|Gradient|Outline|Finish|None|Glass|Matte|Direction|Shadow|Text effect|Badge|Frame|Save as|Apply|Neon|Forest|Ember|Night|Pattern|Stripes|Dots|Grid|Noise|Strength|Motion|Pulse|Shine|Move pattern/.test(x.text));
+      const cut = (await clipped(win)).filter((x) => /Templates|Background|Icon|Label|Extras|Color|Gradient|Outline|Finish|None|Glass|Matte|Direction|Mirror the icon|Shadow|Text effect|Badge|Frame|Save as|Apply|Neon|Forest|Ember|Night|Pattern|Stripes|Dots|Grid|Noise|Strength|Motion|Pulse|Shine|Move pattern/.test(x.text));
       check(`nothing of ${name} cut at ${w} wide`, cut.length === 0, cut.map((x) => x.text).join(" | "));
     }
   }

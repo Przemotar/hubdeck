@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4
+
+- **An Audio device key with a second device shows both**: the device in use big and green, the
+  other small and dim beside it, on the key's own background, so you see at a glance which one
+  plays.
+- **Audio device keys survive Windows renumbering your devices.** After a big Windows update the
+  speakers' name lost its number ("2 — Realtek(R) Audio") and a key saved with the old name found
+  nothing; a saved device is now found without that number. The profile check also marks a
+  "Switch with" device that is no longer there.
+- **Mirror the icon** (#10): Edit look > Icon has a switch that flips a key's icon, emoji or
+  picture left to right.
+- **The living deck survives a lost graphics card** (#15): after the computer sleeps, Windows can
+  take the graphics card away from HubDeck. HubDeck now notices, keeps the deck running without
+  the scene's effects for a moment, and builds them again on the card; before, a lost card could
+  end the app. The log says when it happens.
+
 ## 0.2.3
 
 - **A second keys module and a second dial get controls of their own** (#7): the second keys module

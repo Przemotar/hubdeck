@@ -222,7 +222,7 @@ const INSTRUCTIONS: &str = "HubDeck drives a modular desk controller (Cooler Mas
 
 /// The binding schema, shared by the tools that take one.
 fn binding_schema() -> Value {
-    let look = json!({
+    let mut look = json!({
         "type": "object",
         "description": "How the control looks. Keys and the dial draw label, icon or image on bg in fg; knobs and faders only use led, ledEffect, ledSpeed and ledLevel.",
         "properties": {
@@ -263,6 +263,8 @@ fn binding_schema() -> Value {
             "ledLevel": {"type": "boolean", "description": "LED brightness follows the value (fader position, volume)."}
         }
     });
+    // set after: one more field in the literal goes past `json!`'s recursion limit
+    look["properties"]["iconFlip"] = json!({"type": "boolean", "description": "Keys: the icon mirrored left to right."});
     json!({
         "type": "object",
         "required": ["action"],
