@@ -1123,7 +1123,7 @@ fn icon_pair(first: &str, second: &str, first_on: bool, on: &str, off: &str, off
     let line = |size: f32| 3.0 * 24.0 / size;
     let lit = |name: &str, x: f32, y: f32| {
         let light = if glow {
-            let id = format!("kpair{}", &on.trim_start_matches('#'));
+            let id = format!("kpair{}", on.trim_start_matches('#'));
             format!(
                 r#"<defs><radialGradient id="{id}"><stop offset="0" stop-color="{on}" stop-opacity="0.32"/><stop offset="0.55" stop-color="{on}" stop-opacity="0.1"/><stop offset="1" stop-color="{on}" stop-opacity="0"/></radialGradient></defs><circle cx="{}" cy="{}" r="{}" fill="url(#{id})"/>"#,
                 x + big / 2.0,

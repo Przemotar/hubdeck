@@ -65,6 +65,9 @@ try {
   win.on("pageerror", (e) => (errors++, console.log("page error:", e.message)));
   await win.setViewportSize({ width: 1280, height: 800 });
   await sleep(2500);
+  // a new version opens What's new over everything on a test copy's first start: closed first
+  const gotIt = win.getByRole("button", { name: "Got it", exact: true });
+  if (await gotIt.count()) (await gotIt.first().click(), await sleep(600));
   const key = win.locator('g.dk-ctl[data-kind="keys"][data-index="6"]').first();
   const box = await key.locator(".dk-hov").first().boundingBox();
   await win.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -80,11 +83,11 @@ try {
   const tiles = win.getByRole("listbox", { name: "Templates" }).getByRole("option");
   check("six templates, drawn with the key's own label", (await tiles.count()) === 6 && /Lubię to/.test(await tiles.first().innerHTML()), `${await tiles.count()}`);
   await shot("1-templates");
-  await win.getByRole("option", { name: "Neon" }).click();
+  await win.getByRole("option", { name: "Neon", exact: true }).click();
   await sleep(900);
   let l = await look();
   check("Neon: a gradient from violet to pink with glass; label and icon stay", l.style === "gradient" && l.bg === "#6a3fd8" && l.bg2 === "#e0457b" && l.gloss === "glass" && l.label === "Lubię to" && l.icon === "heart", JSON.stringify(l));
-  check("the Neon tile is marked as the key's look", (await win.getByRole("option", { name: "Neon" }).getAttribute("aria-selected")) === "true");
+  check("the Neon tile is marked as the key's look", (await win.getByRole("option", { name: "Neon", exact: true }).getAttribute("aria-selected")) === "true");
   check("the preview draws the gradient", /linearGradient/.test(await preview()));
 
   // Background: the direction, then a matte finish, then a flat color keeps the finish
@@ -173,7 +176,7 @@ try {
   // what the user sees: the whole window, the list scrolled into view
   await win.getByRole("button", { name: /Apply to selected/ }).scrollIntoViewIfNeeded();
   await win.screenshot({ path: path.join(shots, "6-apply-window.png") });
-  await win.locator(".tpl-grid").scrollIntoViewIfNeeded();
+  await win.getByRole("listbox", { name: "Templates" }).scrollIntoViewIfNeeded();
   await win.screenshot({ path: path.join(shots, "6-apply-window-top.png") });
   // the list of keys open: names whole, and the panel not widened (a two-column list cut the
   // Night template and the Label tab, session 30)
