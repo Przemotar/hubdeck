@@ -165,9 +165,11 @@ sudo install -m 644 packaging/linux/99-masterhub.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
 ```
 
-The whole deck works: keys, dial, knobs, faders, rollers and the base's light. The integrations that
-need a platform's own APIs (per-app volume, media with cover art, app icons, the app in front,
-monitor brightness) are not wired up on Linux yet and say so when used.
+The whole deck works: keys, dial, knobs, faders, rollers and the base's light. So do system and
+per-app volume, microphone mute, media keys and now-playing with cover art (MPRIS), the installed
+apps and their icons, idle and lock detection, and typing, hotkeys and scrolling through a virtual
+keyboard. Monitor brightness is the one integration still missing. `hubdeck cli doctor` checks
+these pieces on the machine and prints what works.
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
@@ -177,7 +179,7 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 |---|---|---|
 | Windows 10 and 11 | built and tested by CI | checked before every release (modules, window, a soak of memory and CPU) |
 | macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-30, a build after 0.1.12 |
-| Linux (experimental) | built and tested by CI | checked on a real deck: every module found, keys and dial drawn, LEDs (2026-11-04) |
+| Linux (experimental) | built and tested by CI | checked on a real deck: every module, keys and dial drawn, LEDs, volume, media, apps and icons, virtual keyboard (`hubdeck cli doctor`) (2026-11-09) |
 
 Something wrong on a Mac? Please [open an issue](https://github.com/Przemotar/hubdeck/issues): Mac
 reports are checked on a deck first.
@@ -192,8 +194,8 @@ reports are checked on a deck first.
 - Elgato Marketplace plugins with copy protection do not run, also when the Stream Deck app has
   them (Elgato keeps their files encrypted on disk); the catalog says which ones come only through
   Elgato's app. Plugins from their authors' own pages run.
-- Twitch sign-in is off until the app registration is done. Linux support is new: the platform
-  integrations listed above are not wired up there yet.
+- Twitch sign-in is off until the app registration is done. Linux: monitor brightness is not wired
+  up yet; the udev rule above must be installed for the deck and for typing, hotkeys and scrolling.
 - A module that drops off USB when you press it (Windows plays its unplug sound, the keys go blank
   for a moment) has a loose contact with the base: take it off and put it back firmly.
 
@@ -349,7 +351,10 @@ GitHub Actions, and each release lists the files' SHA-256. The source is all her
 [PRIVACY.md](PRIVACY.md) lists everything that can go online.
 
 **Linux?**
-Not yet. The protocol code is cross-platform; the app needs a Linux pass and a tester with a deck.
+Experimental, and checked on a real deck (Fedora 44 / KDE Wayland). Build it from the source below
+and install `packaging/linux/99-masterhub.rules`; the deck and its system integrations (volume,
+media, apps, idle/lock, typing) work, except monitor brightness. `hubdeck cli doctor` reports what
+the machine supports.
 
 ## Documentation
 

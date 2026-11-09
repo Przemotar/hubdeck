@@ -22,6 +22,7 @@ pub mod commands;
 pub mod deck_mcp;
 pub mod demo;
 pub mod diagnostics;
+pub mod doctor;
 pub mod elevated;
 pub(crate) mod exec;
 mod foreground;

@@ -242,6 +242,10 @@ mod platform {
 pub fn seek(seconds: f64) -> Result<(), String> {
     platform::seek(seconds)
 }
+/// What plays now, as the dial's Now playing shows it (the doctor and tests).
+pub fn current_now() -> Option<Track> {
+    platform::current(None)
+}
 
 /// Go to `seconds` from the start of what plays now (the dial scrubbing a song).
 pub fn seek_to(seconds: f64) -> Result<(), String> {

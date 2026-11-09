@@ -723,7 +723,9 @@ mod platform {
 
     /// The PulseAudio/PipeWire server through `pactl`, which every desktop with sound has.
     fn pactl(args: &[&str]) -> Result<String, String> {
-        let out = Command::new("pactl").args(args).output().map_err(|e| format!("pactl: {e}"))?;
+        // pactl speaks the session's language: "Mute: tak" on a Polish desktop, and a decimal
+        // comma in the level. The parser below reads the C locale.
+        let out = Command::new("pactl").env("LC_ALL", "C").args(args).output().map_err(|e| format!("pactl: {e}"))?;
         if !out.status.success() {
             let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
             return Err(if why.is_empty() { "pactl failed".into() } else { why });

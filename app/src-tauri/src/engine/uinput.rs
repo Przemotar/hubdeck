@@ -60,7 +60,7 @@ impl Device {
         // SAFETY: plain open(2) with a NUL-terminated path.
         let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDWR | libc::O_CLOEXEC) };
         if fd < 0 {
-            return Err(format!("cannot open /dev/uinput: {} (the active session usually grants it; otherwise add the user to the input group)", std::io::Error::last_os_error()));
+            return Err(format!("cannot open /dev/uinput: {} (install packaging/linux/99-masterhub.rules, which grants /dev/uinput to the user at the desk)", std::io::Error::last_os_error()));
         }
         let device = Device { fd };
         if let Err(e) = device.setup() {
@@ -134,6 +134,29 @@ fn with_device<T>(f: impl FnOnce(&Device) -> T) -> Result<T, String> {
         *guard = Some(Device::open()?);
     }
     Ok(f(guard.as_ref().expect("just created")))
+}
+
+/// Open `/dev/uinput` and create the virtual keyboard, as the first key would. The doctor calls
+/// this to check the permission and the kernel side without sending a key anywhere.
+pub fn probe() -> Result<(), String> {
+    with_device(|_| ())
+}
+
+/// Check the key tables without touching the input stack: every common hotkey parses and every
+/// printable character on the US layout has a key.
+pub fn self_check() -> Result<usize, String> {
+    let mut checked = 0;
+    for combo in ["Ctrl+C", "Ctrl+Shift+M", "Alt+F4", "Super+L", "Ctrl+Alt+Delete", "Shift+Tab"] {
+        combo_codes(combo)?;
+        checked += 1;
+    }
+    for ch in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ~!@#$%^&*()_+{}|:\"<>?-=[]\\;',./\n\t".chars() {
+        if char_keys(ch).is_empty() {
+            return Err(format!("no key for {ch:?} on the US layout"));
+        }
+        checked += 1;
+    }
+    Ok(checked)
 }
 
 /// Press and release the keys of `combo`, e.g. `Ctrl+Shift+M` (the names the hotkey field uses).

@@ -8,19 +8,21 @@
 //! hubdeck cli profile <name or id>       show that profile
 //! hubdeck cli key <1-15> [--label T] [--icon NAME] [--page ID]   change a key's look in the active profile
 //! hubdeck cli lights <rainbow|color|profile|off> [#rrggbb]        the deck-wide light style
+//! hubdeck cli doctor                     check the deck and the system integrations
 //! ```
 
 use serde_json::{Value, json};
 
 use super::mcp::{Api, Http};
 
-const HELP: &str = "hubdeck cli status | profiles | profile <name or id> | key <1-15> [--label TEXT] [--icon NAME] [--page ID] | lights <rainbow|color|profile|off> [#rrggbb]";
+const HELP: &str = "hubdeck cli status | profiles | profile <name or id> | key <1-15> [--label TEXT] [--icon NAME] [--page ID] | lights <rainbow|color|profile|off> [#rrggbb] | doctor";
 
 /// Run one command; the text to print, or an error.
 pub fn command(api: &dyn Api, args: &[String]) -> Result<String, String> {
     let arg = |i: usize| args.get(i).map(String::as_str);
     let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(String::as_str);
     match arg(0) {
+        Some("doctor") => Ok(super::doctor::run(api).text()),
         Some("status") => {
             let p = api.call("GET", "/api/profiles", None)?;
             let m = api.call("GET", "/api/modules", None)?;
@@ -108,7 +110,13 @@ pub fn run(args: &[String]) -> i32 {
         eprintln!("hubdeck cli: no app data folder");
         return 1;
     };
-    match command(&Http { dir }, args) {
+    let api = Http { dir };
+    if args.first().map(String::as_str) == Some("doctor") {
+        let report = super::doctor::run(&api);
+        println!("{}", report.text());
+        return if report.failures() == 0 { 0 } else { 1 };
+    }
+    match command(&api, args) {
         Ok(text) => {
             println!("{text}");
             0

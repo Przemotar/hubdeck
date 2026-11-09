@@ -11,6 +11,7 @@ hubdeck cli key <1-15> --label TEXT    change a key's label in the active profil
 hubdeck cli key <1-15> --icon NAME     ... or its icon (names: Settings > the icon picker)
 hubdeck cli key 3 --label Mute --page tools   a key on another page
 hubdeck cli lights <rainbow|color|profile|off> [#rrggbb]   the deck-wide light style
+hubdeck cli doctor                     check the deck and the system integrations on this machine
 ```
 
 Keys are numbered 1-15 left to right, top to bottom. The exit code is 0 when the command worked

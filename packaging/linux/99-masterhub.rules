@@ -1,4 +1,8 @@
 # Cooler Master MasterHUB (VID 0x2516). The modules are vendor-defined HID (usage page 0xFF00)
 # and get no hidraw node, so HubDeck opens them through libusb: the USB device nodes have to be
-# writable by the user at the desk.
-SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"
+# writable by the user at the desk. uaccess does that for the session's user only, not everyone.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", TAG+="uaccess"
+
+# The virtual keyboard (engine/uinput.rs) types, sends hotkeys and scrolls through /dev/uinput.
+# uaccess grants it to the user at the desk; static_node creates it when the module loads.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
