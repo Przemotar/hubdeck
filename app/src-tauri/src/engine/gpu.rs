@@ -106,22 +106,32 @@ fn make() -> Option<Gpu> {
     Some(Gpu { device, queue, lost })
 }
 
-/// Waits for `slice` to be mapped; false when the card did not answer or the map failed (the
-/// mapped range must not be read then: it panics).
-fn mapped(gpu: &Gpu, slice: &wgpu::BufferSlice) -> bool {
+/// Maps `buffer` for reading and waits for it; false when the card did not answer or the map
+/// failed. Then the map is cancelled: the mapped range must not be read, and a buffer left with a
+/// map pending made the next frame's map panic ("Buffer is already mapped", CI's software card
+/// 2026-11-09, where a wait timed out under load).
+fn mapped(gpu: &Gpu, buffer: &wgpu::Buffer) -> bool {
     let done = Arc::new(Mutex::new(None));
     let result = done.clone();
-    slice.map_async(wgpu::MapMode::Read, move |r| *result.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.is_ok()));
-    // a slow frame or a failed read is not a lost card: only the driver's device-lost callback says
-    // so (a timeout under load made a new card in the middle of other work, CI 2026-11-09)
-    if gpu.device.poll(wgpu::PollType::Wait).is_err() {
-        return false;
+    buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| *result.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.is_ok()));
+    let answer = || *done.lock().unwrap_or_else(|e| e.into_inner());
+    // a slow frame is waited for again; it is not a lost card (only the driver's device-lost
+    // callback says so: a timeout once made a new card in the middle of other work)
+    for _ in 0..3 {
+        let waited = gpu.device.poll(wgpu::PollType::Wait);
+        if answer().is_some() {
+            break;
+        }
+        if let Err(e) = waited {
+            log::warn!("living deck: the graphics card did not answer in time ({e}); waiting again");
+        }
     }
-    let ok = done.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(false);
-    if !ok {
-        log::warn!("living deck: a picture could not be read back from the graphics card");
+    if answer() == Some(true) {
+        return true;
     }
-    ok
+    log::warn!("living deck: a picture could not be read back from the graphics card; this frame is skipped");
+    buffer.unmap();
+    false
 }
 
 /// What every shader layer gets each frame (WGSL `Frame`, 16-byte aligned).
@@ -557,7 +567,7 @@ impl ShaderLayer {
         enc.copy_buffer_to_buffer(&self.dst, 0, &self.back, 0, (W * H * 4) as u64);
         q.submit([enc.finish()]);
         let slice = self.back.slice(..);
-        if !mapped(self.gpu, &slice) {
+        if !mapped(self.gpu, &self.back) {
             return;
         }
         panel.copy_from_slice(&slice.get_mapped_range());
@@ -605,7 +615,7 @@ pub fn draw_chain(chain: &[(&ShaderLayer, &super::canvas::Inputs)], panel: &mut 
     q.submit([enc.finish()]);
     let last = chain[chain.len() - 1].0;
     let slice = last.back.slice(..);
-    if !mapped(gpu, &slice) {
+    if !mapped(gpu, &last.back) {
         return false;
     }
     panel.copy_from_slice(&slice.get_mapped_range());
