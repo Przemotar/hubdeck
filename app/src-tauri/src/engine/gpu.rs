@@ -101,14 +101,7 @@ fn make() -> Option<Gpu> {
         }
     });
     // wgpu's default handler panics, and a panic ends HubDeck: an error is logged instead
-    let flag = lost.clone();
-    device.on_uncaptured_error(Box::new(move |e| {
-        let lost = matches!(e, wgpu::Error::OutOfMemory { .. });
-        log::warn!("living deck: GPU error{}: {e}", if lost { " (the card is made again)" } else { "" });
-        if lost {
-            flag.store(true, Ordering::SeqCst);
-        }
-    }));
+    device.on_uncaptured_error(Box::new(move |e| log::warn!("living deck: GPU error: {e}")));
     log::info!("living deck: GPU {name} ready in {} ms", started.elapsed().as_millis());
     Some(Gpu { device, queue, lost })
 }
@@ -119,14 +112,14 @@ fn mapped(gpu: &Gpu, slice: &wgpu::BufferSlice) -> bool {
     let done = Arc::new(Mutex::new(None));
     let result = done.clone();
     slice.map_async(wgpu::MapMode::Read, move |r| *result.lock().unwrap_or_else(|e| e.into_inner()) = Some(r.is_ok()));
+    // a slow frame or a failed read is not a lost card: only the driver's device-lost callback says
+    // so (a timeout under load made a new card in the middle of other work, CI 2026-11-09)
     if gpu.device.poll(wgpu::PollType::Wait).is_err() {
-        gpu.lost.store(true, Ordering::SeqCst);
         return false;
     }
     let ok = done.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or(false);
     if !ok {
         log::warn!("living deck: a picture could not be read back from the graphics card");
-        gpu.lost.store(true, Ordering::SeqCst);
     }
     ok
 }
@@ -303,6 +296,8 @@ pub struct ShaderLayer {
     pub aux: [[f32; 4]; 16],
     /// Its `mask` is the icons' cover without labels ([`super::canvas::Inputs::icons`]).
     pub icons_only: bool,
+    /// Set only by tests: the layer acts as if its card were lost.
+    lost_in_test: bool,
 }
 
 /// A layer's compiled program: its bind group layout and its `step`, `under`, `over` pipelines.
@@ -432,6 +427,7 @@ impl ShaderLayer {
             state_size: state,
             aux: [[0.0; 4]; 16],
             icons_only: false,
+            lost_in_test: false,
         })
     }
 
@@ -482,7 +478,7 @@ impl ShaderLayer {
 
     pub fn step(&mut self, input: &super::canvas::Inputs, steps: u32) {
         let Some(pipeline) = &self.step else { return };
-        if self.gpu.is_lost() {
+        if self.is_stale() {
             return;
         }
         let q = &self.gpu.queue;
@@ -511,18 +507,16 @@ impl ShaderLayer {
         q.submit([enc.finish()]);
     }
 
-    /// Moves the layer onto a card of its own that the driver "lost", leaving the one in use (and
-    /// the other tests on it) alone.
+    /// Acts as a layer whose card the driver lost, without touching the card in use (other tests
+    /// draw on it at the same time; a second card made for this on CI's software card was too much).
     #[cfg(test)]
     pub fn lose_for_test(&mut self) {
-        let gpu = make().expect("a card");
-        gpu.lost.store(true, Ordering::SeqCst);
-        self.gpu = Box::leak(Box::new(gpu));
+        self.lost_in_test = true;
     }
 
     /// Made on a card the driver has lost since: it draws nothing and should be made again.
     pub fn is_stale(&self) -> bool {
-        self.gpu.is_lost()
+        self.lost_in_test || self.gpu.is_lost()
     }
 
     pub fn has_under(&self) -> bool {
@@ -541,7 +535,7 @@ impl ShaderLayer {
     /// The panel through the layer's `under` or `over` program, in place (up to the card and back).
     pub fn draw(&mut self, input: &super::canvas::Inputs, panel: &mut [u8], over: bool) {
         let Some(pipeline) = (if over { &self.over } else { &self.under }) else { return };
-        if self.gpu.is_lost() {
+        if self.is_stale() {
             return;
         }
         let q = &self.gpu.queue;
@@ -580,7 +574,7 @@ pub fn draw_chain(chain: &[(&ShaderLayer, &super::canvas::Inputs)], panel: &mut 
     let Some((first, _)) = chain.first() else { return true };
     let gpu = first.gpu;
     // a layer made on a card lost since then (all of a chain are made on the same one)
-    if gpu.is_lost() || chain.iter().any(|(l, _)| !std::ptr::eq(l.gpu, gpu)) {
+    if chain.iter().any(|(l, _)| l.is_stale() || !std::ptr::eq(l.gpu, gpu)) {
         return false;
     }
     let q = &gpu.queue;
