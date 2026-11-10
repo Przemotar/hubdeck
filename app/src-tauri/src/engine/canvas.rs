@@ -3579,7 +3579,7 @@ mod tests {
     /// there is no card (CI). Fuji's copy is its own picture in both turns (`REDRAWN`).
     #[test]
     fn upright_copies_lying_draw_their_originals() {
-        if crate::engine::gpu::get().is_none() {
+        if !crate::engine::gpu::frames_comparable() {
             return;
         }
         let keys = places();
@@ -3645,7 +3645,7 @@ mod tests {
     /// second); skipped where there is no card (CI).
     #[test]
     fn a_chain_draws_as_one_by_one() {
-        if crate::engine::gpu::get().is_none() {
+        if !crate::engine::gpu::frames_comparable() {
             return;
         }
         let keys = places();

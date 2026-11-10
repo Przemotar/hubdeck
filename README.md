@@ -157,6 +157,19 @@ On macOS 14 and older, right-click HubDeck in Applications and choose *Open* als
 shortcuts and type text from the deck, allow HubDeck in Privacy & Security > Accessibility; the
 app asks for it with a button. Setting one app's own volume (macOS 14.2 or later) asks once for
 System Audio Recording: HubDeck plays that app's sound at the level you set and records nothing.
+**Linux** (x86-64, experimental): there is no installer yet. Build it from the source (below) and
+let your user open the deck's USB ids:
+
+```sh
+sudo install -m 644 packaging/linux/99-masterhub.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+The whole deck works: keys, dial, knobs, faders, rollers and the base's light. So do system and
+per-app volume, microphone mute, media keys and now-playing with cover art (MPRIS), the installed
+apps and their icons, idle and lock detection, and typing, hotkeys and scrolling through a virtual
+keyboard. Monitor brightness is the one integration still missing. `hubdeck cli doctor` checks
+these pieces on the machine and prints what works.
 
 Close the official MasterHUB app first: two apps cannot drive the deck at once.
 
@@ -166,7 +179,7 @@ Close the official MasterHUB app first: two apps cannot drive the deck at once.
 |---|---|---|
 | Windows 10 and 11 | built and tested by CI | checked before every release (modules, window, a soak of memory and CPU) |
 | macOS 12 or later | built, signed and tested by CI | checked every few weeks; last: 2026-10-30, a build after 0.1.12 |
-| Linux | not supported | |
+| Linux (experimental) | built and tested by CI | checked on a real deck: every module, keys and dial drawn, LEDs, volume, media, apps and icons, virtual keyboard (`hubdeck cli doctor`) (2026-11-09) |
 
 Something wrong on a Mac? Please [open an issue](https://github.com/Przemotar/hubdeck/issues): Mac
 reports are checked on a deck first.
@@ -181,7 +194,8 @@ reports are checked on a deck first.
 - Elgato Marketplace plugins with copy protection do not run, also when the Stream Deck app has
   them (Elgato keeps their files encrypted on disk); the catalog says which ones come only through
   Elgato's app. Plugins from their authors' own pages run.
-- Twitch sign-in is off until the app registration is done. Linux is not supported.
+- Twitch sign-in is off until the app registration is done. Linux: monitor brightness is not wired
+  up yet; the udev rule above must be installed for the deck and for typing, hotkeys and scrolling.
 - A module that drops off USB when you press it (Windows plays its unplug sound, the keys go blank
   for a moment) has a loose contact with the base: take it off and put it back firmly.
 
@@ -337,7 +351,10 @@ GitHub Actions, and each release lists the files' SHA-256. The source is all her
 [PRIVACY.md](PRIVACY.md) lists everything that can go online.
 
 **Linux?**
-Not yet. The protocol code is cross-platform; the app needs a Linux pass and a tester with a deck.
+Experimental, and checked on a real deck (Fedora 44 / KDE Wayland). Build it from the source below
+and install `packaging/linux/99-masterhub.rules`; the deck and its system integrations (volume,
+media, apps, idle/lock, typing) work, except monitor brightness. `hubdeck cli doctor` reports what
+the machine supports.
 
 ## Documentation
 
@@ -362,7 +379,9 @@ module by module on real hardware; see [PROTOCOL.md](PROTOCOL.md).
 
 You need Rust (1.90 or later), Node 22 or later with pnpm, and on Windows the Visual Studio C++
 build tools (the "Desktop development with C++" workload); on macOS the Xcode command line tools
-(`xcode-select --install`).
+(`xcode-select --install`); on Linux the WebKitGTK 4.1, GTK 3, libsoup 3, libusb 1.0 and ALSA
+development packages (Fedora: `webkit2gtk4.1-devel gtk3-devel libsoup3-devel libusb1-devel
+alsa-lib-devel libappindicator-gtk3-devel`).
 
 ```
 cd app

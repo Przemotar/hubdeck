@@ -409,6 +409,8 @@ mod tests {
         assert!(adapted.controls.contains_key("dial"));
     }
 
+    // the shipped shortcut packs are Windows and macOS data
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn an_app_with_a_pack_gets_its_own_keys() {
         let exe = if cfg!(target_os = "macos") { "Firefox.app" } else { "firefox.exe" };

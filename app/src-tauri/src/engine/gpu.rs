@@ -37,12 +37,24 @@ pub struct Gpu {
     /// sent to it, and [`get`] makes a new one (issue #15, 2026-11-09: HubDeck ended 93 s after
     /// the PC woke, with no error of its own in the log).
     lost: Arc<AtomicBool>,
+    /// A card drawn by the processor (Windows' WARP on CI, lavapipe): right, but slow enough
+    /// that a frame can miss its read-back.
+    #[cfg_attr(not(test), allow(dead_code))]
+    software: bool,
 }
 
 impl Gpu {
     fn is_lost(&self) -> bool {
         self.lost.load(Ordering::SeqCst)
     }
+}
+
+/// A real card to compare pictures frame by frame on: none, or a software one, skips such tests.
+/// On CI's WARP a frame could miss its read-back under load, and the test saw a difference that
+/// was not there (sakura, mist; 2026-11-09); the owner's PC runs them on its card.
+#[cfg(test)]
+pub fn frames_comparable() -> bool {
+    get().is_some_and(|g| !g.software)
 }
 
 /// The card in use, and when a lost one may be made again.
@@ -90,7 +102,8 @@ fn make() -> Option<Gpu> {
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })).ok()?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
     let info = adapter.get_info();
-    let name = format!("{} ({:?})", info.name, info.backend);
+    let name = format!("{} ({:?}, {:?})", info.name, info.backend, info.device_type);
+    let software = info.device_type == wgpu::DeviceType::Cpu;
     let lost = Arc::new(AtomicBool::new(false));
     let flag = lost.clone();
     device.set_device_lost_callback(move |reason, message| {
@@ -103,7 +116,7 @@ fn make() -> Option<Gpu> {
     // wgpu's default handler panics, and a panic ends HubDeck: an error is logged instead
     device.on_uncaptured_error(Box::new(move |e| log::warn!("living deck: GPU error: {e}")));
     log::info!("living deck: GPU {name} ready in {} ms", started.elapsed().as_millis());
-    Some(Gpu { device, queue, lost })
+    Some(Gpu { device, queue, lost, software })
 }
 
 /// Maps `buffer` for reading and waits for it; false when the card did not answer or the map

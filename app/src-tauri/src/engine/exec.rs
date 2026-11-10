@@ -1,9 +1,13 @@
 //! Running an action for one input. Runs on the engine thread.
 
-use enigo::{Axis, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+#[cfg(not(target_os = "linux"))]
+use enigo::{Axis, Mouse};
+use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 use super::actions::{param_f64, param_str};
 use super::profile::Binding;
+#[cfg(target_os = "linux")]
+use super::uinput;
 use super::{audiodev, brightness, homeassistant as ha, hotkey, midi, obs, spotify, streamlabs as sl, twitch, volume};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -252,32 +256,56 @@ impl Executor {
             ("core.hotkey", InputEvent::Press(true)) if param_str(p, "mode") == "game" => {
                 let hold = std::time::Duration::from_millis(param_f64(p, "hold", 30.0).clamp(1.0, 500.0) as u64);
                 let keys = param_str(p, "keys").to_string();
+                #[cfg(target_os = "linux")]
+                uinput::press_hold(&keys, hold)?;
+                #[cfg(not(target_os = "linux"))]
                 keyboard(move |e| hotkey::send_game(e, &keys, hold))?;
             }
             ("core.hotkey", InputEvent::Press(true)) => {
                 let keys = param_str(p, "keys").to_string();
+                #[cfg(target_os = "linux")]
+                uinput::press(&keys)?;
+                #[cfg(not(target_os = "linux"))]
                 keyboard(move |e| send_if_set(e, &keys))?;
             }
             ("core.hotkey", InputEvent::Turn(d)) => {
                 let combo = if d > 0 { param_str(p, "clockwise") } else { param_str(p, "counterClockwise") };
                 let combo = combo.to_string();
                 let times = d.unsigned_abs();
+                #[cfg(target_os = "linux")]
+                (0..times).try_for_each(|_| uinput::press(&combo))?;
+                #[cfg(not(target_os = "linux"))]
                 keyboard(move |e| (0..times).try_for_each(|_| send_if_set(e, &combo)))?;
             }
 
             ("core.media", InputEvent::Press(true)) => {
-                let key = match param_str(p, "command") {
-                    "next" => Key::MediaNextTrack,
-                    "previous" => Key::MediaPrevTrack,
-                    #[cfg(not(target_os = "macos"))]
-                    "stop" => Key::MediaStop,
-                    _ => Key::MediaPlayPause,
-                };
-                keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                #[cfg(target_os = "linux")]
+                uinput::tap(match param_str(p, "command") {
+                    "next" => "nexttrack",
+                    "previous" => "prevtrack",
+                    "stop" => "stop",
+                    _ => "playpause",
+                })?;
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let key = match param_str(p, "command") {
+                        "next" => Key::MediaNextTrack,
+                        "previous" => Key::MediaPrevTrack,
+                        #[cfg(not(target_os = "macos"))]
+                        "stop" => Key::MediaStop,
+                        _ => Key::MediaPlayPause,
+                    };
+                    keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                }
             }
             ("core.media", InputEvent::Turn(d)) => {
-                let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
-                keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                #[cfg(target_os = "linux")]
+                uinput::tap(if d > 0 { "nexttrack" } else { "prevtrack" })?;
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let key = if d > 0 { Key::MediaNextTrack } else { Key::MediaPrevTrack };
+                    keyboard(move |e| e.key(key, Direction::Click).map_err(|e| e.to_string()))?;
+                }
             }
 
             ("core.volume", input) => {
@@ -374,18 +402,30 @@ impl Executor {
 
             ("core.scroll", InputEvent::Turn(d)) => {
                 let amount = param_f64(p, "amount", 3.0).round() as i32;
-                let axis = if param_str(p, "axis") == "horizontal" { Axis::Horizontal } else { Axis::Vertical };
+                let horizontal = param_str(p, "axis") == "horizontal";
                 // a positive length scrolls down/right; turning up or clockwise should scroll up/left
                 let by = -(d as i32) * amount;
-                let sent = keyboard(move |e| e.scroll(by, axis).map_err(|e| e.to_string()));
-                log::info!("scroll {by} {axis:?}: {sent:?}");
-                sent?;
+                #[cfg(target_os = "linux")]
+                {
+                    uinput::scroll(-by, horizontal)?;
+                    log::info!("scroll {by} {}", if horizontal { "horizontal" } else { "vertical" });
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let axis = if horizontal { Axis::Horizontal } else { Axis::Vertical };
+                    let sent = keyboard(move |e| e.scroll(by, axis).map_err(|e| e.to_string()));
+                    log::info!("scroll {by} {axis:?}: {sent:?}");
+                    sent?;
+                }
             }
 
             ("core.text", InputEvent::Press(true)) => {
                 let text = param_str(p, "text");
                 if !text.is_empty() {
                     let text = with_now(text, chrono::Local::now());
+                    #[cfg(target_os = "linux")]
+                    uinput::type_text(&text)?;
+                    #[cfg(not(target_os = "linux"))]
                     keyboard(move |e| e.text(&text).map_err(|e| e.to_string()))?;
                 }
             }

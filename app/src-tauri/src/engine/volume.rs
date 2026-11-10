@@ -717,23 +717,156 @@ mod platform {
 
 #[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
+    use std::process::Command;
+
     use super::Target;
+
+    /// The PulseAudio/PipeWire server through `pactl`, which every desktop with sound has.
+    fn pactl(args: &[&str]) -> Result<String, String> {
+        // pactl speaks the session's language: "Mute: tak" on a Polish desktop, and a decimal
+        // comma in the level. The parser below reads the C locale.
+        let out = Command::new("pactl").env("LC_ALL", "C").args(args).output().map_err(|e| format!("pactl: {e}"))?;
+        if !out.status.success() {
+            let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if why.is_empty() { "pactl failed".into() } else { why });
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    }
+
+    /// `Volume: front-left: 32000 /  49% / -18.55 dB, ...` -> 0.49
+    fn percent(text: &str) -> Option<f32> {
+        let end = text.find('%')?;
+        let digits: String = text[..end].chars().rev().take_while(|c| c.is_ascii_digit() || *c == '.').collect::<String>().chars().rev().collect();
+        digits.parse::<f32>().ok().map(|p| p / 100.0)
+    }
+
+    fn yes(value: &str) -> bool {
+        value.trim().eq_ignore_ascii_case("yes")
+    }
+
+    /// One playback or recording stream: its `pactl` index, the app names it reports and its level.
+    struct Stream {
+        index: String,
+        names: Vec<String>,
+        level: Option<f32>,
+    }
+
+    fn norm(name: &str) -> String {
+        name.trim().trim_end_matches(".exe").to_lowercase()
+    }
+
+    fn same_app(name: &str, wanted: &str) -> bool {
+        let (n, w) = (norm(name), norm(wanted));
+        !w.is_empty() && (n == w || n.contains(&w) || w.contains(&n))
+    }
+
+    fn streams(what: &str) -> Vec<Stream> {
+        let Ok(text) = pactl(&["list", what]) else { return Vec::new() };
+        let header = if what == "sink-inputs" { "Sink Input #" } else { "Source Output #" };
+        let mut out: Vec<Stream> = Vec::new();
+        let mut current: Option<Stream> = None;
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix(header) {
+                out.extend(current.take());
+                current = Some(Stream { index: rest.trim().to_string(), names: Vec::new(), level: None });
+            } else if let Some(s) = current.as_mut() {
+                if let Some(v) = line.strip_prefix("application.name = ") {
+                    s.names.push(v.trim_matches('"').to_string());
+                } else if let Some(v) = line.strip_prefix("application.process.binary = ") {
+                    s.names.push(v.trim_matches('"').to_string());
+                } else if let Some(v) = line.strip_prefix("Volume: ") {
+                    s.level = percent(v).or(s.level);
+                }
+            }
+        }
+        out.extend(current);
+        out
+    }
+
+    fn stream_for(app: &str) -> Result<Stream, String> {
+        streams("sink-inputs").into_iter().find(|s| s.names.iter().any(|n| same_app(n, app))).ok_or_else(|| format!("{app} {}", super::SILENT))
+    }
+
     pub fn init_thread() {}
+
+    /// The programs recording from the microphone now (`application.name` of each source output).
     pub fn mic_users() -> Vec<String> {
-        Vec::new()
+        let mut names: Vec<String> = Vec::new();
+        for s in streams("source-outputs") {
+            if let Some(n) = s.names.first()
+                && !names.iter().any(|e| e.eq_ignore_ascii_case(n))
+            {
+                names.push(n.clone());
+            }
+        }
+        names
     }
-    pub fn with_popup(_: f32, _: bool) {}
-    pub fn get(_: &Target) -> Result<f32, String> {
-        Err("volume control is not implemented on this platform yet".into())
+
+    /// No system volume window on Linux: the level is set without one.
+    pub fn with_popup(level: f32, _up: bool) {
+        if let Err(e) = set(&Target::System, level) {
+            log::warn!("volume: {e}");
+        }
     }
-    pub fn set(_: &Target, _: f32) -> Result<(), String> {
-        Err("volume control is not implemented on this platform yet".into())
+
+    pub fn get(target: &Target) -> Result<f32, String> {
+        match target {
+            Target::System => percent(&pactl(&["get-sink-volume", "@DEFAULT_SINK@"])?).ok_or_else(|| "the sink reports no volume".into()),
+            Target::Mic => percent(&pactl(&["get-source-volume", "@DEFAULT_SOURCE@"])?).ok_or_else(|| "the source reports no volume".into()),
+            Target::App(app) => stream_for(app)?.level.ok_or_else(|| "the app reports no volume".into()),
+            Target::Others(mapped) => {
+                let others: Vec<f32> = streams("sink-inputs").into_iter().filter(|s| !s.names.iter().any(|n| mapped.iter().any(|m| same_app(n, m)))).filter_map(|s| s.level).collect();
+                if others.is_empty() {
+                    return Err(format!("nothing else {}", super::SILENT));
+                }
+                Ok(others.iter().sum::<f32>() / others.len() as f32)
+            }
+        }
     }
-    pub fn toggle_mute(_: &Target) -> Result<bool, String> {
-        Err("volume control is not implemented on this platform yet".into())
+
+    pub fn set(target: &Target, level: f32) -> Result<(), String> {
+        let value = format!("{}%", (level.clamp(0.0, 1.0) * 100.0).round() as u32);
+        match target {
+            Target::System => pactl(&["set-sink-volume", "@DEFAULT_SINK@", &value]).map(|_| ()),
+            Target::Mic => pactl(&["set-source-volume", "@DEFAULT_SOURCE@", &value]).map(|_| ()),
+            Target::App(app) => {
+                let s = stream_for(app)?;
+                pactl(&["set-sink-input-volume", &s.index, &value]).map(|_| ())
+            }
+            Target::Others(mapped) => {
+                for s in streams("sink-inputs").into_iter().filter(|s| !s.names.iter().any(|n| mapped.iter().any(|m| same_app(n, m)))) {
+                    let _ = pactl(&["set-sink-input-volume", &s.index, &value]);
+                }
+                Ok(())
+            }
+        }
     }
-    pub fn is_muted(_: &Target) -> Result<bool, String> {
-        Err("volume control is not implemented on this platform yet".into())
+
+    pub fn is_muted(target: &Target) -> Result<bool, String> {
+        let out = match target {
+            Target::System => pactl(&["get-sink-mute", "@DEFAULT_SINK@"])?,
+            Target::Mic => pactl(&["get-source-mute", "@DEFAULT_SOURCE@"])?,
+            Target::App(app) => {
+                let s = stream_for(app)?;
+                pactl(&["get-sink-input-mute", &s.index])?
+            }
+            Target::Others(_) => return Ok(false),
+        };
+        Ok(out.rsplit_once(':').is_some_and(|(_, v)| yes(v)))
+    }
+
+    pub fn toggle_mute(target: &Target) -> Result<bool, String> {
+        match target {
+            Target::System => pactl(&["set-sink-mute", "@DEFAULT_SINK@", "toggle"]).map(|_| ())?,
+            Target::Mic => pactl(&["set-source-mute", "@DEFAULT_SOURCE@", "toggle"]).map(|_| ())?,
+            Target::App(app) => {
+                let s = stream_for(app)?;
+                pactl(&["set-sink-input-mute", &s.index, "toggle"]).map(|_| ())?;
+            }
+            Target::Others(_) => return Err("mute works per app or on the system".into()),
+        }
+        is_muted(target)
     }
 }
 

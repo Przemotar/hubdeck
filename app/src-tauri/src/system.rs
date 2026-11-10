@@ -135,6 +135,22 @@ mod platform {
         if target.contains(':') && !std::path::Path::new(target).exists() {
             return tauri_plugin_opener::open_url(target, None::<&str>).map_err(|e| e.to_string());
         }
+        // Linux: an app from its .desktop file is a command line ("/usr/bin/firefox",
+        // "flatpak run org.mozilla.firefox"); run it rather than opening it as a file
+        #[cfg(target_os = "linux")]
+        {
+            let mut words = target.split_whitespace();
+            if let Some(program) = words.next()
+                && !program.contains(':')
+                && (std::path::Path::new(program).is_file() || !program.contains('/'))
+            {
+                match std::process::Command::new(program).args(words).spawn() {
+                    Ok(_) => return Ok(()),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
+        }
         // macOS: a bare name like "Safari" is an application
         #[cfg(target_os = "macos")]
         if !std::path::Path::new(target).exists() {

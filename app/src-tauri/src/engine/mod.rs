@@ -22,6 +22,7 @@ pub mod commands;
 pub mod deck_mcp;
 pub mod demo;
 pub mod diagnostics;
+pub mod doctor;
 pub mod elevated;
 pub(crate) mod exec;
 mod foreground;
@@ -84,6 +85,8 @@ mod test_presets;
 mod timer;
 pub mod tour;
 pub mod twitch;
+#[cfg(target_os = "linux")]
+mod uinput;
 pub mod usage;
 pub mod vjoy;
 pub mod volume;

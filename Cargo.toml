@@ -11,7 +11,7 @@ rust-version = "1.90"
 [workspace.dependencies]
 mh-protocol = { path = "crates/mh-protocol" }
 mh-device = { path = "crates/mh-device" }
-hidapi = "2.6"
+hidapi = { version = "2.6", default-features = false }
 log = "0.4"
 thiserror = "2"
 crossbeam-channel = "0.5"
